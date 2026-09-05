@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>ALLA CHECK — ALLA SERVICE</title>
+
+    <!-- identidade AMOLED: evita "flash" branco e barra clara no celular -->
+    <meta name="theme-color" content="#000000" />
+
+    <!-- PWA: permite instalar o app na tela inicial com o ícone oficial -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icone-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icone-512.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="ALLA CHECK" />
+    <meta name="apple-mobile-web-app-title" content="ALLA CHECK" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- fontes usadas pelo app -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- display=swap: o navegador SEMPRE aplica a Roboto/JetBrains assim que
+         elas chegam. Com display=optional (usado antes por engano), em conexão
+         móvel lenta o navegador desistia da fonte e mantinha a do sistema
+         durante toda a visita — era isso que deixava o app "feio" online. -->
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    />
+    <link
+      id="alla-check-fonts"
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        padding: 0;
+        background: #000000;
+        min-height: 100%;
+        font-family: "Roboto", sans-serif;
+      }
+      /* controles de formulario e SVG nao herdam fonte por padrao no navegador:
+         sem isto o navegador usaria Arial/Times, variando por dispositivo.
+         Elementos com fonte definida no proprio componente continuam mandando. */
+      input,
+      textarea,
+      select,
+      button,
+      svg text {
+        font-family: inherit;
+      }
+      /* resposta imediata ao toque no Android (sem atraso de 300ms) */
+      button, a, [role="button"] {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* transição de entrada das telas: suave, rápida, sem flash */
+      @keyframes allaEntradaTela {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .alla-tela {
+        animation: allaEntradaTela 200ms cubic-bezier(.4, 0, .2, 1);
+        will-change: opacity, transform;
+      }
+      /* respeita quem prefere menos animação no sistema */
+      @media (prefers-reduced-motion: reduce) {
+        .alla-tela { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
