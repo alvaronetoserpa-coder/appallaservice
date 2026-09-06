@@ -18,6 +18,17 @@ import {
   getDocs,
   serverTimestamp,
 } from "firebase/firestore";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
+  signOut,
+  browserLocalPersistence,
+  setPersistence,
+} from "firebase/auth";
 
 /* ---------------- Configuração do Firebase ----------------
    Projeto: app-allaservice */
@@ -163,6 +174,8 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
   try {
     const _app = initializeApp(firebaseConfig);
     _db = getFirestore(_app);
+    // a autenticação usa a MESMA instância do Firebase, sem conexão extra
+    window.__allaFirebaseApp = _app;
     _fsReady = true;
   } catch (e) {
     console.error("ALLA CHECK: falha ao iniciar o Firebase — confira o firebaseConfig.", e);
@@ -7385,16 +7398,492 @@ const PERMISSOES_POR_CARGO = {
 };
 const TODAS_PERMISSOES = ["OS", "Serviços", "Clientes", "Orçamentos", "Vendas", "Financeiro", "Documentos"];
 
+/* --- peças reutilizáveis da interface de equipe --- */
+const btnPrincipal = {
+  flex: 1,
+  background: "linear-gradient(135deg,#C9A24B,#E9C878)",
+  border: "none",
+  borderRadius: 12,
+  padding: "12px 0",
+  color: "#0A0A0B",
+  fontFamily: "'Roboto',sans-serif",
+  fontWeight: 600,
+  fontSize: 12.5,
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+  cursor: "pointer",
+};
+const btnSecundario = {
+  flex: 1,
+  background: "#141416",
+  border: "1px solid #2A2A2E",
+  borderRadius: 12,
+  padding: "12px 0",
+  color: "#C7C9CE",
+  fontFamily: "'Roboto',sans-serif",
+  fontWeight: 600,
+  fontSize: 12.5,
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+  cursor: "pointer",
+};
+
+function SecaoTitulo({ children }) {
+  return (
+    <div
+      style={{
+        fontFamily: "'JetBrains Mono',monospace",
+        fontSize: 10,
+        color: "#C9A24B",
+        letterSpacing: 1.8,
+        textTransform: "uppercase",
+        margin: "20px 0 10px",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* duas colunas que encolhem de verdade em telas estreitas */
+function LinhaDupla({ children }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
+      {children}
+    </div>
+  );
+}
+
+function Etiqueta({ texto, cor }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontSize: 10.5,
+        padding: "4px 9px",
+        borderRadius: 20,
+        color: cor,
+        background: `${cor}14`,
+        border: `1px solid ${cor}44`,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: cor, flexShrink: 0 }} />
+      {texto}
+    </span>
+  );
+}
+
+/* barra de progresso com animação de entrada */
+function BarraProgresso({ pct, cor = "#C9A24B", altura = 7 }) {
+  const [largura, setLargura] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setLargura(Math.max(0, Math.min(100, pct))), 60);
+    return () => clearTimeout(t);
+  }, [pct]);
+  return (
+    <div style={{ height: altura, background: "#1A1A1D", borderRadius: altura, overflow: "hidden" }}>
+      <div
+        style={{
+          width: `${largura}%`,
+          height: "100%",
+          borderRadius: altura,
+          background: `linear-gradient(90deg, ${cor}AA, ${cor})`,
+          transition: "width 700ms cubic-bezier(.4,0,.2,1)",
+        }}
+      />
+    </div>
+  );
+}
+
+function MiniIndicador({ icone: Icone, valor, rotulo, cor }) {
+  return (
+    <div
+      style={{
+        background: "#0D0D0D",
+        border: "1px solid rgba(255,255,255,0.07)",
+        borderRadius: 14,
+        padding: "12px 12px 11px",
+        minWidth: 0,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A8A", letterSpacing: 1.2, textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {rotulo}
+        </span>
+        <Icone size={13} color={cor} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+      </div>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: "clamp(19px, 6.4vw, 25px)", color: "#F5F5F5", lineHeight: 1 }}>
+        {valor}
+      </div>
+    </div>
+  );
+}
+
+function EstadoVazio({ icone: Icone, titulo, texto }) {
+  return (
+    <div style={{ textAlign: "center", padding: "38px 22px", color: "#6E6E73" }}>
+      <div
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 14,
+          margin: "0 auto 14px",
+          background: "rgba(201,162,75,0.06)",
+          border: "1px solid rgba(201,162,75,0.22)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Icone size={20} color="#C9A24B" strokeWidth={1.6} />
+      </div>
+      <div style={{ fontSize: 14, color: "#C7C9CE", marginBottom: 6 }}>{titulo}</div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.5, maxWidth: 300, margin: "0 auto" }}>{texto}</div>
+    </div>
+  );
+}
+
+/* ---------------- Autenticação (Firebase Auth) ----------------
+   Login real: a senha é enviada direto ao Firebase e NUNCA passa
+   pelo nosso código nem é gravada no Firestore. A sessão fica
+   guardada no próprio aparelho e sobrevive a recarregamentos. */
+function obterAuth() {
+  try {
+    if (!window.__allaFirebaseApp) return null;
+    if (!window.__allaAuth) {
+      window.__allaAuth = getAuth(window.__allaFirebaseApp);
+      setPersistence(window.__allaAuth, browserLocalPersistence).catch(() => {});
+    }
+    return window.__allaAuth;
+  } catch (e) {
+    console.error("ALLA CHECK: falha ao iniciar a autenticação", e);
+    return null;
+  }
+}
+
+/* Traduz os códigos do Firebase para mensagens que o usuário entende. */
+function mensagemErroAuth(e) {
+  const codigo = (e && e.code) || "";
+  const mapa = {
+    "auth/invalid-email": "E-mail inválido.",
+    "auth/user-disabled": "Esta conta está desativada.",
+    "auth/user-not-found": "Não encontramos uma conta com este e-mail.",
+    "auth/wrong-password": "E-mail ou senha incorretos.",
+    "auth/invalid-credential": "E-mail ou senha incorretos.",
+    "auth/email-already-in-use": "Já existe uma conta com este e-mail.",
+    "auth/weak-password": "A senha precisa ter pelo menos 6 caracteres.",
+    "auth/too-many-requests": "Muitas tentativas. Aguarde alguns minutos e tente de novo.",
+    "auth/network-request-failed": "Sem conexão. Verifique a internet e tente novamente.",
+    "auth/operation-not-allowed":
+      "Login por e-mail e senha ainda não está habilitado no Firebase (Authentication → Sign-in method).",
+    "auth/missing-password": "Informe a senha.",
+  };
+  return mapa[codigo] || "Não foi possível concluir. Tente novamente.";
+}
+
+const campoAuth = {
+  width: "100%",
+  background: "#0D0D0D",
+  border: "1px solid #24242A",
+  borderRadius: 12,
+  padding: "13px 14px 13px 42px",
+  color: "#F3F3F1",
+  fontSize: 14.5,
+  fontFamily: "'Roboto',sans-serif",
+  outline: "none",
+  boxSizing: "border-box",
+  transition: "border-color 200ms, box-shadow 200ms",
+};
+
+function CampoAuth({ icone: Icone, tipo = "text", valor, onChange, placeholder, onEnter, children }) {
+  const [focado, setFocado] = useState(false);
+  return (
+    <div style={{ position: "relative", marginBottom: 12 }}>
+      <Icone
+        size={16}
+        color={focado ? "#C9A24B" : "#5A5A5F"}
+        style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", transition: "color 200ms", pointerEvents: "none" }}
+      />
+      <input
+        type={tipo}
+        value={valor}
+        onChange={onChange}
+        placeholder={placeholder}
+        onFocus={() => setFocado(true)}
+        onBlur={() => setFocado(false)}
+        onKeyDown={(e) => e.key === "Enter" && onEnter && onEnter()}
+        style={{
+          ...campoAuth,
+          paddingRight: children ? 44 : 14,
+          borderColor: focado ? "rgba(201,162,75,0.55)" : "#24242A",
+          boxShadow: focado ? "0 0 0 3px rgba(201,162,75,0.08)" : "none",
+        }}
+      />
+      {children}
+    </div>
+  );
+}
+
+function TelaAutenticacao() {
+  const [modo, setModo] = useState("login"); // login | cadastro | recuperar
+  const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [verSenha, setVerSenha] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [aviso, setAviso] = useState("");
+
+  const limpar = () => { setErro(""); setAviso(""); };
+  const trocarModo = (m) => { limpar(); setSenha(""); setModo(m); };
+
+  const executar = async () => {
+    if (carregando) return;
+    limpar();
+    const auth = obterAuth();
+    if (!auth) {
+      setErro("Serviço de autenticação indisponível. Verifique a conexão.");
+      return;
+    }
+    if (!email.trim()) return setErro("Informe o e-mail.");
+    if (modo !== "recuperar" && !senha) return setErro("Informe a senha.");
+    if (modo === "cadastro" && !nome.trim()) return setErro("Informe seu nome.");
+
+    setCarregando(true);
+    try {
+      if (modo === "login") {
+        await signInWithEmailAndPassword(auth, email.trim(), senha);
+      } else if (modo === "cadastro") {
+        const cred = await createUserWithEmailAndPassword(auth, email.trim(), senha);
+        if (cred.user && nome.trim()) {
+          await updateProfile(cred.user, { displayName: nome.trim() }).catch(() => {});
+        }
+      } else {
+        await sendPasswordResetEmail(auth, email.trim());
+        setAviso("Enviamos um link de redefinição para o seu e-mail.");
+      }
+    } catch (e) {
+      setErro(mensagemErroAuth(e));
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  const titulos = {
+    login: ["Bem-vindo de volta", "Acesse sua conta para continuar"],
+    cadastro: ["Criar conta", "Preencha os dados para começar"],
+    recuperar: ["Recuperar senha", "Enviaremos um link para o seu e-mail"],
+  }[modo];
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#000000",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "28px 18px",
+        boxSizing: "border-box",
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 400 }} key={modo} className="alla-tela">
+        <img
+          src={LOGO_DATA_URI}
+          alt="ALLA SERVICE"
+          style={{ width: 150, display: "block", margin: "0 auto 26px" }}
+        />
+
+        <div
+          style={{
+            background: "#0A0A0B",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 20,
+            padding: "26px 20px 22px",
+          }}
+        >
+          <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 21, fontWeight: 700, color: "#F3F3F1", textAlign: "center" }}>
+            {titulos[0]}
+          </div>
+          <div style={{ fontSize: 13, color: "#8A8A90", textAlign: "center", margin: "6px 0 22px", lineHeight: 1.45 }}>
+            {titulos[1]}
+          </div>
+
+          {modo === "cadastro" && (
+            <CampoAuth icone={Users} valor={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome completo" onEnter={executar} />
+          )}
+
+          <CampoAuth icone={Send} tipo="email" valor={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" onEnter={executar} />
+
+          {modo !== "recuperar" && (
+            <CampoAuth
+              icone={Check}
+              tipo={verSenha ? "text" : "password"}
+              valor={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              placeholder={modo === "cadastro" ? "Senha (mínimo 6 caracteres)" : "Senha"}
+              onEnter={executar}
+            >
+              <button
+                onClick={() => setVerSenha((v) => !v)}
+                aria-label={verSenha ? "Ocultar senha" : "Mostrar senha"}
+                style={{
+                  position: "absolute",
+                  right: 6,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  color: "#6E6E73",
+                  fontSize: 11,
+                  padding: "8px 10px",
+                  cursor: "pointer",
+                  fontFamily: "'JetBrains Mono',monospace",
+                  letterSpacing: 0.5,
+                }}
+              >
+                {verSenha ? "ocultar" : "mostrar"}
+              </button>
+            </CampoAuth>
+          )}
+
+          {modo === "login" && (
+            <div style={{ textAlign: "right", marginBottom: 16 }}>
+              <button
+                onClick={() => trocarModo("recuperar")}
+                style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 12.5, cursor: "pointer", padding: "4px 0" }}
+              >
+                Esqueceu sua senha?
+              </button>
+            </div>
+          )}
+
+          {erro && (
+            <div style={{ background: "rgba(240,96,90,0.07)", border: "1px solid rgba(240,96,90,0.35)", borderRadius: 10, padding: "10px 12px", color: "#F0605A", fontSize: 12.5, lineHeight: 1.45, marginBottom: 14 }}>
+              {erro}
+            </div>
+          )}
+          {aviso && (
+            <div style={{ background: "rgba(74,222,128,0.07)", border: "1px solid rgba(74,222,128,0.35)", borderRadius: 10, padding: "10px 12px", color: "#4ADE80", fontSize: 12.5, lineHeight: 1.45, marginBottom: 14 }}>
+              {aviso}
+            </div>
+          )}
+
+          <button
+            onClick={executar}
+            disabled={carregando}
+            className="premium-card"
+            style={{
+              width: "100%",
+              background: carregando ? "#2A2A2E" : "linear-gradient(135deg,#C9A24B,#E9C878)",
+              border: "none",
+              borderRadius: 12,
+              padding: "14px 0",
+              color: carregando ? "#8A8A90" : "#0A0A0B",
+              fontFamily: "'Roboto',sans-serif",
+              fontWeight: 700,
+              fontSize: 13.5,
+              textTransform: "uppercase",
+              letterSpacing: 0.8,
+              cursor: carregando ? "default" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 9,
+            }}
+          >
+            {carregando && <Loader2 size={15} className="spin" />}
+            {carregando
+              ? "Aguarde..."
+              : modo === "login"
+              ? "Entrar"
+              : modo === "cadastro"
+              ? "Criar conta"
+              : "Enviar link"}
+          </button>
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "#8A8A90" }}>
+          {modo === "login" ? (
+            <>
+              Não possui uma conta?{" "}
+              <button onClick={() => trocarModo("cadastro")} style={{ background: "none", border: "none", color: "#E9C878", fontSize: 13, cursor: "pointer", padding: 0, fontWeight: 600 }}>
+                Criar conta
+              </button>
+            </>
+          ) : (
+            <button onClick={() => trocarModo("login")} style={{ background: "none", border: "none", color: "#E9C878", fontSize: 13, cursor: "pointer", padding: 0, fontWeight: 600 }}>
+              Voltar para o login
+            </button>
+          )}
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 26, fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#3A3A3E", letterSpacing: 2 }}>
+          ALLA SERVICE · GESTÃO TÉCNICA
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Funcionários Técnicos ----------------
+   Regras de nível e status operacional derivadas de dados REAIS
+   (OS finalizadas, OS em andamento e rastreios de atendimento). */
+const NIVEIS_TECNICO = [
+  { nome: "Bronze", medalha: "🥉", min: 0, cor: "#B87333" },
+  { nome: "Prata", medalha: "🥈", min: 15, cor: "#A8B2BD" },
+  { nome: "Ouro", medalha: "🥇", min: 40, cor: "#C9A24B" },
+  { nome: "Platina", medalha: "🏆", min: 80, cor: "#6FD3E8" },
+];
+const COMISSAO_PADRAO = 10; // % sobre serviços executados
+
+function nivelPorConcluidas(qtd) {
+  let atual = NIVEIS_TECNICO[0];
+  for (const n of NIVEIS_TECNICO) if (qtd >= n.min) atual = n;
+  const proximo = NIVEIS_TECNICO[NIVEIS_TECNICO.indexOf(atual) + 1] || null;
+  const base = atual.min;
+  const alvo = proximo ? proximo.min : atual.min;
+  const progresso = proximo ? Math.min(100, ((qtd - base) / (alvo - base)) * 100) : 100;
+  return { atual, proximo, progresso, faltam: proximo ? Math.max(0, alvo - qtd) : 0 };
+}
+
+const STATUS_OPERACIONAL = {
+  Disponível: "#4ADE80",
+  "Em atendimento": "#E9C878",
+  "Em deslocamento": "#4681DF",
+  Indisponível: "#6E6E73",
+};
+
+/* Deriva a situação do técnico agora, a partir do que está registrado no sistema. */
+function statusOperacional(func, ordens, rastreios) {
+  if (["Inativo", "Afastado", "Férias"].includes(func.status)) return "Indisponível";
+  const meus = (rastreios || []).filter((r) => r.tecnico === func.nome);
+  if (meus.some((r) => r.status === "A CAMINHO")) return "Em deslocamento";
+  if (meus.some((r) => r.status === "EM ATENDIMENTO")) return "Em atendimento";
+  const emOS = (ordens || []).some(
+    (o) => o.tecnico === func.nome && ["EM ANDAMENTO", "Em Atendimento", "AGENDADA"].includes(o.status)
+  );
+  return emOS ? "Em atendimento" : "Disponível";
+}
+
 function FuncionarioForm({ editing, onDone, onCancel }) {
   const [form, setForm] = useState(
     editing || {
       nome: "",
       cpf: "",
+      rg: "",
       telefone: "",
       email: "",
+      endereco: "",
+      regiao: "",
       cargo: "Técnico",
       dataEntrada: new Date().toISOString().slice(0, 10),
       status: "Ativo",
+      metaMensal: "",
+      comissaoPercent: String(COMISSAO_PADRAO),
       observacoes: "",
     }
   );
@@ -7409,25 +7898,24 @@ function FuncionarioForm({ editing, onDone, onCancel }) {
     setPermissoes(PERMISSOES_POR_CARGO[cargo] || []);
   };
 
-  const addFoto = async (e) => {
+  const escolherFoto = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const dataUrl = await resizeImage(file, 400);
+      const dataUrl = await resizeImage(file, 400, 0.8);
       setFoto(dataUrl);
     } catch {
-      /* skip */
+      notificarErroBanco("Não foi possível carregar a foto.");
     }
   };
 
-  const togglePermissao = (p) => {
+  const togglePermissao = (p) =>
     setPermissoes((ps) => (ps.includes(p) ? ps.filter((x) => x !== p) : [...ps, p]));
-  };
 
   const [saving, setSaving] = useState(false);
 
   const salvar = async () => {
-    if (saving) return; // impede duplo clique / registro duplicado
+    if (saving) return;
     if (!form.nome.trim()) {
       notificarErroBanco("Informe o nome do funcionário antes de salvar.");
       return;
@@ -7440,7 +7928,7 @@ function FuncionarioForm({ editing, onDone, onCancel }) {
       onDone(func);
     } catch (err) {
       console.error("Erro ao salvar funcionário", err);
-      notificarErroBanco(diagnosticarErroFirestore(err, "salvar"));
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar funcionário"));
     } finally {
       setSaving(false);
     }
@@ -7448,69 +7936,99 @@ function FuncionarioForm({ editing, onDone, onCancel }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
         <button
-          onClick={() => fileInputRef.current.click()}
-          style={{ width: 80, height: 80, borderRadius: "50%", border: "1px dashed #3A3A3E", background: "#141416", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden" }}
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            width: 92,
+            height: 92,
+            borderRadius: "50%",
+            overflow: "hidden",
+            background: "#0D0D0D",
+            border: "1px dashed #2F2F35",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            padding: 0,
+          }}
         >
-          {foto ? <img src={foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Camera size={22} color="#8A8A90" />}
+          {foto ? (
+            <img src={foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <Camera size={22} color="#6E6E73" />
+          )}
         </button>
-        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={addFoto} />
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={escolherFoto} style={{ display: "none" }} />
       </div>
 
+      <SecaoTitulo>Dados pessoais</SecaoTitulo>
       <Field label="Nome"><input style={inputStyle} value={form.nome} onChange={set("nome")} /></Field>
-      <div style={{ display: "flex", gap: 10 }}>
-        <div style={{ flex: 1 }}><Field label="CPF"><input style={inputStyle} value={form.cpf} onChange={set("cpf")} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Telefone"><input style={inputStyle} value={form.telefone} onChange={set("telefone")} inputMode="numeric" /></Field></div>
-      </div>
+      <LinhaDupla>
+        <Field label="CPF"><input style={inputStyle} value={form.cpf} onChange={set("cpf")} inputMode="numeric" /></Field>
+        <Field label="RG"><input style={inputStyle} value={form.rg || ""} onChange={set("rg")} /></Field>
+      </LinhaDupla>
+      <LinhaDupla>
+        <Field label="Telefone"><input style={inputStyle} value={form.telefone} onChange={set("telefone")} inputMode="numeric" /></Field>
+        <Field label="Data de contratação"><input type="date" style={inputStyle} value={form.dataEntrada} onChange={set("dataEntrada")} /></Field>
+      </LinhaDupla>
       <Field label="E-mail"><input style={inputStyle} value={form.email} onChange={set("email")} /></Field>
-      <div style={{ display: "flex", gap: 10 }}>
-        <div style={{ flex: 1 }}>
-          <Field label="Cargo">
-            <select style={{ ...inputStyle, appearance: "none" }} value={form.cargo} onChange={trocarCargo}>
-              {CARGOS.map((c) => <option key={c}>{c}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div style={{ flex: 1 }}>
-          <Field label="Status">
-            <select style={{ ...inputStyle, appearance: "none" }} value={form.status} onChange={set("status")}>
-              {STATUS_FUNCIONARIO.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </Field>
-        </div>
+      <Field label="Endereço"><input style={inputStyle} value={form.endereco || ""} onChange={set("endereco")} /></Field>
+
+      <SecaoTitulo>Atuação</SecaoTitulo>
+      <LinhaDupla>
+        <Field label="Cargo">
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.cargo} onChange={trocarCargo}>
+            {CARGOS.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Situação">
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.status} onChange={set("status")}>
+            {STATUS_FUNCIONARIO.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </Field>
+      </LinhaDupla>
+      <Field label="Região de atendimento"><input style={inputStyle} value={form.regiao || ""} onChange={set("regiao")} placeholder="Ex: Sorocaba e região" /></Field>
+      <LinhaDupla>
+        <Field label="Meta mensal (R$)"><input style={inputStyle} value={form.metaMensal || ""} onChange={set("metaMensal")} inputMode="decimal" placeholder="opcional" /></Field>
+        <Field label="Comissão (%)"><input style={inputStyle} value={form.comissaoPercent ?? ""} onChange={set("comissaoPercent")} inputMode="decimal" /></Field>
+      </LinhaDupla>
+
+      <SecaoTitulo>Permissões</SecaoTitulo>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+        {TODAS_PERMISSOES.map((p) => {
+          const on = permissoes.includes(p);
+          return (
+            <button
+              key={p}
+              onClick={() => togglePermissao(p)}
+              style={{
+                fontSize: 12,
+                padding: "7px 12px",
+                borderRadius: 9,
+                border: `1px solid ${on ? "#C9A24B" : "#2A2A2E"}`,
+                background: on ? "rgba(201,162,75,0.12)" : "transparent",
+                color: on ? "#E9C878" : "#8A8A90",
+                cursor: "pointer",
+              }}
+            >
+              {on ? "✓ " : ""}{p}
+            </button>
+          );
+        })}
       </div>
-      <Field label="Data de entrada"><input type="date" style={inputStyle} value={form.dataEntrada} onChange={set("dataEntrada")} /></Field>
+
       <Field label="Observações">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: "'Roboto',sans-serif" }} value={form.observacoes} onChange={set("observacoes")} />
+        <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.observacoes} onChange={set("observacoes")} />
       </Field>
 
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "16px 0 10px" }}>
-        Permissões
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-        {TODAS_PERMISSOES.map((p) => (
-          <button
-            key={p}
-            onClick={() => togglePermissao(p)}
-            style={{
-              fontSize: 11,
-              padding: "6px 11px",
-              borderRadius: 8,
-              border: `1px solid ${permissoes.includes(p) ? "#C9A24B" : "#2A2A2E"}`,
-              background: permissoes.includes(p) ? "rgba(201,162,75,0.15)" : "transparent",
-              color: permissoes.includes(p) ? "#E9C878" : "#8A8A90",
-              cursor: "pointer",
-            }}
-          >
-            {permissoes.includes(p) ? "✓ " : ""}{p}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={onCancel} style={{ flex: 1, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", color: "#C7C9CE", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12.5, textTransform: "uppercase", cursor: "pointer" }}>Cancelar</button>
-        <button onClick={salvar} disabled={saving || !form.nome.trim()} style={{ flex: 1.4, background: form.nome.trim() && !saving ? "linear-gradient(135deg,#C9A24B,#E9C878)" : "#2A2A2E", border: "none", borderRadius: 12, padding: "12px 0", color: form.nome.trim() && !saving ? "#0A0A0B" : "#6E6E73", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12.5, textTransform: "uppercase", cursor: saving ? "default" : "pointer" }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+        <button onClick={onCancel} style={btnSecundario}>Cancelar</button>
+        <button
+          onClick={salvar}
+          disabled={saving || !form.nome.trim()}
+          style={{ ...btnPrincipal, flex: 1.4, opacity: saving || !form.nome.trim() ? 0.5 : 1 }}
+        >
           {saving ? "Salvando..." : "Salvar funcionário"}
         </button>
       </div>
@@ -7518,114 +8036,374 @@ function FuncionarioForm({ editing, onDone, onCancel }) {
   );
 }
 
-function FuncionarioPerfil({ func, onBack, onEdit, onDeleted }) {
+function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perfil" }) {
+  const [aba, setAba] = useState(abaInicial);
   const [stats, setStats] = useState(null);
+  const [confirmar, setConfirmar] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [ordensServico, osFrio] = await Promise.all([carregarTudoStorage("ordens-servico:"), carregarTudoStorage("os-frio:")]);
-      const todasOS = [...ordensServico, ...osFrio].filter((o) => o.tecnico === func.nome);
-      const finalizadas = todasOS.filter((o) => o.status === "FINALIZADA" || o.status === "Finalizada");
-      const emAndamento = todasOS.filter((o) => !["FINALIZADA", "Finalizada", "CANCELADA", "Cancelada"].includes(o.status));
-      const clientesSet = new Set(todasOS.map((o) => o.clienteNome).filter(Boolean));
-      const faturamentoGerado = finalizadas.reduce((a, o) => a + (Number(o.valorTotal) || 0), 0);
-      setStats({ total: todasOS.length, finalizadas: finalizadas.length, emAndamento: emAndamento.length, clientes: clientesSet.size, faturamentoGerado });
+      try {
+        const [ordensServico, osFrio] = await Promise.all([
+          carregarTudoStorage("ordens-servico:"),
+          carregarTudoStorage("os-frio:"),
+        ]);
+        const todasOS = [...ordensServico, ...osFrio].filter((o) => o.tecnico === func.nome);
+        const finalizadas = todasOS.filter((o) => ["FINALIZADA", "Finalizada"].includes(o.status));
+        const emAndamento = todasOS.filter((o) => !["FINALIZADA", "Finalizada", "CANCELADA", "Cancelada"].includes(o.status));
+        const clientes = new Set(todasOS.map((o) => o.clienteNome).filter(Boolean));
+        const faturamento = finalizadas.reduce((a, o) => a + (Number(o.valorTotal) || 0), 0);
+
+        // OS finalizadas por mês (últimos 6 meses), a partir de datas reais
+        const agora = new Date();
+        const meses = [];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
+          meses.push({ chave: `${d.getFullYear()}-${d.getMonth()}`, rotulo: d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", ""), qtd: 0, valor: 0 });
+        }
+        finalizadas.forEach((o) => {
+          const d = new Date(o.finalizedAt || o.data || o.createdAt);
+          if (isNaN(d)) return;
+          const m = meses.find((x) => x.chave === `${d.getFullYear()}-${d.getMonth()}`);
+          if (m) { m.qtd++; m.valor += Number(o.valorTotal) || 0; }
+        });
+        const mesAtual = meses[meses.length - 1];
+        setStats({ total: todasOS.length, finalizadas: finalizadas.length, emAndamento: emAndamento.length, clientes: clientes.size, faturamento, meses, mesAtual });
+      } catch (err) {
+        notificarErroBanco(diagnosticarErroFirestore(err, "carregar desempenho"));
+        setStats({ total: 0, finalizadas: 0, emAndamento: 0, clientes: 0, faturamento: 0, meses: [], mesAtual: null });
+      }
     })();
   }, [func.nome]);
 
-  const remove = async () => {
+  const remover = async () => {
     try {
-      await window.storage.delete(`funcionarios:${func.id}`).catch(() => {});
+      await window.storage.delete(`funcionarios:${func.id}`);
       onDeleted();
     } catch (err) {
-      console.error("Erro em remove", err);
-      notificarErroBanco(diagnosticarErroFirestore(err, "operação"));
+      notificarErroBanco(diagnosticarErroFirestore(err, "excluir funcionário"));
     }
   };
 
+  const nivel = nivelPorConcluidas(stats?.finalizadas || 0);
+  const pctComissao = Number(func.comissaoPercent) || COMISSAO_PADRAO;
+  const comissao = (stats?.faturamento || 0) * (pctComissao / 100);
+  const meta = Number(func.metaMensal) || 0;
+  const realizadoMes = stats?.mesAtual?.valor || 0;
+  const pctMeta = meta > 0 ? (realizadoMes / meta) * 100 : 0;
+
+  const ABAS = [
+    ["perfil", "Perfil"],
+    ["performance", "Performance"],
+    ["comissao", "Comissão"],
+  ];
+
+  const linha = (rotulo, valor) => (
+    <div key={rotulo} style={{ minWidth: 0 }}>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A8A", letterSpacing: 1.2, textTransform: "uppercase" }}>{rotulo}</div>
+      <div style={{ fontSize: 13.5, color: valor && valor !== "—" ? "#F3F3F1" : "#5A5A5F", marginTop: 3, wordBreak: "break-word" }}>{valor || "—"}</div>
+    </div>
+  );
+
   return (
     <div style={{ padding: 16, paddingBottom: 40 }}>
-      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-        <ChevronLeft size={15} /> voltar à lista
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+        <ChevronLeft size={15} /> voltar à equipe
       </button>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-        <div style={{ width: 60, height: 60, borderRadius: "50%", overflow: "hidden", background: "#141416", border: "1px solid #2A2A2E", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {/* cabeçalho do técnico */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16, minWidth: 0 }}>
+        <div style={{ width: 66, height: 66, borderRadius: "50%", overflow: "hidden", background: "#0D0D0D", border: "1px solid rgba(201,162,75,0.35)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           {func.foto ? <img src={func.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={24} color="#6E6E73" />}
         </div>
-        <div>
-          <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 18, fontWeight: 600, color: "#F3F3F1" }}>{func.nome}</div>
-          <div style={{ fontSize: 12.5, color: "#8A8A90" }}>{func.cargo} · {func.status}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 18, fontWeight: 700, color: "#F3F3F1", lineHeight: 1.2, wordBreak: "break-word" }}>{func.nome}</div>
+          <div style={{ fontSize: 12.5, color: "#8A8A90", marginTop: 2 }}>{func.cargo}</div>
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+            <Etiqueta texto={func.status} cor={func.status === "Ativo" ? "#4ADE80" : func.status === "Inativo" ? "#F0605A" : "#E9C878"} />
+            <span style={{ fontSize: 11, color: nivel.atual.cor, border: `1px solid ${nivel.atual.cor}44`, background: `${nivel.atual.cor}14`, borderRadius: 20, padding: "4px 9px", whiteSpace: "nowrap" }}>
+              {nivel.atual.medalha} {nivel.atual.nome}
+            </span>
+          </div>
         </div>
       </div>
 
-      {stats === null ? (
-        <div style={{ textAlign: "center", padding: 20 }}><Loader2 size={18} className="spin" /></div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-          {[
-            ["OS Realizadas", stats.total],
-            ["Em Andamento", stats.emAndamento],
-            ["Finalizadas", stats.finalizadas],
-            ["Clientes Atendidos", stats.clientes],
-          ].map(([label, val]) => (
-            <div key={label} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 9.5, color: "#8A8A90", textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" }}>{label}</div>
-              <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 18, color: "#F3F3F1", marginTop: 4 }}>{val}</div>
+      {/* abas */}
+      <div style={{ display: "flex", borderBottom: "1px solid #1C1C1F", marginBottom: 18 }}>
+        {ABAS.map(([id, nome]) => {
+          const on = aba === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setAba(id)}
+              style={{
+                flex: 1,
+                background: "none",
+                border: "none",
+                borderBottom: `2px solid ${on ? "#C9A24B" : "transparent"}`,
+                color: on ? "#E9C878" : "#7A7A7A",
+                fontFamily: "'Roboto',sans-serif",
+                fontWeight: on ? 600 : 400,
+                fontSize: 12.5,
+                textTransform: "uppercase",
+                letterSpacing: 0.6,
+                padding: "11px 4px",
+                cursor: "pointer",
+                transition: "color 200ms, border-color 200ms",
+              }}
+            >
+              {nome}
+            </button>
+          );
+        })}
+      </div>
+
+      <div key={aba} className="alla-tela">
+        {aba === "perfil" && (
+          <>
+            <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "14px 12px" }}>
+                {linha("CPF", func.cpf)}
+                {linha("RG", func.rg)}
+                {linha("Telefone", func.telefone)}
+                {linha("Contratação", func.dataEntrada ? new Date(func.dataEntrada).toLocaleDateString("pt-BR") : "")}
+              </div>
+              <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
+                {linha("E-mail", func.email)}
+                {linha("Endereço", func.endereco)}
+                {linha("Região de atendimento", func.regiao)}
+              </div>
             </div>
-          ))}
-        </div>
-      )}
 
-      {stats && (
-        <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "13px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "#8A8A90", fontSize: 13 }}>Faturamento gerado</span>
-          <span style={{ color: "#E9C878", fontSize: 15, fontWeight: 700 }}>R$ {stats.faturamentoGerado.toFixed(2)}</span>
-        </div>
-      )}
+            {(func.permissoes || []).length > 0 && (
+              <>
+                <SecaoTitulo>Permissões</SecaoTitulo>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                  {func.permissoes.map((p) => (
+                    <span key={p} style={{ fontSize: 11.5, padding: "5px 10px", borderRadius: 8, color: "#E9C878", background: "rgba(201,162,75,0.10)", border: "1px solid rgba(201,162,75,0.30)" }}>{p}</span>
+                  ))}
+                </div>
+              </>
+            )}
 
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>Permissões</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
-        {(func.permissoes || []).length === 0 ? (
-          <span style={{ color: "#6E6E73", fontSize: 12 }}>Nenhuma permissão atribuída.</span>
-        ) : (
-          func.permissoes.map((p) => (
-            <span key={p} style={{ fontSize: 10.5, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(201,162,75,0.35)", color: "#E9C878", background: "rgba(201,162,75,0.1)" }}>{p}</span>
-          ))
+            {func.observacoes && (
+              <>
+                <SecaoTitulo>Observações</SecaoTitulo>
+                <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 14, fontSize: 13, color: "#C7C9CE", lineHeight: 1.5 }}>
+                  {func.observacoes}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
+              <button onClick={() => onEdit(func)} style={btnPrincipal}>Editar</button>
+              <button onClick={() => setConfirmar(true)} style={{ ...btnSecundario, color: "#F0605A", borderColor: "rgba(240,96,90,0.4)" }}>Excluir</button>
+            </div>
+
+            {confirmar && (
+              <div style={{ marginTop: 12, background: "rgba(240,96,90,0.06)", border: "1px solid rgba(240,96,90,0.35)", borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13, color: "#F3F3F1", marginBottom: 10 }}>Excluir {func.nome} da equipe?</div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={() => setConfirmar(false)} style={btnSecundario}>Cancelar</button>
+                  <button onClick={remover} style={{ ...btnPrincipal, background: "#F0605A", color: "#fff" }}>Confirmar</button>
+                </div>
+              </div>
+            )}
+          </>
         )}
-      </div>
 
-      <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={() => onEdit(func)} style={{ flex: 1, background: "#1C1C1F", border: "1px solid #C9A24B", borderRadius: 12, padding: "12px 0", color: "#E9C878", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12.5, textTransform: "uppercase", cursor: "pointer" }}>
-          Editar
-        </button>
-        <button onClick={remove} style={{ flex: 1, background: "rgba(240,96,90,0.1)", border: "1px solid rgba(240,96,90,0.4)", borderRadius: 12, padding: "12px 0", color: "#F0605A", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12.5, textTransform: "uppercase", cursor: "pointer" }}>
-          Remover
-        </button>
+        {aba === "performance" && (
+          !stats ? (
+            <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
+          ) : stats.total === 0 ? (
+            <EstadoVazio
+              icone={TrendingUp}
+              titulo="Sem dados de performance"
+              texto="Os indicadores aparecerão após a conclusão das primeiras OS deste técnico."
+            />
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 16 }}>
+                <MiniIndicador icone={CheckCircle2} valor={String(stats.finalizadas)} rotulo="OS concluídas" cor="#4ADE80" />
+                <MiniIndicador icone={Clock} valor={String(stats.emAndamento)} rotulo="Em andamento" cor="#E9C878" />
+                <MiniIndicador icone={Users} valor={String(stats.clientes)} rotulo="Clientes atendidos" cor="#4681DF" />
+                <MiniIndicador icone={DollarSign} valor={`R$ ${stats.faturamento.toFixed(0)}`} rotulo="Faturamento" cor="#C9A24B" />
+              </div>
+
+              <SecaoTitulo>Meta do mês</SecaoTitulo>
+              {meta > 0 ? (
+                <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 10 }}>
+                    <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 24, color: pctMeta >= 100 ? "#4ADE80" : "#E9C878" }}>
+                      {pctMeta.toFixed(0)}%
+                    </span>
+                    <span style={{ fontSize: 12.5, color: "#8A8A90", textAlign: "right" }}>
+                      R$ {realizadoMes.toFixed(2)} / R$ {meta.toFixed(2)}
+                    </span>
+                  </div>
+                  <BarraProgresso pct={pctMeta} cor={pctMeta >= 100 ? "#4ADE80" : "#C9A24B"} />
+                </div>
+              ) : (
+                <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 14, marginBottom: 16, fontSize: 12.5, color: "#8A8A90", lineHeight: 1.5 }}>
+                  Nenhuma meta mensal definida. Informe a meta no cadastro do técnico para acompanhar o percentual aqui.
+                </div>
+              )}
+
+              <SecaoTitulo>OS concluídas por mês</SecaoTitulo>
+              <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: "18px 14px 12px" }}>
+                {(() => {
+                  const max = Math.max(1, ...stats.meses.map((m) => m.qtd));
+                  return (
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 110 }}>
+                      {stats.meses.map((m) => (
+                        <div key={m.chave} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                          <div style={{ fontSize: 11, color: m.qtd ? "#E9C878" : "#4A4A4F" }}>{m.qtd}</div>
+                          <div style={{ width: "100%", height: `${Math.max(3, (m.qtd / max) * 74)}px`, borderRadius: 5, background: m.qtd ? "linear-gradient(180deg,#E9C878,#C9A24B)" : "#1A1A1D", transition: "height 600ms cubic-bezier(.4,0,.2,1)" }} />
+                          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#7A7A7A", textTransform: "uppercase" }}>{m.rotulo}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <SecaoTitulo>Nível do técnico</SecaoTitulo>
+              <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 14 }}>
+                  {NIVEIS_TECNICO.map((n) => {
+                    const on = n.nome === nivel.atual.nome;
+                    return (
+                      <div key={n.nome} style={{ flex: 1, minWidth: 0, textAlign: "center", opacity: on ? 1 : 0.38 }}>
+                        <div style={{ fontSize: 21, lineHeight: 1 }}>{n.medalha}</div>
+                        <div style={{ fontSize: 10.5, color: on ? n.cor : "#7A7A7A", marginTop: 5 }}>{n.nome}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <BarraProgresso pct={nivel.progresso} cor={nivel.atual.cor} />
+                <div style={{ fontSize: 12, color: "#8A8A90", marginTop: 10, textAlign: "center" }}>
+                  {nivel.proximo
+                    ? `Faltam ${nivel.faltam} OS concluídas para ${nivel.proximo.medalha} ${nivel.proximo.nome}`
+                    : "Nível máximo alcançado"}
+                </div>
+              </div>
+            </>
+          )
+        )}
+
+        {aba === "comissao" && (
+          !stats ? (
+            <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
+          ) : (
+            <>
+              <div style={{ background: "linear-gradient(160deg,#151310,#0D0D0D)", border: "1px solid rgba(201,162,75,0.30)", borderRadius: 18, padding: "22px 16px", textAlign: "center", marginBottom: 16 }}>
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 2, textTransform: "uppercase" }}>
+                  Comissão acumulada
+                </div>
+                <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: "clamp(30px, 10vw, 42px)", color: "#E9C878", lineHeight: 1.1, marginTop: 8 }}>
+                  R$ {comissao.toFixed(2)}
+                </div>
+                <div style={{ fontSize: 12, color: "#8A8A90", marginTop: 8 }}>
+                  {pctComissao}% sobre serviços executados
+                </div>
+              </div>
+
+              <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16 }}>
+                {[
+                  ["Faturamento total", `R$ ${(stats.faturamento || 0).toFixed(2)}`],
+                  ["Comissão calculada", `R$ ${comissao.toFixed(2)}`],
+                  ["Percentual de comissão", `${pctComissao}%`],
+                  ["Meta mensal", meta > 0 ? `R$ ${meta.toFixed(2)}` : "não definida"],
+                ].map(([r, v], i, arr) => (
+                  <div key={r} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderBottom: i < arr.length - 1 ? "1px solid #17171A" : "none" }}>
+                    <span style={{ fontSize: 12.5, color: "#8A8A90" }}>{r}</span>
+                    <span style={{ fontSize: 13, color: v === "não definida" ? "#5A5A5F" : "#F3F3F1", textAlign: "right" }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: 14, fontSize: 11.5, color: "#6E6E73", lineHeight: 1.5 }}>
+                Cálculo feito sobre as OS finalizadas registradas para este técnico. Ajuste o percentual no cadastro se necessário.
+              </div>
+            </>
+          )
+        )}
       </div>
     </div>
   );
 }
 
 function FuncionariosModule() {
-  const [mode, setMode] = useState("lista"); // lista | novo | perfil
   const [lista, setLista] = useState(null);
+  const [ordens, setOrdens] = useState([]);
+  const [rastreios, setRastreios] = useState([]);
+  const [statsPorTecnico, setStatsPorTecnico] = useState({});
+  const [mode, setMode] = useState("lista");
   const [selected, setSelected] = useState(null);
+  const [abaPerfil, setAbaPerfil] = useState("perfil");
+  const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState("Todos");
 
   const load = useCallback(async () => {
-    const items = await carregarTudoStorage("funcionarios:");
-    items.sort((a, b) => (a.nome > b.nome ? 1 : -1));
-    setLista(items);
+    try {
+      const funcionarios = await carregarTudoStorage("funcionarios:");
+      const [os, osFrio, rast] = await Promise.all([
+        carregarTudoStorage("ordens-servico:"),
+        carregarTudoStorage("os-frio:"),
+        carregarTudoStorage("rastreios:").catch(() => []),
+      ]);
+      const todasOS = [...os, ...osFrio];
+      setOrdens(todasOS);
+      setRastreios(rast || []);
+
+      // números reais por técnico, para exibir no card
+      const mapa = {};
+      funcionarios.forEach((f) => {
+        const minhas = todasOS.filter((o) => o.tecnico === f.nome);
+        const finalizadas = minhas.filter((o) => ["FINALIZADA", "Finalizada"].includes(o.status));
+        mapa[f.nome] = {
+          concluidas: finalizadas.length,
+          faturamento: finalizadas.reduce((a, o) => a + (Number(o.valorTotal) || 0), 0),
+        };
+      });
+      setStatsPorTecnico(mapa);
+      funcionarios.sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+      setLista(funcionarios);
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "carregar equipe"));
+      setLista([]);
+    }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
+
+  const comStatus = useMemo(
+    () => (lista || []).map((f) => ({ ...f, _op: statusOperacional(f, ordens, rastreios) })),
+    [lista, ordens, rastreios]
+  );
+
+  const indicadores = useMemo(() => {
+    const c = (s) => comStatus.filter((f) => f._op === s).length;
+    return {
+      total: comStatus.length,
+      disponiveis: c("Disponível"),
+      atendimento: c("Em atendimento"),
+      deslocamento: c("Em deslocamento"),
+    };
+  }, [comStatus]);
+
+  const filtrados = useMemo(() => {
+    let l = comStatus;
+    if (filtro !== "Todos") l = l.filter((f) => f._op === filtro);
+    const q = busca.trim().toLowerCase();
+    if (q) l = l.filter((f) => [f.nome, f.cargo, f.regiao, f.telefone].filter(Boolean).join(" ").toLowerCase().includes(q));
+    return l;
+  }, [comStatus, filtro, busca]);
 
   if (mode === "novo") {
     return (
       <div style={{ padding: 16, paddingBottom: 40 }}>
-        <button onClick={() => setMode("lista")} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <button onClick={() => { setSelected(null); setMode("lista"); }} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
           <ChevronLeft size={15} /> voltar
         </button>
         <FuncionarioForm
@@ -7641,7 +8419,8 @@ function FuncionariosModule() {
     return (
       <FuncionarioPerfil
         func={selected}
-        onBack={() => { setSelected(null); setMode("lista"); }}
+        abaInicial={abaPerfil}
+        onBack={() => { setSelected(null); setAbaPerfil("perfil"); setMode("lista"); }}
         onEdit={(f) => { setSelected({ ...f, editing: true }); setMode("novo"); }}
         onDeleted={() => { setSelected(null); setMode("lista"); load(); }}
       />
@@ -7650,47 +8429,127 @@ function FuncionariosModule() {
 
   return (
     <div style={{ padding: 16, paddingBottom: 40 }}>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 2, textTransform: "uppercase" }}>
+        Gestão de equipe · ALLA SERVICE
+      </div>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 22, fontWeight: 700, color: "#F3F3F1", margin: "4px 0 16px" }}>
+        Equipe Técnica
+      </div>
+
+      {/* indicadores em tempo real */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 16 }}>
+        <MiniIndicador icone={Users} valor={String(indicadores.total)} rotulo="Total" cor="#C9A24B" />
+        <MiniIndicador icone={CheckCircle2} valor={String(indicadores.disponiveis)} rotulo="Disponíveis" cor="#4ADE80" />
+        <MiniIndicador icone={Wrench} valor={String(indicadores.atendimento)} rotulo="Em atendimento" cor="#E9C878" />
+        <MiniIndicador icone={Navigation} valor={String(indicadores.deslocamento)} rotulo="Em deslocamento" cor="#4681DF" />
+      </div>
+
       <button
         onClick={() => { setSelected(null); setMode("novo"); }}
-        style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}
+        style={{ ...btnPrincipal, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px 0", marginBottom: 14 }}
       >
-        <Plus size={16} /> Novo funcionário
+        <Plus size={16} /> Novo técnico
       </button>
+
+      <div style={{ position: "relative", marginBottom: 12 }}>
+        <Search size={15} color="#6E6E73" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar técnico..." style={{ ...inputStyle, paddingLeft: 34 }} />
+      </div>
+
+      {/* filtros: única área com rolagem horizontal permitida */}
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+        {["Todos", "Disponível", "Em atendimento", "Em deslocamento", "Indisponível"].map((f) => {
+          const on = filtro === f;
+          return (
+            <button
+              key={f}
+              onClick={() => setFiltro(f)}
+              style={{
+                flexShrink: 0,
+                fontSize: 11.5,
+                padding: "7px 13px",
+                borderRadius: 20,
+                border: `1px solid ${on ? "#C9A24B" : "#2A2A2E"}`,
+                background: on ? "rgba(201,162,75,0.12)" : "transparent",
+                color: on ? "#E9C878" : "#8A8A90",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                transition: "color 180ms, border-color 180ms, background 180ms",
+              }}
+            >
+              {f}
+            </button>
+          );
+        })}
+      </div>
 
       {lista === null ? (
         <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
-      ) : lista.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "50px 20px", color: "#6E6E73" }}>
-          <Users size={28} style={{ marginBottom: 10, opacity: 0.6 }} />
-          <div style={{ fontSize: 13.5 }}>Nenhum funcionário cadastrado ainda.</div>
-        </div>
+      ) : filtrados.length === 0 ? (
+        <EstadoVazio
+          icone={Users}
+          titulo={comStatus.length === 0 ? "Nenhum técnico cadastrado" : "Nenhum técnico encontrado"}
+          texto={comStatus.length === 0 ? "Cadastre o primeiro integrante da equipe para acompanhar desempenho e comissões." : "Ajuste a busca ou o filtro para ver outros integrantes."}
+        />
       ) : (
-        lista.map((f) => (
-          <button
-            key={f.id}
-            onClick={() => { setSelected(f); setMode("perfil"); }}
-            style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 14px", marginBottom: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}
-          >
-            <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", background: "#1C1C1F", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {f.foto ? <img src={f.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={16} color="#6E6E73" />}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 14, color: "#F3F3F1" }}>{f.nome}</div>
-              <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>{f.cargo}</div>
-            </div>
-            <span
-              style={{
-                fontSize: 9.5,
-                padding: "3px 8px",
-                borderRadius: 6,
-                color: f.status === "Ativo" ? "#4ADE80" : f.status === "Inativo" ? "#F0605A" : "#E9C878",
-                border: `1px solid ${f.status === "Ativo" ? "#4ADE80" : f.status === "Inativo" ? "#F0605A" : "#E9C878"}55`,
-              }}
+        filtrados.map((f) => {
+          const st = statsPorTecnico[f.nome] || { concluidas: 0, faturamento: 0 };
+          const nivel = nivelPorConcluidas(st.concluidas);
+          const pct = Number(f.comissaoPercent) || COMISSAO_PADRAO;
+          const cor = STATUS_OPERACIONAL[f._op];
+          return (
+            <div
+              key={f.id}
+              className="alla-tela"
+              style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 18, padding: 15, marginBottom: 12 }}
             >
-              {f.status}
-            </span>
-          </button>
-        ))
+              <div style={{ display: "flex", gap: 13, minWidth: 0 }}>
+                <div style={{ width: 54, height: 54, borderRadius: 15, overflow: "hidden", background: "#141416", border: "1px solid #24242A", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {f.foto ? <img src={f.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Users size={20} color="#6E6E73" />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 15.5, fontWeight: 600, color: "#F3F3F1", lineHeight: 1.25, wordBreak: "break-word" }}>{f.nome}</div>
+                      <div style={{ fontSize: 12, color: "#8A8A90", marginTop: 2 }}>{f.cargo}</div>
+                    </div>
+                    <span style={{ fontSize: 15, flexShrink: 0 }} title={nivel.atual.nome}>{nivel.atual.medalha}</span>
+                  </div>
+                  <div style={{ marginTop: 8 }}><Etiqueta texto={f._op} cor={cor} /></div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, margin: "14px 0 12px" }}>
+                {[
+                  ["OS concl.", String(st.concluidas)],
+                  ["Comissão", `R$ ${(st.faturamento * (pct / 100)).toFixed(0)}`],
+                  ["Avaliação", "—"],
+                ].map(([r, v]) => (
+                  <div key={r} style={{ background: "#111114", borderRadius: 10, padding: "9px 8px", minWidth: 0, textAlign: "center" }}>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8, color: "#8A8A8A", letterSpacing: 1, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: v === "—" ? "#4A4A4F" : "#F3F3F1", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {f.regiao && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#8A8A90", marginBottom: 12 }}>
+                  <MapPin size={12} color="#6E6E73" style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.regiao}</span>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 9 }}>
+                <button onClick={() => { setSelected(f); setAbaPerfil("perfil"); setMode("perfil"); }} style={{ ...btnPrincipal, padding: "10px 0", fontSize: 12 }}>
+                  Ver perfil
+                </button>
+                <button onClick={() => { setSelected(f); setAbaPerfil("performance"); setMode("perfil"); }} style={{ ...btnSecundario, padding: "10px 0", fontSize: 12 }}>
+                  Agenda
+                </button>
+              </div>
+            </div>
+          );
+        })
       )}
     </div>
   );
