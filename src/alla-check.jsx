@@ -7675,7 +7675,11 @@ function EstadoVazio({ icone: Icone, titulo, texto }) {
    guardada no próprio aparelho e sobrevive a recarregamentos. */
 function obterAuth() {
   try {
-    if (!window.__allaFirebaseApp) return null;
+    // se o app principal ainda não existir (ex.: storage já fornecido pelo
+    // ambiente), inicia uma instância própria com a mesma configuração
+    if (!window.__allaFirebaseApp) {
+      window.__allaFirebaseApp = initializeApp(firebaseConfig);
+    }
     if (!window.__allaAuth) {
       window.__allaAuth = getAuth(window.__allaFirebaseApp);
       setPersistence(window.__allaAuth, browserLocalPersistence).catch(() => {});
@@ -7703,6 +7707,16 @@ function mensagemErroAuth(e) {
     "auth/operation-not-allowed":
       "Login por e-mail e senha ainda não está habilitado no Firebase (Authentication → Sign-in method).",
     "auth/missing-password": "Informe a senha.",
+    "auth/unauthorized-domain":
+      "Este endereço não está autorizado no Firebase (Authentication → Settings → Authorized domains).",
+    "auth/invalid-api-key": "Chave do Firebase inválida na configuração do app.",
+    "auth/api-key-not-valid": "Chave do Firebase inválida na configuração do app.",
+    "auth/app-not-authorized": "Este app não está autorizado a usar o Firebase Authentication.",
+    "auth/internal-error": "Erro interno do Firebase. Tente novamente em instantes.",
+    "auth/admin-restricted-operation":
+      "O Firebase está bloqueando novos cadastros (Authentication → Settings → verifique se o cadastro está permitido).",
+    "auth/configuration-not-found":
+      "Configuração de autenticação não encontrada no projeto Firebase.",
   };
   return mapa[codigo] || "Não foi possível concluir. Tente novamente.";
 }
@@ -7830,7 +7844,14 @@ function TelaAutenticacao() {
         setAviso("Enviamos um link de redefinição para o seu e-mail.");
       }
     } catch (e) {
-      setErro(mensagemErroAuth(e));
+      // erro técnico completo no console, para diagnóstico
+      console.error("[ALLA CHECK] Falha na autenticação:", e && e.code, e && e.message, e);
+      const amigavel = mensagemErroAuth(e);
+      const codigo = (e && e.code) || "";
+      // quando o código não é um dos previstos, mostra-o na tela em vez de
+      // esconder atrás de uma mensagem genérica
+      const previsto = amigavel !== "Não foi possível concluir. Tente novamente.";
+      setErro(previsto ? amigavel : `${amigavel}${codigo ? ` (${codigo})` : ""}`);
     } finally {
       setCarregando(false);
     }
