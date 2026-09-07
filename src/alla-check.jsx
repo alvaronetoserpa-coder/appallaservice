@@ -904,7 +904,7 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
           glow="#4681DF"
           value={reportCount}
           label="Ordens Concluídas"
-          onClick={() => onNavigate("historico")}
+          onClick={() => onNavigate("os")}
           left={78}
           top={531}
           width={286}
@@ -1155,7 +1155,6 @@ const TOOLS = [
   { key: "manuais", label: "Manuais", desc: "Biblioteca de manuais técnicos em PDF", icon: BookOpen, active: false },
   { key: "rastreio-tecnico", label: "Rastreio do Técnico", desc: "Acompanhamento do técnico em campo", icon: Navigation, active: true },
   { key: "relatorios-financeiros", label: "Relatórios Financeiros", desc: "Faturamento, custos e lucro por período", icon: LineChart, active: true },
-  { key: "gerador-os", label: "Gerador de Ordem de Serviço", desc: "OS profissional em PDF com assinatura", icon: FileText, active: false },
   { key: "laudo-tecnico", label: "Gerador de Laudo Técnico", desc: "Laudo profissional a partir do diagnóstico", icon: FileCheck2, active: true },
   { key: "pmoc-tool", label: "PMOC", desc: "Plano de manutenção com alertas de vencimento", icon: CalendarClock, active: true },
   { key: "mensagens-whatsapp", label: "Mensagens WhatsApp", desc: "Mensagens prontas para cada etapa do serviço", icon: MessageSquareText, active: false },
@@ -1245,7 +1244,7 @@ function ToolCard({ tool, onClick }) {
    o que não estiver listado aqui cai automaticamente em "Utilidades". */
 const TOOL_CATEGORIAS = [
   { titulo: "Gestão", chaves: ["assinaturas", "pmoc-tool"] },
-  { titulo: "Operação", chaves: ["rastreio-tecnico", "gerador-os", "laudo-tecnico"] },
+  { titulo: "Operação", chaves: ["rastreio-tecnico", "laudo-tecnico"] },
   { titulo: "Equipamentos", chaves: ["historico-equipamento", "manuais"] },
   { titulo: "Financeiro", chaves: ["relatorios-financeiros"] },
   { titulo: "Inteligência Artificial", chaves: ["orcamento-ia", "pecas-ia", "checklist-ia", "assistente-ia"] },
@@ -1258,7 +1257,6 @@ const TOOL_CORES = {
   assinaturas: "#C9A24B",
   "pmoc-tool": "#9B8AFB",
   "rastreio-tecnico": "#4681DF",
-  "gerador-os": "#4681DF",
   "laudo-tecnico": "#3FBCD1",
   "historico-equipamento": "#E07A30",
   manuais: "#8A8A90",
@@ -5191,6 +5189,8 @@ function OrdensServicoModule() {
   const [mode, setMode] = useState("lista"); // lista | novo | detalhe
   const [lista, setLista] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState("Todas");
 
   const load = useCallback(async () => {
     try {
@@ -5237,6 +5237,31 @@ function OrdensServicoModule() {
       notificarErroBanco(diagnosticarErroFirestore(err, "operação"));
     }
   };
+
+  /* busca por cliente, número da OS ou equipamento + filtro por status */
+  const filtradas = useMemo(() => {
+    let l = lista || [];
+    if (filtro !== "Todas") l = l.filter((os) => (os.status || "").toUpperCase() === filtro.toUpperCase());
+    const q = busca.trim().toLowerCase();
+    if (q) {
+      l = l.filter((os) =>
+        [os.clienteNome, os.numero, os.eqTipo, os.eqMarca, os.eqModelo, os.eqSerie, os.tecnico]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      );
+    }
+    return l;
+  }, [lista, busca, filtro]);
+
+  const contagem = useMemo(() => {
+    const c = { Todas: (lista || []).length };
+    Object.keys(OS_STATUS_COLOR).forEach((st) => {
+      c[st] = (lista || []).filter((os) => (os.status || "").toUpperCase() === st).length;
+    });
+    return c;
+  }, [lista]);
 
   if (mode === "novo") {
     return (
@@ -5329,17 +5354,65 @@ function OrdensServicoModule() {
         <Plus size={16} /> Nova Ordem de Serviço
       </button>
 
+      <div style={{ position: "relative", marginBottom: 12 }}>
+        <Search size={15} color="#6E6E73" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por cliente, nº da OS ou equipamento..."
+          style={{ ...inputStyle, paddingLeft: 34 }}
+        />
+      </div>
+
+      {/* filtros por status — única área com rolagem horizontal */}
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+        {["Todas", ...Object.keys(OS_STATUS_COLOR)].map((f) => {
+          const on = filtro === f;
+          const cor = f === "Todas" ? "#C9A24B" : OS_STATUS_COLOR[f];
+          const qtd = contagem[f] || 0;
+          return (
+            <button
+              key={f}
+              onClick={() => setFiltro(f)}
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11.5,
+                padding: "7px 12px",
+                borderRadius: 20,
+                border: `1px solid ${on ? cor : "#2A2A2E"}`,
+                background: on ? `${cor}1A` : "transparent",
+                color: on ? cor : "#8A8A90",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                textTransform: "capitalize",
+                transition: "color 180ms, border-color 180ms, background 180ms",
+              }}
+            >
+              {f.toLowerCase()}
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, opacity: 0.75 }}>{qtd}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {lista === null ? (
         <div style={{ textAlign: "center", padding: 30 }}>
           <Loader2 size={20} className="spin" />
         </div>
-      ) : lista.length === 0 ? (
+      ) : filtradas.length === 0 ? (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#6E6E73" }}>
           <Wrench size={28} style={{ marginBottom: 10, opacity: 0.6 }} />
-          <div style={{ fontSize: 13.5 }}>Nenhuma OS cadastrada ainda.</div>
+          <div style={{ fontSize: 13.5 }}>
+            {(lista || []).length === 0
+              ? "Nenhuma OS cadastrada ainda."
+              : "Nenhuma OS encontrada para esta busca ou filtro."}
+          </div>
         </div>
       ) : (
-        lista.map((os) => {
+        filtradas.map((os) => {
           const cor = OS_STATUS_COLOR[os.status] || "#8A8A90";
           return (
             <button
