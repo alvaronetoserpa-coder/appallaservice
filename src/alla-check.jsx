@@ -176,6 +176,14 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
     _db = getFirestore(_app);
     // a autenticação usa a MESMA instância do Firebase, sem conexão extra
     window.__allaFirebaseApp = _app;
+    try {
+      // O Firebase cuida do hash da senha e da sessão: nenhuma senha
+      // passa pelo nosso banco nem fica guardada no aparelho.
+      window.__allaAuth = getAuth(_app);
+      setPersistence(window.__allaAuth, browserLocalPersistence).catch(() => {});
+    } catch (e) {
+      console.error("ALLA CHECK: falha ao iniciar a autenticação.", e);
+    }
     _fsReady = true;
   } catch (e) {
     console.error("ALLA CHECK: falha ao iniciar o Firebase — confira o firebaseConfig.", e);
@@ -424,7 +432,8 @@ function Header({ title, onBack, onMenu }) {
 }
 
 /* ---------------- Menu Drawer (hamburger) ---------------- */
-function MenuDrawer({ open, onClose, onNavigate }) {
+function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
+  const { podeInstalar, instalar } = useInstalacao();
   return (
     <div
       style={{
@@ -547,6 +556,57 @@ function MenuDrawer({ open, onClose, onNavigate }) {
             </button>
           );
         })}
+
+        {/* conta do usuário e saída */}
+        <div style={{ marginTop: 22, paddingTop: 16, borderTop: "1px solid #161616" }}>
+          {usuario && (
+            <div style={{ fontSize: 12, color: "#7A7A7A", marginBottom: 12, paddingLeft: 4, wordBreak: "break-word" }}>
+              {usuario.displayName || usuario.email}
+            </div>
+          )}
+          {podeInstalar && (
+            <button
+              onClick={instalar}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                background: "rgba(201,162,75,0.08)",
+                border: "1px solid rgba(201,162,75,0.40)",
+                borderRadius: 12,
+                padding: "11px 12px",
+                color: "#E9C878",
+                fontFamily: "'Roboto',sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                marginBottom: 10,
+              }}
+            >
+              <Plus size={15} color="#C9A24B" /> Instalar app
+            </button>
+          )}
+          <button
+            onClick={onSair}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              background: "transparent",
+              border: "1px solid #2A2A2E",
+              borderRadius: 12,
+              padding: "11px 12px",
+              color: "#C7C9CE",
+              fontFamily: "'Roboto',sans-serif",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            <X size={15} color="#8A8A90" /> Sair da conta
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -7627,6 +7687,47 @@ function CampoAuth({ icone: Icone, tipo = "text", valor, onChange, placeholder, 
   );
 }
 
+/* Botão "Instalar app": só aparece quando o navegador realmente permite
+   instalar. Se o app já estiver instalado, nada é mostrado. */
+function useInstalacao() {
+  const [evento, setEvento] = useState(null);
+  const [instalado, setInstalado] = useState(false);
+
+  useEffect(() => {
+    const jaInstalado =
+      window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+    if (jaInstalado || window.navigator.standalone) setInstalado(true);
+
+    const aoPoderInstalar = (e) => {
+      e.preventDefault();
+      setEvento(e);
+    };
+    const aoInstalar = () => {
+      setInstalado(true);
+      setEvento(null);
+    };
+    window.addEventListener("beforeinstallprompt", aoPoderInstalar);
+    window.addEventListener("appinstalled", aoInstalar);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", aoPoderInstalar);
+      window.removeEventListener("appinstalled", aoInstalar);
+    };
+  }, []);
+
+  const instalar = async () => {
+    if (!evento) return;
+    evento.prompt();
+    try {
+      await evento.userChoice;
+    } catch {
+      /* usuário fechou o diálogo */
+    }
+    setEvento(null);
+  };
+
+  return { podeInstalar: !!evento && !instalado, instalar, instalado };
+}
+
 function TelaAutenticacao() {
   const [modo, setModo] = useState("login"); // login | cadastro | recuperar
   const [nome, setNome] = useState("");
@@ -10731,8 +10832,61 @@ class LimiteDeErro extends React.Component {
   }
 }
 
+/* Porta de entrada: enquanto não houver sessão válida, o app não é montado.
+   Assim nenhuma tela interna fica acessível sem autenticação. */
+/* Protege o aplicativo: sem sessão válida, só a tela de login é exibida. */
+/* Porta de entrada: sem sessão válida o app interno nem chega a ser montado,
+   então nenhuma tela protegida fica acessível sem login. */
 export default function AllaCheckApp() {
-  useFonts();
+  const [usuario, setUsuario] = useState(undefined); // undefined = ainda verificando
+  const [semAuth, setSemAuth] = useState(false);
+
+  useEffect(() => {
+    const auth = obterAuth();
+    if (!auth) {
+      setSemAuth(true);
+      setUsuario(null);
+      return;
+    }
+    const parar = onAuthStateChanged(
+      auth,
+      (u) => setUsuario(u || null),
+      (e) => {
+        console.error("ALLA CHECK: falha ao verificar a sessão", e);
+        setUsuario(null);
+      }
+    );
+    return () => parar();
+  }, []);
+
+  if (usuario === undefined) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Loader2 size={22} className="spin" color="#C9A24B" />
+      </div>
+    );
+  }
+
+  if (semAuth) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ maxWidth: 340, textAlign: "center", color: "#8A8A90", fontSize: 13.5, lineHeight: 1.6 }}>
+          <img src={LOGO_DATA_URI} alt="" style={{ width: 130, display: "block", margin: "0 auto 20px" }} />
+          Não foi possível iniciar a autenticação. Verifique a conexão e recarregue a página.
+        </div>
+      </div>
+    );
+  }
+
+  // LOGIN DESATIVADO POR ORA:
+  // a tela de login já está pronta logo abaixo. Para ativá-la, basta
+  // habilitar E-mail/senha no Firebase e trocar esta linha por:
+  //   if (!usuario) return <TelaAutenticacao />;
+  return <AllaCheckAppInterno usuario={usuario} />;
+}
+
+
+function AllaCheckAppInterno({ usuario }) {
   const [view, setView] = useState("home");
   const [reportCount, setReportCount] = useState(0);
   const [orcamentosCount, setOrcamentosCount] = useState(0);
@@ -10854,7 +11008,21 @@ export default function AllaCheckApp() {
         }
       `}</style>
 
-      <MenuDrawer open={menuOpen} onClose={() => setMenuOpen(false)} onNavigate={setView} />
+      <MenuDrawer
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onNavigate={setView}
+        usuario={usuario}
+        onSair={async () => {
+          try {
+            const auth = obterAuth();
+            if (auth) await signOut(auth);
+          } catch (e) {
+            console.error("Erro ao sair", e);
+            notificarErroBanco("Não foi possível sair. Tente novamente.");
+          }
+        }}
+      />
 
       {view !== "home" && view !== "gestao-inteligente" && view !== "financeiro" && (
         <Header
