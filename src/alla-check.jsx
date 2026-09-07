@@ -1165,84 +1165,113 @@ const TOOLS = [
 function ToolCard({ tool, onClick }) {
   const Icon = tool.icon;
   const { pressed, handlers } = useCardFX();
+  const cor = corDaFerramenta(tool);
+  const ativo = tool.active;
+
   return (
     <button
       onClick={onClick}
       {...handlers}
       className={`premium-card${pressed ? " is-pressed" : ""}`}
       style={{
-        background: "#111110",
-        border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: 20,
-        padding: "16px 14px",
+        background: "#0C0C0D",
+        // borda quase imperceptível; acende discretamente na cor da ferramenta ao tocar
+        border: `1px solid ${pressed && ativo ? `${cor}55` : "rgba(255,255,255,0.06)"}`,
+        borderRadius: 18,
+        padding: "15px 13px 13px",
         textAlign: "left",
         cursor: "pointer",
         display: "flex",
         flexDirection: "column",
-        gap: 10,
+        gap: 11,
+        minWidth: 0,
+        minHeight: 148,
+        opacity: ativo ? 1 : 0.62,
+        boxShadow: pressed && ativo ? `0 0 22px -12px ${cor}` : "none",
+        transition: "border-color 200ms, box-shadow 200ms, transform 190ms cubic-bezier(.4,0,.2,1)",
       }}
     >
       <div
         style={{
-          width: 44,
-          height: 44,
+          width: 42,
+          height: 42,
           borderRadius: 13,
-          background: tool.active ? "rgba(201,162,75,0.12)" : "rgba(255,255,255,0.04)",
-          border: `1px solid ${tool.active ? "rgba(201,162,75,0.35)" : "rgba(255,255,255,0.08)"}`,
+          flexShrink: 0,
+          background: ativo ? `${cor}16` : "rgba(255,255,255,0.03)",
+          border: `1px solid ${ativo ? `${cor}3A` : "rgba(255,255,255,0.07)"}`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Icon size={20} color={tool.active ? "#E9C878" : "#6E6E73"} strokeWidth={1.7} />
+        <Icon size={21} color={ativo ? cor : "#5A5A5F"} strokeWidth={1.7} />
       </div>
-      <div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
             fontFamily: "'Roboto',sans-serif",
-            fontSize: 14.5,
-            fontWeight: 500,
-            color: tool.active ? "#F3F3F1" : "#9A9A9A",
-            letterSpacing: 0.2,
-            marginBottom: 4,
+            fontSize: 14,
+            fontWeight: 600,
+            color: ativo ? "#F3F3F1" : "#8A8A90",
+            lineHeight: 1.25,
+            marginBottom: 5,
+            wordBreak: "break-word",
           }}
         >
           {tool.label}
         </div>
-        <div style={{ fontSize: 11.5, color: "#7A7A7A", lineHeight: 1.35 }}>{tool.desc}</div>
+        <div style={{ fontSize: 11.5, color: "#77777C", lineHeight: 1.4 }}>{tool.desc}</div>
       </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          marginTop: 2,
-        }}
-      >
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: tool.active ? "#4ADE80" : "#5A5A5A",
-            flexShrink: 0,
-          }}
-        />
+
+      {!ativo && (
         <span
           style={{
             fontFamily: "'JetBrains Mono',monospace",
-            fontSize: 9,
-            letterSpacing: 0.8,
-            color: tool.active ? "#4ADE80" : "#6E6E73",
+            fontSize: 8.5,
+            letterSpacing: 1,
+            color: "#6E6E73",
             textTransform: "uppercase",
           }}
         >
-          {tool.active ? "Disponível" : "Em breve"}
+          Em breve
         </span>
-      </div>
+      )}
     </button>
   );
 }
+
+/* Agrupamento visual das ferramentas. Nenhuma ferramenta é removida:
+   o que não estiver listado aqui cai automaticamente em "Utilidades". */
+const TOOL_CATEGORIAS = [
+  { titulo: "Gestão", chaves: ["assinaturas", "pmoc-tool"] },
+  { titulo: "Operação", chaves: ["rastreio-tecnico", "gerador-os", "laudo-tecnico"] },
+  { titulo: "Equipamentos", chaves: ["historico-equipamento", "manuais"] },
+  { titulo: "Financeiro", chaves: ["relatorios-financeiros"] },
+  { titulo: "Inteligência Artificial", chaves: ["orcamento-ia", "pecas-ia", "checklist-ia", "assistente-ia"] },
+  { titulo: "Comunicação", chaves: ["mensagens-whatsapp"] },
+  { titulo: "Utilidades", chaves: ["btu", "conversor"] },
+];
+
+/* Cor característica de cada ferramenta, para os ícones não ficarem todos iguais. */
+const TOOL_CORES = {
+  assinaturas: "#C9A24B",
+  "pmoc-tool": "#9B8AFB",
+  "rastreio-tecnico": "#4681DF",
+  "gerador-os": "#4681DF",
+  "laudo-tecnico": "#3FBCD1",
+  "historico-equipamento": "#E07A30",
+  manuais: "#8A8A90",
+  "relatorios-financeiros": "#4ADE80",
+  "orcamento-ia": "#E9C878",
+  "pecas-ia": "#9B8AFB",
+  "checklist-ia": "#3FBCD1",
+  "assistente-ia": "#9B8AFB",
+  "mensagens-whatsapp": "#4ADE80",
+  btu: "#4681DF",
+  conversor: "#E07A30",
+};
+const corDaFerramenta = (t) => TOOL_CORES[t.key] || "#C9A24B";
 
 const TOOL_ROUTE_OVERRIDES = { "pmoc-tool": "pmocs" };
 
@@ -1257,28 +1286,44 @@ function FerramentasScreen({ onNavigate }) {
     );
   }, [search]);
 
+  /* Monta os grupos a partir do que sobrou do filtro.
+     Qualquer ferramenta não mapeada entra em "Utilidades", então
+     nenhuma deixa de aparecer. */
+  const grupos = useMemo(() => {
+    const visiveis = new Set(filtered.map((t) => t.key));
+    const usadas = new Set();
+    const saida = [];
+
+    TOOL_CATEGORIAS.forEach(({ titulo, chaves }) => {
+      const itens = [];
+      chaves.forEach((k) => {
+        const t = TOOLS.find((x) => x.key === k);
+        if (t && visiveis.has(k)) itens.push(t);
+        if (t) usadas.add(k);
+      });
+      if (itens.length) saida.push({ titulo, itens });
+    });
+
+    const restantes = filtered.filter((t) => !usadas.has(t.key));
+    if (restantes.length) {
+      const utils = saida.find((g) => g.titulo === "Utilidades");
+      if (utils) utils.itens.push(...restantes);
+      else saida.push({ titulo: "Utilidades", itens: restantes });
+    }
+    return saida;
+  }, [filtered]);
+
   return (
-    <div style={{ padding: 16, paddingBottom: 40 }}>
-      <div
-        style={{
-          fontFamily: "'Roboto',sans-serif",
-          fontWeight: 700,
-          fontSize: 22,
-          color: "#F3F3F1",
-        }}
-      >
+    <div style={{ padding: "16px 14px 40px" }}>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 22, color: "#F3F3F1" }}>
         Ferramentas
       </div>
       <div style={{ fontSize: 12.5, color: "#8A8A90", marginTop: 4, marginBottom: 16 }}>
         Ferramentas inteligentes para facilitar seu trabalho
       </div>
 
-      <div style={{ position: "relative", marginBottom: 18 }}>
-        <Search
-          size={16}
-          color="#6E6E73"
-          style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}
-        />
+      <div style={{ position: "relative", marginBottom: 8 }}>
+        <Search size={16} color="#6E6E73" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -1287,21 +1332,39 @@ function FerramentasScreen({ onNavigate }) {
         />
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 12,
-        }}
-      >
-        {filtered.map((tool) => (
-          <ToolCard
-            key={tool.key}
-            tool={tool}
-            onClick={() => onNavigate(TOOL_ROUTE_OVERRIDES[tool.key] || `tool-${tool.key}`)}
-          />
-        ))}
-      </div>
+      {grupos.map(({ titulo, itens }) => (
+        <div key={titulo}>
+          {/* título da categoria: discreto, com um traço fino ocupando o resto da linha */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "26px 0 12px" }}>
+            <span
+              style={{
+                fontFamily: "'JetBrains Mono',monospace",
+                fontSize: 9.5,
+                color: "#8A8A90",
+                letterSpacing: 2,
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {titulo}
+            </span>
+            <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#4A4A4F" }}>
+              {itens.length}
+            </span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 11 }}>
+            {itens.map((tool) => (
+              <ToolCard
+                key={tool.key}
+                tool={tool}
+                onClick={() => onNavigate(TOOL_ROUTE_OVERRIDES[tool.key] || `tool-${tool.key}`)}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
 
       {filtered.length === 0 && (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#6E6E73", fontSize: 13 }}>
