@@ -80,5 +80,15 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // registra o service worker: faz o app abrir rápido e ser instalável
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js").catch(function (e) {
+            console.warn("ALLA CHECK: service worker não registrado", e);
+          });
+        });
+      }
+    </script>
   </body>
 </html>
