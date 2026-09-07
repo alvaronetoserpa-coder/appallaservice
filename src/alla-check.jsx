@@ -10941,10 +10941,10 @@ export default function AllaCheckApp() {
     );
   }
 
-  // LOGIN DESATIVADO POR ORA:
-  // a tela de login já está pronta logo abaixo. Para ativá-la, basta
-  // habilitar E-mail/senha no Firebase e trocar esta linha por:
-  //   if (!usuario) return <TelaAutenticacao />;
+  // Sem sessão válida, o app interno nem chega a ser montado:
+  // nenhuma tela protegida fica acessível sem login.
+  if (!usuario) return <TelaAutenticacao />;
+
   return <AllaCheckAppInterno usuario={usuario} />;
 }
 
