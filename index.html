@@ -63,15 +63,18 @@
         -webkit-tap-highlight-color: transparent;
       }
       /* transição de entrada das telas: suave, rápida, sem flash */
+      /* A troca de tela NÃO tem animação: o conteúdo aparece na hora.
+         Animar o container inteiro obrigava o navegador a repintar a
+         página toda, e era isso que travava no Android.
+         Esta animação sobrou apenas para blocos pequenos (login e abas
+         do perfil), onde o custo de pintura é irrelevante. */
       @keyframes allaEntradaTela {
-        from { opacity: 0; transform: translateY(6px); }
-        to   { opacity: 1; transform: translateY(0); }
+        from { opacity: 0; }
+        to   { opacity: 1; }
       }
       .alla-tela {
-        animation: allaEntradaTela 200ms cubic-bezier(.4, 0, .2, 1);
-        will-change: opacity, transform;
+        animation: allaEntradaTela 120ms linear;
       }
-      /* respeita quem prefere menos animação no sistema */
       @media (prefers-reduced-motion: reduce) {
         .alla-tela { animation: none; }
       }
