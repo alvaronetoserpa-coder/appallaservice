@@ -103,7 +103,12 @@ function diagnosticarErroFirestore(e, operacao) {
 
   const c = String(codigo);
   if (c.includes("permission-denied") || c.includes("insufficient permissions")) {
-    return "Banco de dados bloqueado: as regras de segurança do Firestore estão negando a gravação. É preciso liberar as regras no Console do Firebase.";
+    // extrai a coleção da descrição da operação, para dizer exatamente o que liberar
+    const m = /["`]?([a-z-]+):/.exec(String(operacao || ""));
+    const colecao = m ? m[1].replace(/-/g, "_") : null;
+    return colecao
+      ? `Banco de dados bloqueado: as regras do Firestore não liberam a coleção "${colecao}". Adicione-a à lista de coleções permitidas no Console do Firebase.`
+      : "Banco de dados bloqueado: as regras de segurança do Firestore estão negando a operação. É preciso liberar as regras no Console do Firebase.";
   }
   if (c.includes("unavailable") || c.includes("network") || c.includes("offline")) {
     return "Sem conexão com o banco de dados. Verifique a internet e tente novamente.";
@@ -210,7 +215,8 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
         delete data._fsUpdatedAt;
         return { key, value: JSON.stringify(data) };
       } catch (e) {
-        notificarErroBanco(diagnosticarErroFirestore(e, `ler "${key}"`));
+        console.error("[ALLA CHECK] Firestore recusou:", e && e.code, e && e.message, e);
+        notificarErroBanco(diagnosticarErroFirestore(e, `ler "${key}"`), { especifico: true });
         throw e;
       }
     },
@@ -229,7 +235,8 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
         await setDoc(ref, payload, { merge: true });
         return { key, value };
       } catch (e) {
-        notificarErroBanco(diagnosticarErroFirestore(e, `gravar "${key}"`));
+        console.error("[ALLA CHECK] Firestore recusou:", e && e.code, e && e.message, e);
+        notificarErroBanco(diagnosticarErroFirestore(e, `gravar "${key}"`), { especifico: true });
         throw e;
       }
     },
@@ -244,7 +251,8 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
         await deleteDoc(doc(_db, collectionName, docId));
         return { key, deleted: true };
       } catch (e) {
-        notificarErroBanco(diagnosticarErroFirestore(e, `excluir "${key}"`));
+        console.error("[ALLA CHECK] Firestore recusou:", e && e.code, e && e.message, e);
+        notificarErroBanco(diagnosticarErroFirestore(e, `excluir "${key}"`), { especifico: true });
         throw e;
       }
     },
@@ -262,6 +270,7 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
         snaps.forEach((d) => keys.push(`${cleanPrefix}:${d.id}`));
         return { keys };
       } catch (e) {
+        console.error("[ALLA CHECK] Firestore recusou:", e && e.code, e && e.message, e);
         notificarErroBanco(diagnosticarErroFirestore(e, `listar "${prefix}"`), { especifico: true });
         throw e;
       }
@@ -9005,7 +9014,6 @@ function FuncionariosModule() {
           return (
             <div
               key={f.id}
-              className="alla-tela"
               style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 18, padding: 15, marginBottom: 12 }}
             >
               <div style={{ display: "flex", gap: 13, minWidth: 0 }}>
@@ -12256,29 +12264,14 @@ export default function AllaCheckApp() {
 }
 
 
-/* Faz a tela atual sair antes da próxima entrar.
-   A saída é curta (150ms) para a navegação continuar parecendo imediata. */
+/* A troca de tela é IMEDIATA — nenhum atraso artificial.
+   A suavidade vem só da animação de entrada, que roda enquanto
+   o conteúdo já está na tela. */
 function useTransicaoTela(view) {
-  const [visivel, setVisivel] = useState(view);
-  const [saindo, setSaindo] = useState(false);
-
   useEffect(() => {
-    if (view === visivel) return;
-    if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisivel(view);
-      return;
-    }
-    setSaindo(true);
-    const t = setTimeout(() => {
-      setVisivel(view);
-      setSaindo(false);
-      // ao trocar de tela, volta ao topo — como faria um app nativo
-      try { window.scrollTo({ top: 0, behavior: "instant" }); } catch { window.scrollTo(0, 0); }
-    }, 150);
-    return () => clearTimeout(t);
-  }, [view, visivel]);
-
-  return { telaVisivel: visivel, saindo };
+    try { window.scrollTo({ top: 0, behavior: "instant" }); } catch { window.scrollTo(0, 0); }
+  }, [view]);
+  return { telaVisivel: view, saindo: false };
 }
 
 function AllaCheckAppInterno({ usuario }) {
