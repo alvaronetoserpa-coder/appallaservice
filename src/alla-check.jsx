@@ -11323,19 +11323,20 @@ const avMoeda = (v) => `R$ ${avNum(v).toFixed(2)}`;
 
 /* Cálculo central da cotação. Uma única fonte de verdade para os
    valores mostrados na tela, no PDF e na mensagem do WhatsApp. */
+const AV_COMISSAO_PADRAO = 10; // % sobre a venda, editável em cada cotação
+
 function avCalcular(cot) {
   const itens = cot.itens || [];
   const subtotal = itens.reduce((a, i) => a + avNum(i.precoVenda) * (avNum(i.qtd) || 1), 0);
-  const custoAparelhos = itens.reduce((a, i) => a + avNum(i.precoCusto) * (avNum(i.qtd) || 1), 0);
   const instalacao = avNum(cot.instalacao);
   const materiais = avNum(cot.materiais);
   const servicos = avNum(cot.servicos);
   const desconto = avNum(cot.desconto);
   const total = subtotal + instalacao + materiais + servicos - desconto;
-  const custoTotal = custoAparelhos + avNum(cot.custoInstalacao) + avNum(cot.custoMateriais);
-  const lucro = total - custoTotal;
-  const margem = total > 0 ? (lucro / total) * 100 : 0;
-  return { subtotal, instalacao, materiais, servicos, desconto, total, custoTotal, lucro, margem };
+  // comissão calculada sobre o total da venda
+  const pctComissao = cot.comissaoPercent === "" || cot.comissaoPercent == null ? AV_COMISSAO_PADRAO : avNum(cot.comissaoPercent);
+  const comissao = total * (pctComissao / 100);
+  return { subtotal, instalacao, materiais, servicos, desconto, total, pctComissao, comissao };
 }
 
 function avStatusEfetivo(cot) {
@@ -11360,8 +11361,8 @@ function AvProdutoForm({ editing, onDone, onCancel }) {
       gas: AV_GAS[0],
       voltagem: AV_VOLTAGEM[0],
       selo: AV_SELO[0],
-      precoCusto: "",
       precoVenda: "",
+      comissaoPercent: String(AV_COMISSAO_PADRAO),
       estoque: "",
       fornecedor: "",
       observacoes: "",
@@ -11372,12 +11373,12 @@ function AvProdutoForm({ editing, onDone, onCancel }) {
   const fileRef = useRef(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const margem = useMemo(() => {
+  const comissao = useMemo(() => {
     const v = avNum(form.precoVenda);
-    const c = avNum(form.precoCusto);
     if (!v) return null;
-    return { lucro: v - c, pct: ((v - c) / v) * 100 };
-  }, [form.precoVenda, form.precoCusto]);
+    const pct = avNum(form.comissaoPercent);
+    return { valor: v * (pct / 100), pct };
+  }, [form.precoVenda, form.comissaoPercent]);
 
   const escolherFoto = async (e) => {
     const file = e.target.files?.[0];
@@ -11477,15 +11478,15 @@ function AvProdutoForm({ editing, onDone, onCancel }) {
 
       <SecaoTitulo>Comercial</SecaoTitulo>
       <LinhaDupla>
-        <Field label="Preço de custo (R$)"><input style={inputStyle} value={form.precoCusto} onChange={set("precoCusto")} inputMode="decimal" /></Field>
         <Field label="Preço de venda (R$)"><input style={inputStyle} value={form.precoVenda} onChange={set("precoVenda")} inputMode="decimal" /></Field>
+        <Field label="Comissão (%)"><input style={inputStyle} value={form.comissaoPercent} onChange={set("comissaoPercent")} inputMode="decimal" /></Field>
       </LinhaDupla>
 
-      {margem && (
+      {comissao && (
         <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "11px 13px", marginBottom: 14, display: "flex", justifyContent: "space-between", gap: 10 }}>
-          <span style={{ fontSize: 12.5, color: "#8A8A90" }}>Lucro por unidade</span>
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: margem.lucro >= 0 ? "#4ADE80" : "#F0605A" }}>
-            {avMoeda(margem.lucro)} · {margem.pct.toFixed(1)}%
+          <span style={{ fontSize: 12.5, color: "#8A8A90" }}>Comissão por unidade</span>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: "#4ADE80" }}>
+            {avMoeda(comissao.valor)} · {comissao.pct.toFixed(1)}%
           </span>
         </div>
       )}
@@ -11518,11 +11519,10 @@ function AvCotacaoForm({ editing, produtos, onDone, onCancel }) {
       endereco: "",
       itens: [],
       instalacao: "",
-      custoInstalacao: "",
       materiais: "",
-      custoMateriais: "",
       servicos: "",
       desconto: "",
+      comissaoPercent: String(AV_COMISSAO_PADRAO),
       pagamento: "PIX / À vista",
       prazo: "",
       validadeDias: "7",
@@ -11559,7 +11559,6 @@ function AvCotacaoForm({ editing, produtos, onDone, onCancel }) {
           foto: prod.foto || null,
           qtd: 1,
           precoVenda: prod.precoVenda,
-          precoCusto: prod.precoCusto,
         },
       ],
     }));
@@ -11685,11 +11684,7 @@ function AvCotacaoForm({ editing, produtos, onDone, onCancel }) {
       <SecaoTitulo>Serviços e materiais</SecaoTitulo>
       <LinhaDupla>
         <Field label="Instalação (R$)"><input style={inputStyle} value={form.instalacao} onChange={set("instalacao")} inputMode="decimal" /></Field>
-        <Field label="Custo da instalação"><input style={inputStyle} value={form.custoInstalacao} onChange={set("custoInstalacao")} inputMode="decimal" placeholder="interno" /></Field>
-      </LinhaDupla>
-      <LinhaDupla>
         <Field label="Materiais (R$)"><input style={inputStyle} value={form.materiais} onChange={set("materiais")} inputMode="decimal" /></Field>
-        <Field label="Custo dos materiais"><input style={inputStyle} value={form.custoMateriais} onChange={set("custoMateriais")} inputMode="decimal" placeholder="interno" /></Field>
       </LinhaDupla>
       <LinhaDupla>
         <Field label="Serviços extras (R$)"><input style={inputStyle} value={form.servicos} onChange={set("servicos")} inputMode="decimal" /></Field>
@@ -11723,21 +11718,22 @@ function AvCotacaoForm({ editing, produtos, onDone, onCancel }) {
 
       {/* Margem — visível só aqui, nunca na proposta do cliente */}
       <div style={{ background: "rgba(74,222,128,0.04)", border: "1px solid rgba(74,222,128,0.22)", borderRadius: 14, padding: 13, marginTop: 12 }}>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#4ADE80", letterSpacing: 1.4, textTransform: "uppercase", marginBottom: 8 }}>
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#4ADE80", letterSpacing: 1.4, textTransform: "uppercase", marginBottom: 10 }}>
           Interno · não aparece na proposta
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8 }}>
-          {[
-            ["Custo", avMoeda(calc.custoTotal), "#C7C9CE"],
-            ["Lucro", avMoeda(calc.lucro), calc.lucro >= 0 ? "#4ADE80" : "#F0605A"],
-            ["Margem", `${calc.margem.toFixed(1)}%`, calc.margem >= 20 ? "#4ADE80" : "#E9C878"],
-          ].map(([r, v, c]) => (
-            <div key={r} style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A8A", letterSpacing: 1, textTransform: "uppercase" }}>{r}</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: c, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
+        <LinhaDupla>
+          <Field label="Comissão (%)">
+            <input style={inputStyle} value={form.comissaoPercent} onChange={set("comissaoPercent")} inputMode="decimal" />
+          </Field>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A8A", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>
+              Comissão da venda
             </div>
-          ))}
-        </div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: "#4ADE80", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {avMoeda(calc.comissao)}
+            </div>
+          </div>
+        </LinhaDupla>
       </div>
 
       <SecaoTitulo>Condições</SecaoTitulo>
@@ -11991,7 +11987,7 @@ function AvCotacaoDetalhe({ cot, onBack, onEditar, onMudou }) {
           Interno · não vai na proposta
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8 }}>
-          {[["Custo", avMoeda(calc.custoTotal)], ["Lucro", avMoeda(calc.lucro)], ["Margem", `${calc.margem.toFixed(1)}%`]].map(([r, v]) => (
+          {[["Valor da venda", avMoeda(calc.total)], ["Comissão", avMoeda(calc.comissao)], ["Percentual", `${calc.pctComissao}%`]].map(([r, v]) => (
             <div key={r} style={{ minWidth: 0 }}>
               <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A8A", letterSpacing: 1, textTransform: "uppercase" }}>{r}</div>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#F3F3F1", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
@@ -12085,8 +12081,8 @@ function AllaVendaModule() {
     const enviadas = comStatus.filter((c) => ["ENVIADA", "EM NEGOCIAÇÃO"].includes(c._st));
     const abertas = comStatus.filter((c) => c._st === "RASCUNHO");
     const vendido = aprovadas.reduce((a, c) => a + avCalcular(c).total, 0);
-    const lucro = aprovadas.reduce((a, c) => a + avCalcular(c).lucro, 0);
-    const margem = vendido > 0 ? (lucro / vendido) * 100 : 0;
+    const comissao = aprovadas.reduce((a, c) => a + avCalcular(c).comissao, 0);
+    const pctMedio = vendido > 0 ? (comissao / vendido) * 100 : 0;
     const conversao = comStatus.length ? (aprovadas.length / comStatus.length) * 100 : 0;
 
     const porProduto = {};
@@ -12095,7 +12091,7 @@ function AllaVendaModule() {
     }));
     const topProdutos = Object.entries(porProduto).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    return { abertas: abertas.length, enviadas: enviadas.length, aprovadas: aprovadas.length, vendido, lucro, margem, conversao, topProdutos };
+    return { abertas: abertas.length, enviadas: enviadas.length, aprovadas: aprovadas.length, vendido, comissao, pctMedio, conversao, topProdutos };
   }, [comStatus]);
 
   const filtradas = useMemo(() => {
@@ -12105,6 +12101,7 @@ function AllaVendaModule() {
     if (q) l = l.filter((c) => [c.cliente, c.numero, ...(c.itens || []).map((i) => i.descricao)].filter(Boolean).join(" ").toLowerCase().includes(q));
     return l;
   }, [comStatus, filtro, busca]);
+  const filtradasVisiveis = useListaProgressiva(filtradas);
 
   const produtosFiltrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -12129,57 +12126,102 @@ function AllaVendaModule() {
     );
   }
 
+  /* ---------- resumo compacto: 4 indicadores numa única faixa ---------- */
+  const Resumo = () => {
+    const itens = [
+      ["Vendido", `R$ ${painel.vendido.toFixed(0)}`, "#F3F3F1"],
+      ["Comissão", `R$ ${painel.comissao.toFixed(0)}`, "#4ADE80"],
+      ["% média", `${painel.pctMedio.toFixed(0)}%`, "#C9A24B"],
+      ["Conversão", `${painel.conversao.toFixed(0)}%`, "#4681DF"],
+    ];
+    return (
+      <div
+        style={{
+          display: "flex",
+          background: "#0A0A0B",
+          border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: 14,
+          overflow: "hidden",
+          marginBottom: 22,
+        }}
+      >
+        {itens.map(([rotulo, valor, cor], i) => (
+          <div
+            key={rotulo}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: "13px 8px",
+              textAlign: "center",
+              borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "'JetBrains Mono',monospace",
+                fontSize: 8,
+                color: "#6E6E73",
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {rotulo}
+            </div>
+            <div
+              style={{
+                fontFamily: "'Roboto',sans-serif",
+                fontWeight: 700,
+                fontSize: "clamp(13px, 4vw, 16px)",
+                color: cor,
+                marginTop: 4,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {valor}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
-    <div style={{ padding: 16, paddingBottom: 40 }}>
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 2, textTransform: "uppercase" }}>
+    <div style={{ padding: "20px 18px 40px" }}>
+      {/* título com bastante respiro */}
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#6E6E73", letterSpacing: 2.4, textTransform: "uppercase" }}>
         Vendas · Ar-condicionado
       </div>
-      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 21, fontWeight: 700, color: "#F3F3F1", margin: "4px 0 16px" }}>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 25, fontWeight: 700, color: "#F5F5F5", margin: "5px 0 24px" }}>
         ALLA VENDA
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 12 }}>
-        <MiniIndicador icone={FileText} valor={String(painel.abertas)} rotulo="Rascunhos" cor="#8A8A90" />
-        <MiniIndicador icone={Send} valor={String(painel.enviadas)} rotulo="Enviadas" cor="#4681DF" />
-        <MiniIndicador icone={CheckCircle2} valor={String(painel.aprovadas)} rotulo="Aprovadas" cor="#4ADE80" />
-        <MiniIndicador icone={DollarSign} valor={`R$ ${painel.vendido.toFixed(0)}`} rotulo="Vendido" cor="#C9A24B" />
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 16 }}>
-        <MiniIndicador icone={TrendingUp} valor={`R$ ${painel.lucro.toFixed(0)}`} rotulo="Lucro" cor="#4ADE80" />
-        <MiniIndicador icone={BarChart3} valor={`${painel.margem.toFixed(0)}%`} rotulo="Margem" cor="#E9C878" />
-        <MiniIndicador icone={CheckCircle2} valor={`${painel.conversao.toFixed(0)}%`} rotulo="Conversão" cor="#4681DF" />
-      </div>
+      <Resumo />
 
-      {painel.topProdutos.length > 0 && (
-        <>
-          <SecaoTitulo>Mais vendidos</SecaoTitulo>
-          <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 14, marginBottom: 16 }}>
-            {painel.topProdutos.map(([nome, qtd]) => {
-              const max = painel.topProdutos[0][1] || 1;
-              return (
-                <div key={nome} style={{ marginBottom: 9 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
-                    <span style={{ fontSize: 12.5, color: "#C7C9CE", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
-                    <span style={{ fontSize: 12, color: "#E9C878", fontFamily: "'JetBrains Mono',monospace" }}>{qtd}</span>
-                  </div>
-                  <div style={{ height: 5, background: "#1A1A1D", borderRadius: 3, overflow: "hidden" }}>
-                    <div style={{ width: `${(qtd / max) * 100}%`, height: "100%", background: "linear-gradient(90deg,#C9A24B,#E9C878)", borderRadius: 3 }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      <div style={{ display: "flex", borderBottom: "1px solid #1C1C1F", marginBottom: 16 }}>
+      {/* abas minimalistas */}
+      <div style={{ display: "flex", gap: 26, marginBottom: 22, borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
         {[["cotacoes", "Cotações"], ["catalogo", "Catálogo"]].map(([id, nome]) => {
           const on = aba === id;
           return (
             <button
               key={id}
               onClick={() => { setAba(id); setBusca(""); }}
-              style={{ flex: 1, background: "none", border: "none", borderBottom: `2px solid ${on ? "#C9A24B" : "transparent"}`, color: on ? "#E9C878" : "#7A7A7A", fontFamily: "'Roboto',sans-serif", fontWeight: on ? 600 : 400, fontSize: 12.5, textTransform: "uppercase", letterSpacing: 0.6, padding: "11px 4px", cursor: "pointer", transition: "color 200ms, border-color 200ms" }}
+              style={{
+                background: "none",
+                border: "none",
+                borderBottom: `2px solid ${on ? "#C9A24B" : "transparent"}`,
+                color: on ? "#F3F3F1" : "#6E6E73",
+                fontFamily: "'Roboto',sans-serif",
+                fontWeight: on ? 600 : 400,
+                fontSize: 13.5,
+                padding: "0 0 11px",
+                cursor: "pointer",
+                transition: "color 180ms, border-color 180ms",
+              }}
             >
               {nome}
             </button>
@@ -12187,25 +12229,73 @@ function AllaVendaModule() {
         })}
       </div>
 
+      {/* acao principal: proporcional, nao gigante */}
       <button
         onClick={() => (aba === "cotacoes" ? (setSelecionada(null), setModo("nova")) : (setProdutoEdit(null), setModo("produto")))}
-        style={{ ...btnPrincipal, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px 0", marginBottom: 14 }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          background: "rgba(201,162,75,0.10)",
+          border: "1px solid rgba(201,162,75,0.4)",
+          borderRadius: 10,
+          padding: "9px 16px",
+          color: "#E9C878",
+          fontFamily: "'Roboto',sans-serif",
+          fontWeight: 600,
+          fontSize: 12.5,
+          cursor: "pointer",
+          marginBottom: 18,
+        }}
       >
-        <Plus size={16} /> {aba === "cotacoes" ? "Nova cotação" : "Novo aparelho"}
+        <Plus size={14} /> {aba === "cotacoes" ? "Nova cotação" : "Novo aparelho"}
       </button>
 
-      <div style={{ position: "relative", marginBottom: 12 }}>
-        <Search size={15} color="#6E6E73" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
-        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder={aba === "cotacoes" ? "Buscar cliente, nº ou aparelho..." : "Buscar marca, modelo ou BTUs..."} style={{ ...inputStyle, paddingLeft: 34 }} />
+      {/* busca clean */}
+      <div style={{ position: "relative", marginBottom: 14 }}>
+        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder={aba === "cotacoes" ? "Buscar cliente, nº ou aparelho..." : "Buscar marca, modelo ou BTUs..."}
+          style={{
+            width: "100%",
+            background: "transparent",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 10,
+            padding: "10px 12px 10px 34px",
+            color: "#F3F3F1",
+            fontSize: 13.5,
+            fontFamily: "'Roboto',sans-serif",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        />
       </div>
 
+      {/* filtros: chips pequenos e refinados */}
       {aba === "cotacoes" && (
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 20, WebkitOverflowScrolling: "touch" }}>
           {["Todas", ...AV_STATUS].map((f) => {
             const on = filtro === f;
             const cor = f === "Todas" ? "#C9A24B" : AV_STATUS_COR[f];
             return (
-              <button key={f} onClick={() => setFiltro(f)} style={{ flexShrink: 0, fontSize: 11, padding: "7px 12px", borderRadius: 20, border: `1px solid ${on ? cor : "#2A2A2E"}`, background: on ? `${cor}1A` : "transparent", color: on ? cor : "#8A8A90", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <button
+                key={f}
+                onClick={() => setFiltro(f)}
+                style={{
+                  flexShrink: 0,
+                  fontSize: 10.5,
+                  padding: "5px 11px",
+                  borderRadius: 20,
+                  border: `1px solid ${on ? cor : "rgba(255,255,255,0.08)"}`,
+                  background: on ? `${cor}14` : "transparent",
+                  color: on ? cor : "#7A7A7A",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  transition: "color 180ms, border-color 180ms, background 180ms",
+                }}
+              >
                 {f}
               </button>
             );
@@ -12213,53 +12303,147 @@ function AllaVendaModule() {
         </div>
       )}
 
+      {/* conteúdo */}
       {cotacoes === null ? (
-        <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
+        <div style={{ textAlign: "center", padding: 40 }}><Loader2 size={18} className="spin" color="#6E6E73" /></div>
       ) : aba === "cotacoes" ? (
         filtradas.length === 0 ? (
-          <EstadoVazio icone={FileText} titulo={comStatus.length === 0 ? "Nenhuma cotação ainda" : "Nada encontrado"} texto={comStatus.length === 0 ? "Crie a primeira cotação para começar a vender." : "Ajuste a busca ou o filtro."} />
+          <div style={{ textAlign: "center", padding: "36px 20px", color: "#5A5A5F" }}>
+            <FileText size={22} style={{ marginBottom: 10, opacity: 0.5 }} />
+            <div style={{ fontSize: 13, color: "#8A8A90" }}>
+              {comStatus.length === 0 ? "Nenhuma cotação ainda" : "Nada encontrado"}
+            </div>
+            <div style={{ fontSize: 11.5, marginTop: 4 }}>
+              {comStatus.length === 0 ? "Crie a primeira cotação para começar a vender." : "Ajuste a busca ou o filtro."}
+            </div>
+          </div>
         ) : (
-          filtradas.map((c) => {
-            const calc = avCalcular(c);
-            return (
-              <button key={c.id} onClick={() => { setSelecionada(c); setModo("detalhe"); }} style={{ width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 14, marginBottom: 11, cursor: "pointer" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 600, color: "#F3F3F1", wordBreak: "break-word" }}>{c.cliente}</div>
-                    <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 3 }}>
-                      {c.numero} · {(c.itens || []).length} {(c.itens || []).length === 1 ? "aparelho" : "aparelhos"}
+          <div>
+            {filtradasVisiveis.map((c, i) => {
+              const calc = avCalcular(c);
+              const equip = (c.itens || [])[0];
+              const nomeEquip = equip
+                ? `${equip.descricao}${(c.itens || []).length > 1 ? ` +${c.itens.length - 1}` : ""}`
+                : "—";
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => { setSelecionada(c); setModo("detalhe"); }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    background: "none",
+                    border: "none",
+                    borderTop: i === 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                    padding: "13px 2px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "#F3F3F1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {c.cliente}
+                      </span>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#5A5A5F", flexShrink: 0 }}>{c.numero}</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "#7A7A7A", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {nomeEquip}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: AV_STATUS_COR[c._st], flexShrink: 0 }} />
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: AV_STATUS_COR[c._st] }}>{c._st}</span>
+                      <span style={{ fontSize: 10.5, color: "#5A5A5F", marginLeft: 4 }}>
+                        {new Date(c.createdAt).toLocaleDateString("pt-BR")}
+                      </span>
                     </div>
                   </div>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "#E9C878", whiteSpace: "nowrap" }}>{avMoeda(calc.total)}</span>
-                </div>
-                <div style={{ marginTop: 9 }}><Etiqueta texto={c._st} cor={AV_STATUS_COR[c._st]} /></div>
-              </button>
-            );
-          })
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#E9C878" }}>{avMoeda(calc.total)}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )
       ) : produtosFiltrados.length === 0 ? (
-        <EstadoVazio icone={PackageSearch} titulo={produtos.length === 0 ? "Catálogo vazio" : "Nada encontrado"} texto={produtos.length === 0 ? "Cadastre os aparelhos que você vende para montar cotações rapidamente." : "Ajuste a busca."} />
+        <div style={{ textAlign: "center", padding: "36px 20px", color: "#5A5A5F" }}>
+          <PackageSearch size={22} style={{ marginBottom: 10, opacity: 0.5 }} />
+          <div style={{ fontSize: 13, color: "#8A8A90" }}>
+            {produtos.length === 0 ? "Catálogo vazio" : "Nada encontrado"}
+          </div>
+          <div style={{ fontSize: 11.5, marginTop: 4 }}>
+            {produtos.length === 0 ? "Cadastre os aparelhos que você vende para montar cotações rapidamente." : "Ajuste a busca."}
+          </div>
+        </div>
       ) : (
-        produtosFiltrados.map((prod) => (
-          <button key={prod.id} onClick={() => { setProdutoEdit(prod); setModo("produto"); }} style={{ width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 13, marginBottom: 11, cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}>
-            <div style={{ width: 52, height: 52, borderRadius: 12, background: "#141416", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {prod.foto ? <img src={prod.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Snowflake size={19} color="#3FBCD1" />}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#F3F3F1", wordBreak: "break-word" }}>{prod.marca} {prod.modelo}</div>
-              <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>
-                {prod.btus} BTUs · {prod.tecnologia} · {prod.voltagem}
-                {prod.estoque ? ` · ${prod.estoque} em estoque` : ""}
+        <div>
+          {produtosFiltrados.map((prod, i) => (
+            <button
+              key={prod.id}
+              onClick={() => { setProdutoEdit(prod); setModo("produto"); }}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                background: "none",
+                border: "none",
+                borderTop: i === 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+                padding: "12px 2px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <div style={{ width: 40, height: 40, borderRadius: 9, background: "#111114", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {prod.foto ? <img src={prod.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Snowflake size={16} color="#3FBCD1" />}
               </div>
-            </div>
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: "#E9C878", whiteSpace: "nowrap" }}>{avMoeda(prod.precoVenda)}</span>
-          </button>
-        ))
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "#F3F3F1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {prod.marca} {prod.modelo}
+                </div>
+                <div style={{ fontSize: 11, color: "#7A7A7A", marginTop: 2 }}>
+                  {prod.btus} BTUs · {prod.tecnologia}
+                  {prod.estoque ? ` · ${prod.estoque} un.` : ""}
+                </div>
+              </div>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: "#E9C878", whiteSpace: "nowrap", flexShrink: 0 }}>{avMoeda(prod.precoVenda)}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
+function useListaProgressiva(itens, primeiros = 12) {
+  const [limite, setLimite] = useState(primeiros);
+  useEffect(() => {
+    setLimite(primeiros);
+    if (!itens || itens.length <= primeiros) return;
+    const id = requestAnimationFrame(() => setLimite(itens.length));
+    return () => cancelAnimationFrame(id);
+  }, [itens, primeiros]);
+  return (itens || []).slice(0, limite);
+}
+
+function useTransicaoTela(view) {
+  useEffect(() => {
+    // Só rola se já houver rolagem, e depois do quadro atual: evita
+    // forçar um recálculo de layout no meio da troca de tela.
+    if (typeof window === "undefined" || window.scrollY === 0) return;
+    const id = requestAnimationFrame(() => window.scrollTo(0, 0));
+    return () => cancelAnimationFrame(id);
+  }, [view]);
+  return { telaVisivel: view, saindo: false };
+}
+
+/* Porta de entrada: sem sessão válida o app interno nem chega a ser
+   montado, então nenhuma tela protegida fica acessível sem login. */
 export default function AllaCheckApp() {
   const [usuario, setUsuario] = useState(undefined); // undefined = ainda verificando
   const [semAuth, setSemAuth] = useState(false);
@@ -12306,35 +12490,6 @@ export default function AllaCheckApp() {
   if (!usuario) return <TelaAutenticacao />;
 
   return <AllaCheckAppInterno usuario={usuario} />;
-}
-
-
-/* A troca de tela é IMEDIATA — nenhum atraso artificial.
-   A suavidade vem só da animação de entrada, que roda enquanto
-   o conteúdo já está na tela. */
-/* Listas longas travavam a navegação porque o React montava todos os
-   cards de uma vez. Este hook entrega os primeiros itens imediatamente
-   e o restante no quadro seguinte — visualmente igual, sem bloquear. */
-function useListaProgressiva(itens, primeiros = 12) {
-  const [limite, setLimite] = useState(primeiros);
-  useEffect(() => {
-    setLimite(primeiros);
-    if (!itens || itens.length <= primeiros) return;
-    const id = requestAnimationFrame(() => setLimite(itens.length));
-    return () => cancelAnimationFrame(id);
-  }, [itens, primeiros]);
-  return (itens || []).slice(0, limite);
-}
-
-function useTransicaoTela(view) {
-  useEffect(() => {
-    // Só rola se já houver rolagem, e depois do quadro atual: evita
-    // forçar um recálculo de layout no meio da troca de tela.
-    if (typeof window === "undefined" || window.scrollY === 0) return;
-    const id = requestAnimationFrame(() => window.scrollTo(0, 0));
-    return () => cancelAnimationFrame(id);
-  }, [view]);
-  return { telaVisivel: view, saindo: false };
 }
 
 function AllaCheckAppInterno({ usuario }) {
