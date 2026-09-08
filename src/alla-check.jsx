@@ -61,6 +61,8 @@ const FIRESTORE_COLLECTION_MAP = {
   assinaturas: "assinaturas",
   rastreios: "rastreios",
   checklists: "checklists",
+  "venda-produtos": "venda_produtos",
+  "venda-cotacoes": "venda_cotacoes",
 };
 
 function _fsCollectionFor(prefixKey) {
@@ -1145,6 +1147,7 @@ const inputStyle = {
 
 /* ---------------- Ferramentas — catálogo ---------------- */
 const TOOLS = [
+  { key: "alla-venda", label: "ALLA VENDA", desc: "Venda de ar-condicionado: catálogo, cotações e propostas", icon: Snowflake, active: true },
   { key: "assinaturas", label: "Assinaturas", desc: "Contratos recorrentes, vencimentos e cobrança", icon: CalendarClock, active: true },
   { key: "btu", label: "Calculadora de BTU", desc: "Dimensionamento de ar-condicionado por ambiente", icon: Calculator, active: true },
   { key: "conversor", label: "Conversor Técnico", desc: "BTU, pressão, temperatura, potência e medidas", icon: Ruler, active: true },
@@ -1157,7 +1160,7 @@ const TOOLS = [
   { key: "relatorios-financeiros", label: "Relatórios Financeiros", desc: "Faturamento, custos e lucro por período", icon: LineChart, active: true },
   { key: "laudo-tecnico", label: "Gerador de Laudo Técnico", desc: "Laudo profissional a partir do diagnóstico", icon: FileCheck2, active: true },
   { key: "pmoc-tool", label: "PMOC", desc: "Plano de manutenção com alertas de vencimento", icon: CalendarClock, active: true },
-  { key: "mensagens-whatsapp", label: "Mensagens WhatsApp", desc: "Mensagens prontas para cada etapa do serviço", icon: MessageSquareText, active: false },
+  { key: "mensagens-whatsapp", label: "Mensagens WhatsApp", desc: "Mensagens prontas para cada etapa do serviço", icon: MessageSquareText, active: true },
   { key: "assistente-ia", label: "Assistente Técnico IA", desc: "Tira dúvidas técnicas de climatização e elétrica", icon: Bot, active: false },
 ];
 
@@ -1243,7 +1246,7 @@ function ToolCard({ tool, onClick }) {
 /* Agrupamento visual das ferramentas. Nenhuma ferramenta é removida:
    o que não estiver listado aqui cai automaticamente em "Utilidades". */
 const TOOL_CATEGORIAS = [
-  { titulo: "Gestão", chaves: ["assinaturas", "pmoc-tool"] },
+  { titulo: "Gestão", chaves: ["alla-venda", "assinaturas", "pmoc-tool"] },
   { titulo: "Operação", chaves: ["rastreio-tecnico", "laudo-tecnico"] },
   { titulo: "Equipamentos", chaves: ["historico-equipamento", "manuais"] },
   { titulo: "Financeiro", chaves: ["relatorios-financeiros"] },
@@ -1254,6 +1257,7 @@ const TOOL_CATEGORIAS = [
 
 /* Cor característica de cada ferramenta, para os ícones não ficarem todos iguais. */
 const TOOL_CORES = {
+  "alla-venda": "#3FBCD1",
   assinaturas: "#C9A24B",
   "pmoc-tool": "#9B8AFB",
   "rastreio-tecnico": "#4681DF",
@@ -1271,7 +1275,7 @@ const TOOL_CORES = {
 };
 const corDaFerramenta = (t) => TOOL_CORES[t.key] || "#C9A24B";
 
-const TOOL_ROUTE_OVERRIDES = { "pmoc-tool": "pmocs" };
+const TOOL_ROUTE_OVERRIDES = { "pmoc-tool": "pmocs", "mensagens-whatsapp": "central-whatsapp" };
 
 function FerramentasScreen({ onNavigate }) {
   const [search, setSearch] = useState("");
@@ -6716,14 +6720,22 @@ function OSFrioModule() {
 }
 
 /* ---------------- Módulo: Central WhatsApp ---------------- */
+const WHATSAPP_CATEGORIAS = ["Agendamento", "Orçamento", "Serviço", "Ordem de Serviço", "Pós-venda"];
+
 const WHATSAPP_MODELOS = [
-  { key: "agendamento", nome: "Agendamento", texto: "Olá, {cliente}! Seu atendimento da ALLA SERVICE está agendado para {data} às {horario}." },
-  { key: "confirmacao", nome: "Confirmação", texto: "Olá, {cliente}! Gostaríamos de confirmar seu atendimento marcado para {data} às {horario}." },
-  { key: "orcamento", nome: "Orçamento", texto: "Olá, {cliente}! Seu orçamento está pronto, no valor de R$ {valor}. Referente à OS {os}." },
-  { key: "concluido", nome: "Serviço Concluído", texto: "Olá, {cliente}! Seu serviço foi concluído com sucesso. Qualquer dúvida, estamos à disposição." },
-  { key: "pos-venda", nome: "Pós-venda", texto: "Olá, {cliente}! Gostaríamos de saber como foi seu atendimento com a ALLA SERVICE." },
-  { key: "avaliacao", nome: "Avaliação", texto: "Olá, {cliente}! Se puder, deixe sua avaliação sobre o serviço realizado. Isso nos ajuda muito!" },
-  { key: "cobranca", nome: "Cobrança", texto: "Olá, {cliente}! Estamos entrando em contato referente ao pagamento pendente no valor de R$ {valor}." },
+  { key: "agendamento", categoria: "Agendamento", nome: "Agendamento", texto: "Olá, {cliente}! Seu atendimento da ALLA SERVICE está agendado para {data} às {horario}." },
+  { key: "confirmacao", categoria: "Agendamento", nome: "Confirmação", texto: "Olá, {cliente}! Gostaríamos de confirmar seu atendimento marcado para {data} às {horario}." },
+  { key: "a-caminho", categoria: "Agendamento", nome: "Técnico a caminho", texto: "Olá, {cliente}! Nosso técnico está a caminho e chega em instantes para o atendimento do seu {equipamento}." },
+  { key: "orcamento", categoria: "Orçamento", nome: "Orçamento pronto", texto: "Olá, {cliente}! Seu orçamento está pronto, no valor de R$ {valor}. Referente à OS {numero_os}." },
+  { key: "orcamento-followup", categoria: "Orçamento", nome: "Retomar orçamento", texto: "Olá, {cliente}! Passando para saber se teve a oportunidade de avaliar o orçamento que enviamos. Qualquer dúvida, estou à disposição." },
+  { key: "servico-iniciado", categoria: "Serviço", nome: "Serviço iniciado", texto: "Olá, {cliente}! Iniciamos o serviço de {servico} no seu {equipamento}. Assim que concluirmos, avisamos." },
+  { key: "concluido", categoria: "Serviço", nome: "Serviço concluído", texto: "Olá, {cliente}! Seu serviço foi concluído com sucesso. Qualquer dúvida, estamos à disposição." },
+  { key: "os-aberta", categoria: "Ordem de Serviço", nome: "OS aberta", texto: "Olá, {cliente}! Abrimos a Ordem de Serviço {numero_os} referente ao seu {equipamento}. Serviço: {servico}." },
+  { key: "os-finalizada", categoria: "Ordem de Serviço", nome: "OS finalizada", texto: "Olá, {cliente}! A Ordem de Serviço {numero_os} foi finalizada em {data}. Valor total: R$ {valor}." },
+  { key: "cobranca", categoria: "Ordem de Serviço", nome: "Cobrança", texto: "Olá, {cliente}! Estamos entrando em contato referente ao pagamento pendente no valor de R$ {valor}." },
+  { key: "pos-venda", categoria: "Pós-venda", nome: "Pós-venda", texto: "Olá, {cliente}! Gostaríamos de saber como foi seu atendimento com a ALLA SERVICE." },
+  { key: "avaliacao", categoria: "Pós-venda", nome: "Avaliação", texto: "Olá, {cliente}! Se puder, deixe sua avaliação sobre o serviço realizado. Isso nos ajuda muito!" },
+  { key: "manutencao", categoria: "Pós-venda", nome: "Lembrete de manutenção", texto: "Olá, {cliente}! Já faz um tempo desde a última manutenção do seu {equipamento}. Quer agendar uma revisão?" },
 ];
 
 function preencherModelo(texto, vars) {
@@ -6732,7 +6744,9 @@ function preencherModelo(texto, vars) {
     .replace(/\{data\}/g, vars.data ? new Date(vars.data).toLocaleDateString("pt-BR") : "[data]")
     .replace(/\{horario\}/g, vars.horario || "[horário]")
     .replace(/\{valor\}/g, vars.valor ? Number(vars.valor).toFixed(2) : "[valor]")
+    .replace(/\{numero_os\}/g, vars.os || "[nº OS]")
     .replace(/\{os\}/g, vars.os || "[nº OS]")
+    .replace(/\{equipamento\}/g, vars.equipamento || "[equipamento]")
     .replace(/\{servico\}/g, vars.servico || "[serviço]");
 }
 
@@ -6766,15 +6780,42 @@ async function buscarClientesReais() {
 }
 
 function CentralWhatsApp() {
-  const [aba, setAba] = useState("modelos"); // modelos | enviar
+  const [aba, setAba] = useState("modelos"); // modelos | enviar | editor
+  const [categoria, setCategoria] = useState("Todas");
   const [modeloSelecionado, setModeloSelecionado] = useState(null);
   const [clientes, setClientes] = useState(null);
-  const [vars, setVars] = useState({ cliente: "", telefone: "", data: "", horario: "", valor: "", os: "", servico: "" });
+  const [ordens, setOrdens] = useState([]);
+  const [personalizados, setPersonalizados] = useState([]);
+  const [vars, setVars] = useState({ cliente: "", telefone: "", data: "", horario: "", valor: "", os: "", servico: "", equipamento: "" });
   const [textoFinal, setTextoFinal] = useState("");
+  const [copiado, setCopiado] = useState(false);
+  const [editor, setEditor] = useState(null); // { key, nome, categoria, texto }
+  const [salvando, setSalvando] = useState(false);
+
+  const carregarPersonalizados = useCallback(async () => {
+    try {
+      const l = await carregarTudoStorage("modelos-whatsapp:");
+      setPersonalizados(l || []);
+    } catch {
+      setPersonalizados([]);
+    }
+  }, []);
 
   useEffect(() => {
-    buscarClientesReais().then(setClientes);
-  }, []);
+    buscarClientesReais().then(setClientes).catch(() => setClientes([]));
+    carregarTudoStorage("ordens-servico:").then((l) => setOrdens(l || [])).catch(() => setOrdens([]));
+    carregarPersonalizados();
+  }, [carregarPersonalizados]);
+
+  const todosModelos = useMemo(
+    () => [...WHATSAPP_MODELOS, ...personalizados.map((m) => ({ ...m, personalizado: true }))],
+    [personalizados]
+  );
+
+  const visiveis = useMemo(
+    () => (categoria === "Todas" ? todosModelos : todosModelos.filter((m) => m.categoria === categoria)),
+    [todosModelos, categoria]
+  );
 
   const abrirModelo = (modelo) => {
     setModeloSelecionado(modelo);
@@ -6787,8 +6828,21 @@ function CentralWhatsApp() {
     // eslint-disable-next-line
   }, [vars]);
 
-  const selecionarCliente = (c) => {
-    setVars((v) => ({ ...v, cliente: c.nome, telefone: c.telefone }));
+  const selecionarCliente = (c) => setVars((v) => ({ ...v, cliente: c.nome, telefone: c.telefone || "" }));
+
+  /* Preenche os campos a partir de uma OS real já cadastrada. */
+  const selecionarOS = (os) => {
+    if (!os) return;
+    setVars((v) => ({
+      ...v,
+      cliente: os.clienteNome || v.cliente,
+      telefone: os.clienteTelefone || v.telefone,
+      os: os.numero || v.os,
+      servico: os.tipoServico || v.servico,
+      equipamento: [os.eqTipo, os.eqMarca, os.eqModelo].filter(Boolean).join(" ") || v.equipamento,
+      valor: os.valorTotal != null ? String(os.valorTotal) : v.valor,
+      data: os.data || v.data,
+    }));
   };
 
   const enviarWhatsapp = () => {
@@ -6796,93 +6850,286 @@ function CentralWhatsApp() {
     const telefone = (vars.telefone || "").replace(/\D/g, "");
     const url = telefone ? `https://wa.me/55${telefone}?text=${texto}` : `https://wa.me/?text=${texto}`;
     window.open(url, "_blank");
-    // Importante: isto apenas ABRE o WhatsApp com a mensagem pronta — não há
-    // integração com WhatsApp Business API configurada, então não marcamos
-    // a mensagem como "enviada" automaticamente.
+    // Isto apenas ABRE o WhatsApp com a mensagem pronta. Não há integração com a
+    // API do WhatsApp Business, então não marcamos nada como "enviado".
   };
 
-  if (aba === "enviar" && modeloSelecionado) {
+  const copiar = async () => {
+    try {
+      await navigator.clipboard.writeText(textoFinal);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2200);
+    } catch {
+      notificarErroBanco("Não foi possível copiar. Selecione o texto manualmente.");
+    }
+  };
+
+  const salvarModelo = async () => {
+    if (salvando || !editor) return;
+    if (!editor.nome.trim()) return notificarErroBanco("Dê um nome à mensagem antes de salvar.");
+    if (!editor.texto.trim()) return notificarErroBanco("Escreva o texto da mensagem antes de salvar.");
+    setSalvando(true);
+    try {
+      const key = editor.key || uid();
+      await window.storage.set(
+        `modelos-whatsapp:${key}`,
+        JSON.stringify({ key, nome: editor.nome.trim(), categoria: editor.categoria, texto: editor.texto, createdAt: new Date().toISOString() })
+      );
+      await carregarPersonalizados();
+      setEditor(null);
+      setAba("modelos");
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar mensagem"));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const excluirModelo = async (m) => {
+    try {
+      await window.storage.delete(`modelos-whatsapp:${m.key}`);
+      await carregarPersonalizados();
+      setEditor(null);
+      setAba("modelos");
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "excluir mensagem"));
+    }
+  };
+
+  /* ---------- editor de mensagem personalizada ---------- */
+  if (aba === "editor" && editor) {
     return (
       <div style={{ padding: 16, paddingBottom: 40 }}>
-        <button onClick={() => setAba("modelos")} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-          <ChevronLeft size={15} /> modelos
+        <button onClick={() => { setEditor(null); setAba("modelos"); }} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+          <ChevronLeft size={15} /> mensagens
         </button>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
-          {modeloSelecionado.nome}
+
+        <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 700, color: "#F3F3F1", marginBottom: 16 }}>
+          {editor.key ? "Editar mensagem" : "Nova mensagem"}
         </div>
 
-        {clientes && clientes.length > 0 && (
-          <Field label="Selecionar cliente cadastrado (opcional)">
-            <select
-              style={{ ...inputStyle, appearance: "none" }}
-              value=""
-              onChange={(e) => {
-                const c = clientes.find((x) => x.nome === e.target.value);
-                if (c) selecionarCliente(c);
-              }}
-            >
-              <option value="">Escolher...</option>
-              {clientes.map((c) => (
-                <option key={c.nome} value={c.nome}>{c.nome}</option>
-              ))}
-            </select>
-          </Field>
-        )}
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <div style={{ flex: 1 }}><Field label="Cliente"><input style={inputStyle} value={vars.cliente} onChange={(e) => setVars((v) => ({ ...v, cliente: e.target.value }))} /></Field></div>
-          <div style={{ flex: 1 }}><Field label="Telefone (WhatsApp)"><input style={inputStyle} value={vars.telefone} onChange={(e) => setVars((v) => ({ ...v, telefone: e.target.value }))} inputMode="numeric" placeholder="15999999999" /></Field></div>
-        </div>
-        {modeloSelecionado.texto.includes("{data}") && (
-          <div style={{ display: "flex", gap: 10 }}>
-            <div style={{ flex: 1 }}><Field label="Data"><input type="date" style={inputStyle} value={vars.data} onChange={(e) => setVars((v) => ({ ...v, data: e.target.value }))} /></Field></div>
-            <div style={{ flex: 1 }}><Field label="Horário"><input type="time" style={inputStyle} value={vars.horario} onChange={(e) => setVars((v) => ({ ...v, horario: e.target.value }))} /></Field></div>
-          </div>
-        )}
-        {modeloSelecionado.texto.includes("{valor}") && (
-          <Field label="Valor (R$)"><input style={inputStyle} value={vars.valor} onChange={(e) => setVars((v) => ({ ...v, valor: e.target.value }))} inputMode="decimal" /></Field>
-        )}
-        {modeloSelecionado.texto.includes("{os}") && (
-          <Field label="Nº da OS"><input style={inputStyle} value={vars.os} onChange={(e) => setVars((v) => ({ ...v, os: e.target.value }))} /></Field>
-        )}
-
-        <Field label="Mensagem (editável)">
-          <textarea style={{ ...inputStyle, minHeight: 110, resize: "vertical", fontFamily: "'Roboto',sans-serif" }} value={textoFinal} onChange={(e) => setTextoFinal(e.target.value)} />
+        <Field label="Nome da mensagem">
+          <input style={inputStyle} value={editor.nome} onChange={(e) => setEditor((x) => ({ ...x, nome: e.target.value }))} placeholder="Ex: Aviso de atraso" />
+        </Field>
+        <Field label="Categoria">
+          <select style={{ ...inputStyle, appearance: "none" }} value={editor.categoria} onChange={(e) => setEditor((x) => ({ ...x, categoria: e.target.value }))}>
+            {WHATSAPP_CATEGORIAS.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Texto da mensagem">
+          <textarea
+            style={{ ...inputStyle, minHeight: 130, resize: "vertical" }}
+            value={editor.texto}
+            onChange={(e) => setEditor((x) => ({ ...x, texto: e.target.value }))}
+            placeholder="Olá, {cliente}! ..."
+          />
         </Field>
 
-        <button
-          onClick={enviarWhatsapp}
-          style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer" }}
-        >
-          <Send size={15} /> Abrir no WhatsApp
-        </button>
-        <div style={{ textAlign: "center", fontSize: 10.5, color: "#6E6E73", marginTop: 8 }}>
-          Isso abre o WhatsApp do aparelho com a mensagem pronta — não há envio automático configurado.
+        <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: 13, marginBottom: 16 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>
+            Campos automáticos
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {["{cliente}", "{data}", "{horario}", "{servico}", "{equipamento}", "{numero_os}", "{valor}"].map((v) => (
+              <button
+                key={v}
+                onClick={() => setEditor((x) => ({ ...x, texto: x.texto + v }))}
+                style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, padding: "5px 9px", borderRadius: 8, border: "1px solid #2A2A2E", background: "transparent", color: "#8A8A90", cursor: "pointer" }}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11.5, color: "#6E6E73", marginTop: 9, lineHeight: 1.45 }}>
+            Toque para inserir. Eles são preenchidos com os dados do cliente ou da OS na hora de enviar.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          {editor.key && (
+            <button onClick={() => excluirModelo(editor)} style={{ ...btnSecundario, color: "#F0605A", borderColor: "rgba(240,96,90,0.4)" }}>
+              Excluir
+            </button>
+          )}
+          <button onClick={salvarModelo} disabled={salvando} style={{ ...btnPrincipal, flex: 1.4, opacity: salvando ? 0.6 : 1 }}>
+            {salvando ? "Salvando..." : "Salvar mensagem"}
+          </button>
         </div>
       </div>
     );
   }
 
+  /* ---------- preparar e enviar ---------- */
+  if (aba === "enviar" && modeloSelecionado) {
+    return (
+      <div style={{ padding: 16, paddingBottom: 40 }}>
+        <button onClick={() => setAba("modelos")} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+          <ChevronLeft size={15} /> mensagens
+        </button>
+
+        <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 700, color: "#F3F3F1" }}>
+          {modeloSelecionado.nome}
+        </div>
+        <div style={{ fontSize: 12, color: "#8A8A90", marginTop: 3, marginBottom: 18 }}>{modeloSelecionado.categoria}</div>
+
+        <SecaoTitulo>Preencher com dados reais</SecaoTitulo>
+
+        {clientes && clientes.length > 0 && (
+          <Field label="Cliente cadastrado">
+            <select
+              style={{ ...inputStyle, appearance: "none" }}
+              defaultValue=""
+              onChange={(e) => {
+                const c = clientes.find((x) => x.nome === e.target.value);
+                if (c) selecionarCliente(c);
+              }}
+            >
+              <option value="">Selecionar cliente...</option>
+              {clientes.map((c) => <option key={c.nome} value={c.nome}>{c.nome}</option>)}
+            </select>
+          </Field>
+        )}
+
+        {ordens.length > 0 && (
+          <Field label="Ordem de Serviço (preenche tudo)">
+            <select
+              style={{ ...inputStyle, appearance: "none" }}
+              defaultValue=""
+              onChange={(e) => selecionarOS(ordens.find((o) => o.id === e.target.value))}
+            >
+              <option value="">Selecionar OS...</option>
+              {ordens.map((o) => (
+                <option key={o.id} value={o.id}>{o.numero} — {o.clienteNome}</option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        <LinhaDupla>
+          <Field label="Cliente"><input style={inputStyle} value={vars.cliente} onChange={(e) => setVars((v) => ({ ...v, cliente: e.target.value }))} /></Field>
+          <Field label="WhatsApp"><input style={inputStyle} value={vars.telefone} onChange={(e) => setVars((v) => ({ ...v, telefone: e.target.value }))} inputMode="numeric" /></Field>
+        </LinhaDupla>
+        <LinhaDupla>
+          <Field label="Data"><input type="date" style={inputStyle} value={vars.data} onChange={(e) => setVars((v) => ({ ...v, data: e.target.value }))} /></Field>
+          <Field label="Horário"><input style={inputStyle} value={vars.horario} onChange={(e) => setVars((v) => ({ ...v, horario: e.target.value }))} placeholder="14:00" /></Field>
+        </LinhaDupla>
+        <LinhaDupla>
+          <Field label="Nº da OS"><input style={inputStyle} value={vars.os} onChange={(e) => setVars((v) => ({ ...v, os: e.target.value }))} /></Field>
+          <Field label="Valor (R$)"><input style={inputStyle} value={vars.valor} onChange={(e) => setVars((v) => ({ ...v, valor: e.target.value }))} inputMode="decimal" /></Field>
+        </LinhaDupla>
+        <LinhaDupla>
+          <Field label="Serviço"><input style={inputStyle} value={vars.servico} onChange={(e) => setVars((v) => ({ ...v, servico: e.target.value }))} /></Field>
+          <Field label="Equipamento"><input style={inputStyle} value={vars.equipamento} onChange={(e) => setVars((v) => ({ ...v, equipamento: e.target.value }))} /></Field>
+        </LinhaDupla>
+
+        <SecaoTitulo>Mensagem</SecaoTitulo>
+        <textarea
+          style={{ ...inputStyle, minHeight: 130, resize: "vertical", marginBottom: 12 }}
+          value={textoFinal}
+          onChange={(e) => setTextoFinal(e.target.value)}
+        />
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+          <button onClick={copiar} style={btnSecundario}>{copiado ? "✓ Copiado" : "Copiar"}</button>
+          <button onClick={enviarWhatsapp} style={{ ...btnPrincipal, flex: 1.4, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <Send size={14} /> Enviar pelo WhatsApp
+          </button>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: "#6E6E73", lineHeight: 1.5 }}>
+          O botão abre o WhatsApp com a mensagem já escrita. O envio é feito por você dentro do aplicativo.
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- lista de mensagens ---------- */
   return (
     <div style={{ padding: 16, paddingBottom: 40 }}>
-      <div style={{ fontSize: 12.5, color: "#8A8A90", marginBottom: 16 }}>
-        Escolha um modelo de mensagem. Os dados são preenchidos com informações reais do sistema.
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 21, fontWeight: 700, color: "#F3F3F1" }}>
+        Mensagens WhatsApp
       </div>
-      {WHATSAPP_MODELOS.map((m) => (
-        <button
-          key={m.key}
-          onClick={() => abrirModelo(m)}
-          style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "14px 15px", marginBottom: 10, cursor: "pointer" }}
-        >
-          <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 14.5, color: "#F3F3F1", marginBottom: 4 }}>{m.nome}</div>
-          <div style={{ fontSize: 11.5, color: "#7A7A7A", lineHeight: 1.4 }}>{m.texto}</div>
-        </button>
-      ))}
+      <div style={{ fontSize: 12.5, color: "#8A8A90", marginTop: 4, marginBottom: 16 }}>
+        Modelos prontos para cada etapa do atendimento
+      </div>
+
+      <button
+        onClick={() => { setEditor({ key: null, nome: "", categoria: WHATSAPP_CATEGORIAS[0], texto: "" }); setAba("editor"); }}
+        style={{ ...btnPrincipal, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px 0", marginBottom: 14 }}
+      >
+        <Plus size={16} /> Nova mensagem
+      </button>
+
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+        {["Todas", ...WHATSAPP_CATEGORIAS].map((c) => {
+          const on = categoria === c;
+          return (
+            <button
+              key={c}
+              onClick={() => setCategoria(c)}
+              style={{
+                flexShrink: 0,
+                fontSize: 11.5,
+                padding: "7px 13px",
+                borderRadius: 20,
+                border: `1px solid ${on ? "#C9A24B" : "#2A2A2E"}`,
+                background: on ? "rgba(201,162,75,0.12)" : "transparent",
+                color: on ? "#E9C878" : "#8A8A90",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                transition: "color 180ms, border-color 180ms, background 180ms",
+              }}
+            >
+              {c}
+            </button>
+          );
+        })}
+      </div>
+
+      {visiveis.length === 0 ? (
+        <EstadoVazio icone={MessageSquareText} titulo="Nenhuma mensagem nesta categoria" texto="Crie uma mensagem personalizada para usar sempre que precisar." />
+      ) : (
+        visiveis.map((m) => (
+          <div
+            key={m.key}
+            style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 14, marginBottom: 11 }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 14.5, fontWeight: 600, color: "#F3F3F1", wordBreak: "break-word" }}>
+                  {m.nome}
+                </div>
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#C9A24B", letterSpacing: 1, textTransform: "uppercase", marginTop: 3 }}>
+                  {m.categoria}{m.personalizado ? " · personalizada" : ""}
+                </div>
+              </div>
+              <MessageSquareText size={16} color="#4ADE80" style={{ flexShrink: 0, marginTop: 2 }} />
+            </div>
+
+            <div style={{ fontSize: 12.5, color: "#8A8A90", lineHeight: 1.5, marginBottom: 12 }}>{m.texto}</div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => abrirModelo(m)} style={{ ...btnPrincipal, padding: "9px 0", fontSize: 11.5 }}>
+                Usar
+              </button>
+              <button
+                onClick={() =>
+                  m.personalizado
+                    ? (setEditor({ ...m }), setAba("editor"))
+                    : (setEditor({ key: null, nome: `${m.nome} (cópia)`, categoria: m.categoria, texto: m.texto }), setAba("editor"))
+                }
+                style={{ ...btnSecundario, padding: "9px 0", fontSize: 11.5 }}
+              >
+                {m.personalizado ? "Editar" : "Duplicar"}
+              </button>
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
 
-/* ---------------- Módulo: Gestão Inteligente ---------------- */
 async function carregarTudoStorage(prefix) {
   try {
     const list = await window.storage.list(prefix);
@@ -10994,6 +11241,972 @@ class LimiteDeErro extends React.Component {
 /* Protege o aplicativo: sem sessão válida, só a tela de login é exibida. */
 /* Porta de entrada: sem sessão válida o app interno nem chega a ser montado,
    então nenhuma tela protegida fica acessível sem login. */
+/* ================= ALLA VENDA — Ar-Condicionado =================
+   Módulo de vendas: catálogo de aparelhos, cotações com cálculo
+   automático, proposta em PDF, envio por WhatsApp e conversão em
+   OS + registro financeiro. Reutiliza os componentes e helpers já
+   existentes no app. */
+
+const AV_CATEGORIAS = ["Split Hi-Wall", "Split Cassete", "Split Piso-Teto", "Multi Split", "Janela", "Portátil", "Outro"];
+const AV_BTUS = ["7.000", "9.000", "12.000", "18.000", "22.000", "24.000", "30.000", "36.000", "48.000", "60.000"];
+const AV_TECNOLOGIA = ["Inverter", "Convencional"];
+const AV_CICLO = ["Frio", "Quente/Frio"];
+const AV_GAS = ["R-32", "R-410A", "R-22", "Outro"];
+const AV_VOLTAGEM = ["220V", "127V", "Bivolt", "380V"];
+const AV_SELO = ["A", "B", "C", "D", "Não informado"];
+
+const AV_STATUS = ["RASCUNHO", "ENVIADA", "EM NEGOCIAÇÃO", "APROVADA", "RECUSADA", "EXPIRADA"];
+const AV_STATUS_COR = {
+  RASCUNHO: "#8A8A90",
+  ENVIADA: "#4681DF",
+  "EM NEGOCIAÇÃO": "#E9C878",
+  APROVADA: "#4ADE80",
+  RECUSADA: "#F0605A",
+  EXPIRADA: "#6E6E73",
+};
+
+const avNum = (v) => Number(String(v ?? "").replace(",", ".")) || 0;
+const avMoeda = (v) => `R$ ${avNum(v).toFixed(2)}`;
+
+/* Cálculo central da cotação. Uma única fonte de verdade para os
+   valores mostrados na tela, no PDF e na mensagem do WhatsApp. */
+function avCalcular(cot) {
+  const itens = cot.itens || [];
+  const subtotal = itens.reduce((a, i) => a + avNum(i.precoVenda) * (avNum(i.qtd) || 1), 0);
+  const custoAparelhos = itens.reduce((a, i) => a + avNum(i.precoCusto) * (avNum(i.qtd) || 1), 0);
+  const instalacao = avNum(cot.instalacao);
+  const materiais = avNum(cot.materiais);
+  const servicos = avNum(cot.servicos);
+  const desconto = avNum(cot.desconto);
+  const total = subtotal + instalacao + materiais + servicos - desconto;
+  const custoTotal = custoAparelhos + avNum(cot.custoInstalacao) + avNum(cot.custoMateriais);
+  const lucro = total - custoTotal;
+  const margem = total > 0 ? (lucro / total) * 100 : 0;
+  return { subtotal, instalacao, materiais, servicos, desconto, total, custoTotal, lucro, margem };
+}
+
+function avStatusEfetivo(cot) {
+  if (["APROVADA", "RECUSADA"].includes(cot.status)) return cot.status;
+  if (cot.validade) {
+    const hoje = new Date();
+    if (new Date(cot.validade) < new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())) return "EXPIRADA";
+  }
+  return cot.status || "RASCUNHO";
+}
+
+/* ---------------- Catálogo: formulário de aparelho ---------------- */
+function AvProdutoForm({ editing, onDone, onCancel }) {
+  const [form, setForm] = useState(
+    editing || {
+      marca: "",
+      modelo: "",
+      categoria: AV_CATEGORIAS[0],
+      btus: AV_BTUS[2],
+      tecnologia: AV_TECNOLOGIA[0],
+      ciclo: AV_CICLO[0],
+      gas: AV_GAS[0],
+      voltagem: AV_VOLTAGEM[0],
+      selo: AV_SELO[0],
+      precoCusto: "",
+      precoVenda: "",
+      estoque: "",
+      fornecedor: "",
+      observacoes: "",
+    }
+  );
+  const [foto, setFoto] = useState(editing?.foto || null);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef(null);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const margem = useMemo(() => {
+    const v = avNum(form.precoVenda);
+    const c = avNum(form.precoCusto);
+    if (!v) return null;
+    return { lucro: v - c, pct: ((v - c) / v) * 100 };
+  }, [form.precoVenda, form.precoCusto]);
+
+  const escolherFoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setFoto(await resizeImage(file, 600, 0.75));
+    } catch {
+      notificarErroBanco("Não foi possível carregar a foto.");
+    }
+  };
+
+  const salvar = async () => {
+    if (saving) return;
+    if (!form.marca.trim() || !form.modelo.trim()) {
+      notificarErroBanco("Informe a marca e o modelo do aparelho.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const id = editing?.id || uid();
+      await window.storage.set(
+        `venda-produtos:${id}`,
+        JSON.stringify({ ...form, id, foto, createdAt: editing?.createdAt || new Date().toISOString() })
+      );
+      onDone();
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar aparelho"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+        <ChevronLeft size={15} /> voltar ao catálogo
+      </button>
+
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+        <button
+          onClick={() => fileRef.current?.click()}
+          style={{ width: 120, height: 96, borderRadius: 14, overflow: "hidden", background: "#0D0D0D", border: "1px dashed #2F2F35", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
+        >
+          {foto ? <img src={foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Camera size={20} color="#6E6E73" />}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" onChange={escolherFoto} style={{ display: "none" }} />
+      </div>
+
+      <SecaoTitulo>Identificação</SecaoTitulo>
+      <LinhaDupla>
+        <Field label="Marca"><input style={inputStyle} value={form.marca} onChange={set("marca")} placeholder="Ex: LG" /></Field>
+        <Field label="Modelo"><input style={inputStyle} value={form.modelo} onChange={set("modelo")} placeholder="Ex: Dual Voice" /></Field>
+      </LinhaDupla>
+      <Field label="Categoria">
+        <select style={{ ...inputStyle, appearance: "none" }} value={form.categoria} onChange={set("categoria")}>
+          {AV_CATEGORIAS.map((c) => <option key={c}>{c}</option>)}
+        </select>
+      </Field>
+
+      <SecaoTitulo>Especificações</SecaoTitulo>
+      <LinhaDupla>
+        <Field label="BTUs">
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.btus} onChange={set("btus")}>
+            {AV_BTUS.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Tecnologia">
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.tecnologia} onChange={set("tecnologia")}>
+            {AV_TECNOLOGIA.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+      </LinhaDupla>
+      <LinhaDupla>
+        <Field label="Ciclo">
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.ciclo} onChange={set("ciclo")}>
+            {AV_CICLO.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Gás">
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.gas} onChange={set("gas")}>
+            {AV_GAS.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+      </LinhaDupla>
+      <LinhaDupla>
+        <Field label="Voltagem">
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.voltagem} onChange={set("voltagem")}>
+            {AV_VOLTAGEM.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Selo Procel">
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.selo} onChange={set("selo")}>
+            {AV_SELO.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+      </LinhaDupla>
+
+      <SecaoTitulo>Comercial</SecaoTitulo>
+      <LinhaDupla>
+        <Field label="Preço de custo (R$)"><input style={inputStyle} value={form.precoCusto} onChange={set("precoCusto")} inputMode="decimal" /></Field>
+        <Field label="Preço de venda (R$)"><input style={inputStyle} value={form.precoVenda} onChange={set("precoVenda")} inputMode="decimal" /></Field>
+      </LinhaDupla>
+
+      {margem && (
+        <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "11px 13px", marginBottom: 14, display: "flex", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontSize: 12.5, color: "#8A8A90" }}>Lucro por unidade</span>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: margem.lucro >= 0 ? "#4ADE80" : "#F0605A" }}>
+            {avMoeda(margem.lucro)} · {margem.pct.toFixed(1)}%
+          </span>
+        </div>
+      )}
+
+      <LinhaDupla>
+        <Field label="Estoque"><input style={inputStyle} value={form.estoque} onChange={set("estoque")} inputMode="numeric" placeholder="qtd disponível" /></Field>
+        <Field label="Fornecedor"><input style={inputStyle} value={form.fornecedor} onChange={set("fornecedor")} /></Field>
+      </LinhaDupla>
+      <Field label="Observações">
+        <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.observacoes} onChange={set("observacoes")} />
+      </Field>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+        <button onClick={onCancel} style={btnSecundario}>Cancelar</button>
+        <button onClick={salvar} disabled={saving} style={{ ...btnPrincipal, flex: 1.4, opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Salvando..." : "Salvar aparelho"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Cotação ---------------- */
+function AvCotacaoForm({ editing, produtos, onDone, onCancel }) {
+  const [clientes, setClientes] = useState([]);
+  const [form, setForm] = useState(
+    editing || {
+      cliente: "",
+      telefone: "",
+      endereco: "",
+      itens: [],
+      instalacao: "",
+      custoInstalacao: "",
+      materiais: "",
+      custoMateriais: "",
+      servicos: "",
+      desconto: "",
+      pagamento: "PIX / À vista",
+      prazo: "",
+      validadeDias: "7",
+      garantia: "1 ano de garantia do fabricante e 90 dias na instalação.",
+      observacoes: "",
+      status: "RASCUNHO",
+    }
+  );
+  const [saving, setSaving] = useState(false);
+  const [addAberto, setAddAberto] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  useEffect(() => {
+    buscarClientesReais().then(setClientes).catch(() => setClientes([]));
+  }, []);
+
+  const calc = useMemo(() => avCalcular(form), [form]);
+
+  const adicionarProduto = (prod) => {
+    setForm((f) => ({
+      ...f,
+      itens: [
+        ...f.itens,
+        {
+          id: uid(),
+          produtoId: prod.id,
+          descricao: `${prod.marca} ${prod.modelo}`,
+          btus: prod.btus,
+          tecnologia: prod.tecnologia,
+          ciclo: prod.ciclo,
+          voltagem: prod.voltagem,
+          gas: prod.gas,
+          selo: prod.selo,
+          foto: prod.foto || null,
+          qtd: 1,
+          precoVenda: prod.precoVenda,
+          precoCusto: prod.precoCusto,
+        },
+      ],
+    }));
+    setAddAberto(false);
+  };
+
+  const alterarItem = (id, campo, valor) =>
+    setForm((f) => ({ ...f, itens: f.itens.map((i) => (i.id === id ? { ...i, [campo]: valor } : i)) }));
+
+  const removerItem = (id) => setForm((f) => ({ ...f, itens: f.itens.filter((i) => i.id !== id) }));
+
+  const salvar = async () => {
+    if (saving) return;
+    if (!form.cliente.trim()) return notificarErroBanco("Informe o cliente antes de salvar.");
+    if (!form.itens.length) return notificarErroBanco("Adicione pelo menos um aparelho à cotação.");
+    setSaving(true);
+    try {
+      const id = editing?.id || uid();
+      const numero = editing?.numero || (await proximoNumero("VEN", "venda-cotacoes:"));
+      const dias = avNum(form.validadeDias) || 7;
+      const validade = new Date();
+      validade.setDate(validade.getDate() + dias);
+      await window.storage.set(
+        `venda-cotacoes:${id}`,
+        JSON.stringify({
+          ...form,
+          id,
+          numero,
+          validade: editing?.validade || validade.toISOString().slice(0, 10),
+          createdAt: editing?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+      );
+      onDone();
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar cotação"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (addAberto) {
+    return (
+      <div style={{ padding: 16, paddingBottom: 40 }}>
+        <button onClick={() => setAddAberto(false)} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+          <ChevronLeft size={15} /> voltar à cotação
+        </button>
+        <SecaoTitulo>Escolher aparelho</SecaoTitulo>
+        {produtos.length === 0 ? (
+          <EstadoVazio icone={PackageSearch} titulo="Catálogo vazio" texto="Cadastre aparelhos no catálogo para montar cotações." />
+        ) : (
+          produtos.map((prod) => (
+            <button
+              key={prod.id}
+              onClick={() => adicionarProduto(prod)}
+              style={{ width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 13, marginBottom: 10, cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}
+            >
+              <div style={{ width: 46, height: 46, borderRadius: 10, background: "#141416", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {prod.foto ? <img src={prod.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Snowflake size={18} color="#3FBCD1" />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#F3F3F1", wordBreak: "break-word" }}>{prod.marca} {prod.modelo}</div>
+                <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>{prod.btus} BTUs · {prod.tecnologia} · {prod.voltagem}</div>
+              </div>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: "#E9C878", whiteSpace: "nowrap" }}>{avMoeda(prod.precoVenda)}</span>
+            </button>
+          ))
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+
+      <SecaoTitulo>Cliente</SecaoTitulo>
+      {clientes.length > 0 && (
+        <Field label="Cliente cadastrado">
+          <select
+            style={{ ...inputStyle, appearance: "none" }}
+            defaultValue=""
+            onChange={(e) => {
+              const c = clientes.find((x) => x.nome === e.target.value);
+              if (c) setForm((f) => ({ ...f, cliente: c.nome, telefone: c.telefone || f.telefone, endereco: c.endereco || f.endereco }));
+            }}
+          >
+            <option value="">Selecionar cliente...</option>
+            {clientes.map((c) => <option key={c.nome} value={c.nome}>{c.nome}</option>)}
+          </select>
+        </Field>
+      )}
+      <Field label="Nome"><input style={inputStyle} value={form.cliente} onChange={set("cliente")} /></Field>
+      <LinhaDupla>
+        <Field label="WhatsApp"><input style={inputStyle} value={form.telefone} onChange={set("telefone")} inputMode="numeric" /></Field>
+        <Field label="Endereço"><input style={inputStyle} value={form.endereco} onChange={set("endereco")} /></Field>
+      </LinhaDupla>
+
+      <SecaoTitulo>Aparelhos</SecaoTitulo>
+      {form.itens.map((it) => (
+        <div key={it.id} style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 13, marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#F3F3F1", wordBreak: "break-word" }}>{it.descricao}</div>
+              <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>{it.btus} BTUs · {it.tecnologia}</div>
+            </div>
+            <button onClick={() => removerItem(it.id)} style={{ background: "none", border: "none", color: "#F0605A", cursor: "pointer", padding: 0, flexShrink: 0 }}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+          <LinhaDupla>
+            <Field label="Qtd"><input style={inputStyle} value={it.qtd} onChange={(e) => alterarItem(it.id, "qtd", e.target.value)} inputMode="numeric" /></Field>
+            <Field label="Preço unit. (R$)"><input style={inputStyle} value={it.precoVenda} onChange={(e) => alterarItem(it.id, "precoVenda", e.target.value)} inputMode="decimal" /></Field>
+          </LinhaDupla>
+        </div>
+      ))}
+      <button onClick={() => setAddAberto(true)} style={{ ...btnSecundario, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 4 }}>
+        <Plus size={15} /> Adicionar aparelho
+      </button>
+
+      <SecaoTitulo>Serviços e materiais</SecaoTitulo>
+      <LinhaDupla>
+        <Field label="Instalação (R$)"><input style={inputStyle} value={form.instalacao} onChange={set("instalacao")} inputMode="decimal" /></Field>
+        <Field label="Custo da instalação"><input style={inputStyle} value={form.custoInstalacao} onChange={set("custoInstalacao")} inputMode="decimal" placeholder="interno" /></Field>
+      </LinhaDupla>
+      <LinhaDupla>
+        <Field label="Materiais (R$)"><input style={inputStyle} value={form.materiais} onChange={set("materiais")} inputMode="decimal" /></Field>
+        <Field label="Custo dos materiais"><input style={inputStyle} value={form.custoMateriais} onChange={set("custoMateriais")} inputMode="decimal" placeholder="interno" /></Field>
+      </LinhaDupla>
+      <LinhaDupla>
+        <Field label="Serviços extras (R$)"><input style={inputStyle} value={form.servicos} onChange={set("servicos")} inputMode="decimal" /></Field>
+        <Field label="Desconto (R$)"><input style={inputStyle} value={form.desconto} onChange={set("desconto")} inputMode="decimal" /></Field>
+      </LinhaDupla>
+
+      {/* Resumo do cliente */}
+      <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 15, marginTop: 6 }}>
+        {[
+          ["Aparelhos", calc.subtotal],
+          ["Instalação", calc.instalacao],
+          ["Materiais", calc.materiais],
+          ["Serviços", calc.servicos],
+        ].map(([r, v]) => (
+          <div key={r} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12.5 }}>
+            <span style={{ color: "#8A8A90" }}>{r}</span>
+            <span style={{ color: "#C7C9CE" }}>{avMoeda(v)}</span>
+          </div>
+        ))}
+        {calc.desconto > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12.5 }}>
+            <span style={{ color: "#8A8A90" }}>Desconto</span>
+            <span style={{ color: "#F0605A" }}>- {avMoeda(calc.desconto)}</span>
+          </div>
+        )}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 8, paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "#F3F3F1" }}>Total</span>
+          <span style={{ fontSize: 21, fontWeight: 700, color: "#E9C878" }}>{avMoeda(calc.total)}</span>
+        </div>
+      </div>
+
+      {/* Margem — visível só aqui, nunca na proposta do cliente */}
+      <div style={{ background: "rgba(74,222,128,0.04)", border: "1px solid rgba(74,222,128,0.22)", borderRadius: 14, padding: 13, marginTop: 12 }}>
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#4ADE80", letterSpacing: 1.4, textTransform: "uppercase", marginBottom: 8 }}>
+          Interno · não aparece na proposta
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8 }}>
+          {[
+            ["Custo", avMoeda(calc.custoTotal), "#C7C9CE"],
+            ["Lucro", avMoeda(calc.lucro), calc.lucro >= 0 ? "#4ADE80" : "#F0605A"],
+            ["Margem", `${calc.margem.toFixed(1)}%`, calc.margem >= 20 ? "#4ADE80" : "#E9C878"],
+          ].map(([r, v, c]) => (
+            <div key={r} style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A8A", letterSpacing: 1, textTransform: "uppercase" }}>{r}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: c, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <SecaoTitulo>Condições</SecaoTitulo>
+      <LinhaDupla>
+        <Field label="Pagamento"><input style={inputStyle} value={form.pagamento} onChange={set("pagamento")} /></Field>
+        <Field label="Prazo de entrega"><input style={inputStyle} value={form.prazo} onChange={set("prazo")} placeholder="Ex: 5 dias úteis" /></Field>
+      </LinhaDupla>
+      <Field label="Validade da proposta (dias)"><input style={inputStyle} value={form.validadeDias} onChange={set("validadeDias")} inputMode="numeric" /></Field>
+      <Field label="Garantia">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={form.garantia} onChange={set("garantia")} />
+      </Field>
+      <Field label="Observações">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={form.observacoes} onChange={set("observacoes")} />
+      </Field>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+        <button onClick={onCancel} style={btnSecundario}>Cancelar</button>
+        <button onClick={salvar} disabled={saving} style={{ ...btnPrincipal, flex: 1.4, opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Salvando..." : "Salvar cotação"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Proposta em PDF (sem custo/margem) ---------------- */
+function avPropostaPDF(cot) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const { header, footer } = pdfCabecalhoRodape(LOGO_DATA_URI);
+  const calc = avCalcular(cot);
+  const card = (titulo, conteudo) => (conteudo ? `<div class="pdf-card"><h4>${titulo}</h4>${conteudo}</div>` : "");
+
+  win.document.write(`
+    <html><head><title>Proposta ${cot.numero} — ALLA SERVICE</title>
+    <style>${PDF_ESTILO_PREMIUM}</style></head><body>
+      <div class="pdf-page">
+        ${header}
+        <div class="pdf-meta">
+          <div><b>Proposta nº</b> ${cot.numero}</div>
+          <div><b>Data</b> ${new Date(cot.createdAt).toLocaleDateString("pt-BR")}</div>
+          <div><b>Validade</b> ${cot.validade ? new Date(cot.validade).toLocaleDateString("pt-BR") : "-"}</div>
+        </div>
+        <div class="pdf-doctitle">Proposta Comercial — Ar-Condicionado</div>
+        <div class="pdf-body">
+          ${card("Cliente", `
+            <div>${cot.cliente || "-"}</div>
+            ${cot.telefone ? `<div>${cot.telefone}</div>` : ""}
+            ${cot.endereco ? `<div>${cot.endereco}</div>` : ""}`)}
+
+          <div class="pdf-card"><h4>Equipamentos</h4>
+            ${(cot.itens || []).map((i) => `
+              <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
+                ${i.foto ? `<img src="${i.foto}" style="width:78px;height:62px;object-fit:cover;border-radius:6px;flex-shrink:0" />` : ""}
+                <div>
+                  <div style="font-weight:600">${i.qtd}× ${i.descricao}</div>
+                  <div style="font-size:11px;color:#555">
+                    ${[i.btus ? `${i.btus} BTUs` : "", i.tecnologia, i.ciclo, i.voltagem, i.gas, i.selo && i.selo !== "Não informado" ? `Selo ${i.selo}` : ""].filter(Boolean).join(" · ")}
+                  </div>
+                  <div style="font-size:11px;margin-top:3px">${avMoeda(avNum(i.precoVenda) * (avNum(i.qtd) || 1))}</div>
+                </div>
+              </div>`).join("")}
+          </div>
+
+          <div class="pdf-card"><h4>Itens inclusos</h4>
+            <table class="pdf-table">
+              <tr><td>Equipamentos</td><td style="text-align:right">${avMoeda(calc.subtotal)}</td></tr>
+              ${calc.instalacao ? `<tr><td>Instalação</td><td style="text-align:right">${avMoeda(calc.instalacao)}</td></tr>` : ""}
+              ${calc.materiais ? `<tr><td>Materiais</td><td style="text-align:right">${avMoeda(calc.materiais)}</td></tr>` : ""}
+              ${calc.servicos ? `<tr><td>Serviços adicionais</td><td style="text-align:right">${avMoeda(calc.servicos)}</td></tr>` : ""}
+              ${calc.desconto ? `<tr><td>Desconto</td><td style="text-align:right">- ${avMoeda(calc.desconto)}</td></tr>` : ""}
+            </table>
+          </div>
+
+          <div class="pdf-total"><span>Valor total</span><b>${avMoeda(calc.total)}</b></div>
+
+          ${card("Condições", `
+            <div><b>Pagamento:</b> ${cot.pagamento || "-"}</div>
+            ${cot.prazo ? `<div><b>Prazo de entrega:</b> ${cot.prazo}</div>` : ""}
+            <div><b>Validade da proposta:</b> ${cot.validade ? new Date(cot.validade).toLocaleDateString("pt-BR") : "-"}</div>`)}
+
+          ${card("Garantia", cot.garantia)}
+          ${card("Observações", cot.observacoes ? String(cot.observacoes).replace(/\n/g, "<br/>") : "")}
+
+          <div class="pdf-sig">Aceite do cliente</div>
+        </div>
+        ${footer}
+      </div>
+    </body></html>
+  `);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+/* Mensagem de WhatsApp da proposta — sem custo nem margem. */
+function avMensagemWhatsapp(cot) {
+  const calc = avCalcular(cot);
+  const sep = "━━━━━━━━━━━━━━━━━━";
+  const itens = (cot.itens || []).map(
+    (i) => `▪️ ${i.qtd}× ${i.descricao}${i.btus ? ` — ${i.btus} BTUs` : ""}${i.tecnologia ? ` (${i.tecnologia})` : ""}`
+  );
+  return [
+    "❄️ *ALLA SERVICE*",
+    "*PROPOSTA — AR-CONDICIONADO*",
+    "",
+    sep,
+    "",
+    `Olá, ${cot.cliente || "cliente"}!`,
+    "Segue a proposta do seu equipamento:",
+    "",
+    ...itens,
+    "",
+    ...(calc.instalacao ? [`🔧 Instalação inclusa`] : []),
+    ...(calc.materiais ? [`📦 Materiais inclusos`] : []),
+    "",
+    sep,
+    "",
+    "💰 *VALOR TOTAL*",
+    `*${avMoeda(calc.total)}*`,
+    "",
+    `💳 Pagamento: ${cot.pagamento || "a combinar"}`,
+    ...(cot.prazo ? [`🚚 Entrega: ${cot.prazo}`] : []),
+    ...(cot.validade ? [`📅 Proposta válida até ${new Date(cot.validade).toLocaleDateString("pt-BR")}`] : []),
+    "",
+    ...(cot.garantia ? [`🛡️ ${cot.garantia}`, ""] : []),
+    sep,
+    "",
+    "*ALLA SERVICE*",
+    "AR / ELÉTRICA",
+    "",
+    "📲 (15) 99198-9866",
+  ].join("\n");
+}
+
+/* ---------------- Detalhe da cotação ---------------- */
+function AvCotacaoDetalhe({ cot, onBack, onEditar, onMudou }) {
+  const [ocupado, setOcupado] = useState(false);
+  const calc = avCalcular(cot);
+  const status = avStatusEfetivo(cot);
+
+  const gravar = async (novo) => {
+    try {
+      await window.storage.set(`venda-cotacoes:${cot.id}`, JSON.stringify({ ...cot, ...novo, updatedAt: new Date().toISOString() }));
+      onMudou();
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "atualizar cotação"));
+    }
+  };
+
+  const excluir = async () => {
+    try {
+      await window.storage.delete(`venda-cotacoes:${cot.id}`);
+      onBack();
+      onMudou();
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "excluir cotação"));
+    }
+  };
+
+  /* Converte a cotação aprovada em OS + receita, sem redigitar nada. */
+  const converterEmVenda = async () => {
+    if (ocupado) return;
+    setOcupado(true);
+    try {
+      const primeiro = (cot.itens || [])[0] || {};
+      const numeroOS = await proximoNumero("OS", "ordens-servico:");
+      const osId = uid();
+      await window.storage.set(
+        `ordens-servico:${osId}`,
+        JSON.stringify({
+          id: osId,
+          numero: numeroOS,
+          clienteNome: cot.cliente,
+          clienteTelefone: cot.telefone,
+          clienteEndereco: cot.endereco,
+          eqTipo: "Split",
+          eqMarca: (primeiro.descricao || "").split(" ")[0] || "",
+          eqModelo: (primeiro.descricao || "").split(" ").slice(1).join(" "),
+          eqBtus: primeiro.btus || "",
+          tipoServico: "Instalação",
+          problemaRelatado: `Instalação referente à proposta ${cot.numero}.`,
+          materiais: String(calc.materiais),
+          maoDeObra: String(calc.instalacao),
+          pecas: "0",
+          deslocamento: "0",
+          desconto: "0",
+          valorTotal: calc.total,
+          status: "ABERTA",
+          origemCotacaoId: cot.id,
+          data: new Date().toISOString().slice(0, 10),
+          createdAt: new Date().toISOString(),
+        })
+      );
+
+      const recId = uid();
+      await window.storage.set(
+        `fin-receitas:${recId}`,
+        JSON.stringify({
+          id: recId,
+          descricao: `Venda de ar-condicionado — ${cot.cliente} (${cot.numero})`,
+          categoria: "Venda de equipamento",
+          valor: calc.total,
+          status: "pendente",
+          data: new Date().toISOString().slice(0, 10),
+          origemCotacaoId: cot.id,
+          createdAt: new Date().toISOString(),
+        })
+      );
+
+      await gravar({ status: "APROVADA", convertidaEm: new Date().toISOString(), osGerada: numeroOS });
+      notificarErroBanco(`Venda gerada: OS ${numeroOS} e receita lançada no Financeiro.`);
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "converter em venda"));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#C9A24B" }}>{cot.numero}</div>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 700, color: "#F3F3F1", marginBottom: 8, wordBreak: "break-word" }}>{cot.cliente}</div>
+      <div style={{ marginBottom: 16 }}><Etiqueta texto={status} cor={AV_STATUS_COR[status]} /></div>
+
+      <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 15, marginBottom: 14 }}>
+        {(cot.itens || []).map((i) => (
+          <div key={i.id} style={{ display: "flex", gap: 11, alignItems: "center", marginBottom: 10, minWidth: 0 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 10, background: "#141416", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {i.foto ? <img src={i.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Snowflake size={16} color="#3FBCD1" />}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, color: "#F3F3F1", wordBreak: "break-word" }}>{i.qtd}× {i.descricao}</div>
+              <div style={{ fontSize: 11, color: "#8A8A90" }}>{i.btus} BTUs · {i.tecnologia}</div>
+            </div>
+            <span style={{ fontSize: 12.5, color: "#C7C9CE", whiteSpace: "nowrap" }}>{avMoeda(avNum(i.precoVenda) * (avNum(i.qtd) || 1))}</span>
+          </div>
+        ))}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 8, paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "#F3F3F1" }}>Total</span>
+          <span style={{ fontSize: 21, fontWeight: 700, color: "#E9C878" }}>{avMoeda(calc.total)}</span>
+        </div>
+      </div>
+
+      <div style={{ background: "rgba(74,222,128,0.04)", border: "1px solid rgba(74,222,128,0.22)", borderRadius: 14, padding: 13, marginBottom: 16 }}>
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#4ADE80", letterSpacing: 1.4, textTransform: "uppercase", marginBottom: 8 }}>
+          Interno · não vai na proposta
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8 }}>
+          {[["Custo", avMoeda(calc.custoTotal)], ["Lucro", avMoeda(calc.lucro)], ["Margem", `${calc.margem.toFixed(1)}%`]].map(([r, v]) => (
+            <div key={r} style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A8A", letterSpacing: 1, textTransform: "uppercase" }}>{r}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#F3F3F1", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <SecaoTitulo>Enviar ao cliente</SecaoTitulo>
+      <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+        <button onClick={() => avPropostaPDF(cot)} style={btnSecundario}>Gerar PDF</button>
+        <button
+          onClick={() => {
+            compartilhar({ titulo: `Proposta ${cot.numero}`, texto: avMensagemWhatsapp(cot), telefone: cot.telefone });
+            if (avStatusEfetivo(cot) === "RASCUNHO") gravar({ status: "ENVIADA" });
+          }}
+          style={{ ...btnPrincipal, flex: 1.4, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+        >
+          <Send size={14} /> WhatsApp
+        </button>
+      </div>
+
+      <SecaoTitulo>Situação</SecaoTitulo>
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 16 }}>
+        {AV_STATUS.filter((s) => s !== "EXPIRADA").map((s) => {
+          const on = cot.status === s;
+          return (
+            <button
+              key={s}
+              onClick={() => gravar({ status: s })}
+              style={{ fontSize: 10.5, padding: "6px 10px", borderRadius: 9, border: `1px solid ${on ? AV_STATUS_COR[s] : "#2A2A2E"}`, background: on ? `${AV_STATUS_COR[s]}1A` : "transparent", color: on ? AV_STATUS_COR[s] : "#8A8A90", cursor: "pointer" }}
+            >
+              {s}
+            </button>
+          );
+        })}
+      </div>
+
+      {cot.osGerada ? (
+        <div style={{ background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.3)", borderRadius: 12, padding: 13, marginBottom: 14, fontSize: 12.5, color: "#4ADE80", lineHeight: 1.5 }}>
+          Venda já convertida — OS {cot.osGerada} criada e receita lançada no Financeiro.
+        </div>
+      ) : (
+        <button onClick={converterEmVenda} disabled={ocupado} style={{ ...btnPrincipal, width: "100%", padding: "13px 0", marginBottom: 14, opacity: ocupado ? 0.6 : 1 }}>
+          {ocupado ? "Convertendo..." : "Converter em venda (gera OS + receita)"}
+        </button>
+      )}
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={() => onEditar(cot)} style={btnSecundario}>Editar</button>
+        <button onClick={excluir} style={{ ...btnSecundario, color: "#F0605A", borderColor: "rgba(240,96,90,0.4)" }}>Excluir</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Módulo principal ---------------- */
+function AllaVendaModule() {
+  const [aba, setAba] = useState("cotacoes"); // cotacoes | catalogo
+  const [modo, setModo] = useState("lista");  // lista | nova | detalhe | produto
+  const [cotacoes, setCotacoes] = useState(null);
+  const [produtos, setProdutos] = useState([]);
+  const [selecionada, setSelecionada] = useState(null);
+  const [produtoEdit, setProdutoEdit] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState("Todas");
+
+  const carregar = useCallback(async () => {
+    try {
+      const [cots, prods] = await Promise.all([
+        carregarTudoStorage("venda-cotacoes:"),
+        carregarTudoStorage("venda-produtos:"),
+      ]);
+      cots.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      prods.sort((a, b) => `${a.marca} ${a.modelo}`.localeCompare(`${b.marca} ${b.modelo}`));
+      setCotacoes(cots);
+      setProdutos(prods);
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "carregar vendas"));
+      setCotacoes([]);
+      setProdutos([]);
+    }
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const comStatus = useMemo(() => (cotacoes || []).map((c) => ({ ...c, _st: avStatusEfetivo(c) })), [cotacoes]);
+
+  const painel = useMemo(() => {
+    const aprovadas = comStatus.filter((c) => c._st === "APROVADA");
+    const enviadas = comStatus.filter((c) => ["ENVIADA", "EM NEGOCIAÇÃO"].includes(c._st));
+    const abertas = comStatus.filter((c) => c._st === "RASCUNHO");
+    const vendido = aprovadas.reduce((a, c) => a + avCalcular(c).total, 0);
+    const lucro = aprovadas.reduce((a, c) => a + avCalcular(c).lucro, 0);
+    const margem = vendido > 0 ? (lucro / vendido) * 100 : 0;
+    const conversao = comStatus.length ? (aprovadas.length / comStatus.length) * 100 : 0;
+
+    const porProduto = {};
+    aprovadas.forEach((c) => (c.itens || []).forEach((i) => {
+      porProduto[i.descricao] = (porProduto[i.descricao] || 0) + (avNum(i.qtd) || 1);
+    }));
+    const topProdutos = Object.entries(porProduto).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+    return { abertas: abertas.length, enviadas: enviadas.length, aprovadas: aprovadas.length, vendido, lucro, margem, conversao, topProdutos };
+  }, [comStatus]);
+
+  const filtradas = useMemo(() => {
+    let l = comStatus;
+    if (filtro !== "Todas") l = l.filter((c) => c._st === filtro);
+    const q = busca.trim().toLowerCase();
+    if (q) l = l.filter((c) => [c.cliente, c.numero, ...(c.itens || []).map((i) => i.descricao)].filter(Boolean).join(" ").toLowerCase().includes(q));
+    return l;
+  }, [comStatus, filtro, busca]);
+
+  const produtosFiltrados = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return produtos;
+    return produtos.filter((p) => [p.marca, p.modelo, p.btus, p.tecnologia, p.categoria, p.fornecedor].filter(Boolean).join(" ").toLowerCase().includes(q));
+  }, [produtos, busca]);
+
+  if (modo === "produto") {
+    return <AvProdutoForm editing={produtoEdit} onCancel={() => { setProdutoEdit(null); setModo("lista"); }} onDone={() => { setProdutoEdit(null); setModo("lista"); carregar(); }} />;
+  }
+  if (modo === "nova") {
+    return <AvCotacaoForm editing={selecionada} produtos={produtos} onCancel={() => { setSelecionada(null); setModo("lista"); }} onDone={() => { setSelecionada(null); setModo("lista"); carregar(); }} />;
+  }
+  if (modo === "detalhe" && selecionada) {
+    return (
+      <AvCotacaoDetalhe
+        cot={selecionada}
+        onBack={() => { setSelecionada(null); setModo("lista"); }}
+        onEditar={(c) => { setSelecionada(c); setModo("nova"); }}
+        onMudou={() => { setSelecionada(null); setModo("lista"); carregar(); }}
+      />
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 2, textTransform: "uppercase" }}>
+        Vendas · Ar-condicionado
+      </div>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 21, fontWeight: 700, color: "#F3F3F1", margin: "4px 0 16px" }}>
+        ALLA VENDA
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 12 }}>
+        <MiniIndicador icone={FileText} valor={String(painel.abertas)} rotulo="Rascunhos" cor="#8A8A90" />
+        <MiniIndicador icone={Send} valor={String(painel.enviadas)} rotulo="Enviadas" cor="#4681DF" />
+        <MiniIndicador icone={CheckCircle2} valor={String(painel.aprovadas)} rotulo="Aprovadas" cor="#4ADE80" />
+        <MiniIndicador icone={DollarSign} valor={`R$ ${painel.vendido.toFixed(0)}`} rotulo="Vendido" cor="#C9A24B" />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 16 }}>
+        <MiniIndicador icone={TrendingUp} valor={`R$ ${painel.lucro.toFixed(0)}`} rotulo="Lucro" cor="#4ADE80" />
+        <MiniIndicador icone={BarChart3} valor={`${painel.margem.toFixed(0)}%`} rotulo="Margem" cor="#E9C878" />
+        <MiniIndicador icone={CheckCircle2} valor={`${painel.conversao.toFixed(0)}%`} rotulo="Conversão" cor="#4681DF" />
+      </div>
+
+      {painel.topProdutos.length > 0 && (
+        <>
+          <SecaoTitulo>Mais vendidos</SecaoTitulo>
+          <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 14, marginBottom: 16 }}>
+            {painel.topProdutos.map(([nome, qtd]) => {
+              const max = painel.topProdutos[0][1] || 1;
+              return (
+                <div key={nome} style={{ marginBottom: 9 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
+                    <span style={{ fontSize: 12.5, color: "#C7C9CE", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+                    <span style={{ fontSize: 12, color: "#E9C878", fontFamily: "'JetBrains Mono',monospace" }}>{qtd}</span>
+                  </div>
+                  <div style={{ height: 5, background: "#1A1A1D", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${(qtd / max) * 100}%`, height: "100%", background: "linear-gradient(90deg,#C9A24B,#E9C878)", borderRadius: 3 }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "flex", borderBottom: "1px solid #1C1C1F", marginBottom: 16 }}>
+        {[["cotacoes", "Cotações"], ["catalogo", "Catálogo"]].map(([id, nome]) => {
+          const on = aba === id;
+          return (
+            <button
+              key={id}
+              onClick={() => { setAba(id); setBusca(""); }}
+              style={{ flex: 1, background: "none", border: "none", borderBottom: `2px solid ${on ? "#C9A24B" : "transparent"}`, color: on ? "#E9C878" : "#7A7A7A", fontFamily: "'Roboto',sans-serif", fontWeight: on ? 600 : 400, fontSize: 12.5, textTransform: "uppercase", letterSpacing: 0.6, padding: "11px 4px", cursor: "pointer", transition: "color 200ms, border-color 200ms" }}
+            >
+              {nome}
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={() => (aba === "cotacoes" ? (setSelecionada(null), setModo("nova")) : (setProdutoEdit(null), setModo("produto")))}
+        style={{ ...btnPrincipal, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px 0", marginBottom: 14 }}
+      >
+        <Plus size={16} /> {aba === "cotacoes" ? "Nova cotação" : "Novo aparelho"}
+      </button>
+
+      <div style={{ position: "relative", marginBottom: 12 }}>
+        <Search size={15} color="#6E6E73" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder={aba === "cotacoes" ? "Buscar cliente, nº ou aparelho..." : "Buscar marca, modelo ou BTUs..."} style={{ ...inputStyle, paddingLeft: 34 }} />
+      </div>
+
+      {aba === "cotacoes" && (
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+          {["Todas", ...AV_STATUS].map((f) => {
+            const on = filtro === f;
+            const cor = f === "Todas" ? "#C9A24B" : AV_STATUS_COR[f];
+            return (
+              <button key={f} onClick={() => setFiltro(f)} style={{ flexShrink: 0, fontSize: 11, padding: "7px 12px", borderRadius: 20, border: `1px solid ${on ? cor : "#2A2A2E"}`, background: on ? `${cor}1A` : "transparent", color: on ? cor : "#8A8A90", cursor: "pointer", whiteSpace: "nowrap" }}>
+                {f}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {cotacoes === null ? (
+        <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
+      ) : aba === "cotacoes" ? (
+        filtradas.length === 0 ? (
+          <EstadoVazio icone={FileText} titulo={comStatus.length === 0 ? "Nenhuma cotação ainda" : "Nada encontrado"} texto={comStatus.length === 0 ? "Crie a primeira cotação para começar a vender." : "Ajuste a busca ou o filtro."} />
+        ) : (
+          filtradas.map((c) => {
+            const calc = avCalcular(c);
+            return (
+              <button key={c.id} onClick={() => { setSelecionada(c); setModo("detalhe"); }} style={{ width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 14, marginBottom: 11, cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 600, color: "#F3F3F1", wordBreak: "break-word" }}>{c.cliente}</div>
+                    <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 3 }}>
+                      {c.numero} · {(c.itens || []).length} {(c.itens || []).length === 1 ? "aparelho" : "aparelhos"}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#E9C878", whiteSpace: "nowrap" }}>{avMoeda(calc.total)}</span>
+                </div>
+                <div style={{ marginTop: 9 }}><Etiqueta texto={c._st} cor={AV_STATUS_COR[c._st]} /></div>
+              </button>
+            );
+          })
+        )
+      ) : produtosFiltrados.length === 0 ? (
+        <EstadoVazio icone={PackageSearch} titulo={produtos.length === 0 ? "Catálogo vazio" : "Nada encontrado"} texto={produtos.length === 0 ? "Cadastre os aparelhos que você vende para montar cotações rapidamente." : "Ajuste a busca."} />
+      ) : (
+        produtosFiltrados.map((prod) => (
+          <button key={prod.id} onClick={() => { setProdutoEdit(prod); setModo("produto"); }} style={{ width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 13, marginBottom: 11, cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ width: 52, height: 52, borderRadius: 12, background: "#141416", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {prod.foto ? <img src={prod.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Snowflake size={19} color="#3FBCD1" />}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#F3F3F1", wordBreak: "break-word" }}>{prod.marca} {prod.modelo}</div>
+              <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>
+                {prod.btus} BTUs · {prod.tecnologia} · {prod.voltagem}
+                {prod.estoque ? ` · ${prod.estoque} em estoque` : ""}
+              </div>
+            </div>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: "#E9C878", whiteSpace: "nowrap" }}>{avMoeda(prod.precoVenda)}</span>
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
 export default function AllaCheckApp() {
   const [usuario, setUsuario] = useState(undefined); // undefined = ainda verificando
   const [semAuth, setSemAuth] = useState(false);
@@ -11043,8 +12256,34 @@ export default function AllaCheckApp() {
 }
 
 
+/* Faz a tela atual sair antes da próxima entrar.
+   A saída é curta (150ms) para a navegação continuar parecendo imediata. */
+function useTransicaoTela(view) {
+  const [visivel, setVisivel] = useState(view);
+  const [saindo, setSaindo] = useState(false);
+
+  useEffect(() => {
+    if (view === visivel) return;
+    if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setVisivel(view);
+      return;
+    }
+    setSaindo(true);
+    const t = setTimeout(() => {
+      setVisivel(view);
+      setSaindo(false);
+      // ao trocar de tela, volta ao topo — como faria um app nativo
+      try { window.scrollTo({ top: 0, behavior: "instant" }); } catch { window.scrollTo(0, 0); }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [view, visivel]);
+
+  return { telaVisivel: visivel, saindo };
+}
+
 function AllaCheckAppInterno({ usuario }) {
   const [view, setView] = useState("home");
+  const { telaVisivel, saindo } = useTransicaoTela(view);
   const [reportCount, setReportCount] = useState(0);
   const [orcamentosCount, setOrcamentosCount] = useState(0);
   const [vendasCount, setVendasCount] = useState(0);
@@ -11193,8 +12432,8 @@ function AllaCheckAppInterno({ usuario }) {
         <LimiteDeErro tela={view} onVoltar={() => setView("home")}>
         {/* key={view}: faz o React remontar ao trocar de tela, disparando
             a animação de entrada a cada navegação (ida e volta). */}
-        <div key={view} className="alla-tela">
-        {view === "home" && (
+        <div key={telaVisivel} className={`alla-tela${saindo ? " alla-tela-saindo" : ""}`}>
+        {telaVisivel === "home" && (
           <HomeScreen
             onNavigate={setView}
             onMenu={() => setMenuOpen(true)}
@@ -11205,36 +12444,37 @@ function AllaCheckAppInterno({ usuario }) {
             importDone={importDone}
           />
         )}
-        {view === "novo-relatorio" && (
+        {telaVisivel === "novo-relatorio" && (
           <NovoRelatorio onSaved={() => setRefreshKey((k) => k + 1)} />
         )}
-        {view === "historico" && <Historico refreshKey={refreshKey} />}
-        {view === "ferramentas" && <FerramentasScreen onNavigate={setView} />}
-        {view === "tool-btu" && <BtuCalculator />}
-        {view === "tool-conversor" && <TechConverter onNavigate={setView} />}
-        {view === "tool-orcamento-ia" && (
+        {telaVisivel === "historico" && <Historico refreshKey={refreshKey} />}
+        {telaVisivel === "ferramentas" && <FerramentasScreen onNavigate={setView} />}
+        {telaVisivel === "tool-btu" && <BtuCalculator />}
+        {telaVisivel === "tool-conversor" && <TechConverter onNavigate={setView} />}
+        {telaVisivel === "tool-orcamento-ia" && (
           <OrcamentosModule onRefreshApp={() => setRefreshKey((k) => k + 1)} />
         )}
-        {view === "tool-pecas-ia" && <PartsAssistant />}
-        {view === "tool-laudo-tecnico" && <LaudoTecnico />}
-        {view === "tool-assinaturas" && <AssinaturasModule />}
-        {view === "tool-rastreio-tecnico" && <RastreioTecnico />}
-        {view === "tool-historico-equipamento" && <HistoricoEquipamento />}
-        {view === "tool-checklist-ia" && <ChecklistEquipamento />}
-        {view === "tool-relatorios-financeiros" && <RelatoriosFinanceiros />}
-        {view === "pmocs" && <PmocTool />}
-        {view === "documentos" && <RecibosEOrcamentosHub onNavigate={setView} />}
-        {view === "orcamentos" && <OrcamentosModule onRefreshApp={() => setRefreshKey((k) => k + 1)} />}
-        {view === "recibos" && <RecibosModule />}
-        {view === "os" && <OrdensServicoModule />}
-        {view === "financeiro" && <FinanceiroModule onBack={() => setView("home")} />}
-        {view === "os-frio" && <OSFrioModule />}
-        {view === "central-whatsapp" && <CentralWhatsApp />}
-        {view === "gestao-inteligente" && <GestaoInteligente onBack={() => setView("home")} />}
-        {view === "vendas-cervejeira" && <VendasCervejeiraModule />}
-        {view === "funcionarios" && <FuncionariosModule />}
-        {TOOLS.filter((t) => !t.active).some((t) => `tool-${t.key}` === view) && (
-          <EmBreve label={titles[view]} />
+        {telaVisivel === "tool-pecas-ia" && <PartsAssistant />}
+        {telaVisivel === "tool-laudo-tecnico" && <LaudoTecnico />}
+        {telaVisivel === "tool-alla-venda" && <AllaVendaModule />}
+        {telaVisivel === "tool-assinaturas" && <AssinaturasModule />}
+        {telaVisivel === "tool-rastreio-tecnico" && <RastreioTecnico />}
+        {telaVisivel === "tool-historico-equipamento" && <HistoricoEquipamento />}
+        {telaVisivel === "tool-checklist-ia" && <ChecklistEquipamento />}
+        {telaVisivel === "tool-relatorios-financeiros" && <RelatoriosFinanceiros />}
+        {telaVisivel === "pmocs" && <PmocTool />}
+        {telaVisivel === "documentos" && <RecibosEOrcamentosHub onNavigate={setView} />}
+        {telaVisivel === "orcamentos" && <OrcamentosModule onRefreshApp={() => setRefreshKey((k) => k + 1)} />}
+        {telaVisivel === "recibos" && <RecibosModule />}
+        {telaVisivel === "os" && <OrdensServicoModule />}
+        {telaVisivel === "financeiro" && <FinanceiroModule onBack={() => setView("home")} />}
+        {telaVisivel === "os-frio" && <OSFrioModule />}
+        {telaVisivel === "central-whatsapp" && <CentralWhatsApp />}
+        {telaVisivel === "gestao-inteligente" && <GestaoInteligente onBack={() => setView("home")} />}
+        {telaVisivel === "vendas-cervejeira" && <VendasCervejeiraModule />}
+        {telaVisivel === "funcionarios" && <FuncionariosModule />}
+        {TOOLS.filter((t) => !t.active).some((t) => `tool-${t.key}` === telaVisivel) && (
+          <EmBreve label={titles[telaVisivel]} />
         )}
         </div>
         </LimiteDeErro>
