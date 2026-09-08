@@ -178,6 +178,8 @@ function _fsParseKey(key) {
 if (typeof window !== "undefined" && (!window.storage || typeof window.storage.get !== "function")) {
   let _fsReady = false;
   let _db = null;
+  // guarda o conteúdo trazido pelo último list() de cada coleção
+  const _cacheLista = new Map();
   try {
     const _app = initializeApp(firebaseConfig);
     _db = getFirestore(_app);
@@ -202,6 +204,11 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
 
   window.storage = {
     async get(key) {
+      // se o dado já veio de um list() recente, evita ida ao servidor
+      if (_cacheLista.has(key)) {
+        const v = _cacheLista.get(key);
+        return { key, value: typeof v === "string" ? v : JSON.stringify(v) };
+      }
       if (!_fsReady) {
         if (!_mem.has(key)) return null;
         return { key, value: _mem.get(key) };
@@ -233,6 +240,7 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
         // não dependa de permissão de LEITURA nas regras do Firestore.
         const payload = { ...obj, _fsUpdatedAt: serverTimestamp() };
         await setDoc(ref, payload, { merge: true });
+        _cacheLista.delete(key); // o dado mudou: força buscar de novo
         return { key, value };
       } catch (e) {
         console.error("[ALLA CHECK] Firestore recusou:", e && e.code, e && e.message, e);
@@ -249,6 +257,7 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
       try {
         const { collectionName, docId } = _fsParseKey(key);
         await deleteDoc(doc(_db, collectionName, docId));
+        _cacheLista.delete(key); // removido: some do cache também
         return { key, deleted: true };
       } catch (e) {
         console.error("[ALLA CHECK] Firestore recusou:", e && e.code, e && e.message, e);
@@ -267,8 +276,17 @@ if (typeof window !== "undefined" && (!window.storage || typeof window.storage.g
         if (!collectionName) return { keys: [] };
         const snaps = await getDocs(collection(_db, collectionName));
         const keys = [];
-        snaps.forEach((d) => keys.push(`${cleanPrefix}:${d.id}`));
-        return { keys };
+        const itens = [];
+        snaps.forEach((d) => {
+          const chave = `${cleanPrefix}:${d.id}`;
+          keys.push(chave);
+          // os dados JÁ vieram nesta consulta: guardamos em cache para
+          // ninguém precisar buscar documento por documento depois.
+          const dados = d.data();
+          itens.push({ key: chave, value: dados });
+          _cacheLista.set(chave, dados);
+        });
+        return { keys, itens };
       } catch (e) {
         console.error("[ALLA CHECK] Firestore recusou:", e && e.code, e && e.message, e);
         notificarErroBanco(diagnosticarErroFirestore(e, `listar "${prefix}"`), { especifico: true });
@@ -3313,9 +3331,12 @@ function OrcamentosModule({ onRefreshApp }) {
       const list = await window.storage.list("orcamentos:");
       if (!list || !list.keys || !list.keys.length) return setOrcamentos([]);
       const items = [];
-      for (const key of list.keys) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) items.push(orcNormalizar(JSON.parse(r.value)));
+      // leitura em lote
+      if (list.itens) {
+        list.itens.forEach((i) => items.push(orcNormalizar(typeof i.value === "string" ? JSON.parse(i.value) : i.value)));
+      } else {
+        const _rs = await Promise.all(list.keys.map((k) => window.storage.get(k).catch(() => null)));
+        _rs.filter(Boolean).forEach((r) => items.push(orcNormalizar(JSON.parse(r.value))));
       }
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setOrcamentos(items);
@@ -3715,11 +3736,12 @@ function LaudoTecnico() {
     try {
       const list = await window.storage.list("laudos:");
       if (!list || !list.keys || !list.keys.length) return setLista([]);
-      const items = [];
-      for (const key of list.keys) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) items.push(JSON.parse(r.value));
-      }
+      // lê tudo de uma vez em vez de um registro por vez
+      const items = list.itens
+        ? list.itens.map((i) => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
+        : (await Promise.all(list.keys.map((k) => window.storage.get(k).catch(() => null))))
+            .filter(Boolean)
+            .map((r) => JSON.parse(r.value));
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setLista(items);
     } catch {
@@ -4258,11 +4280,12 @@ function PmocTool() {
     try {
       const list = await window.storage.list("pmocs:");
       if (!list || !list.keys || !list.keys.length) return setLista([]);
-      const items = [];
-      for (const key of list.keys) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) items.push(JSON.parse(r.value));
-      }
+      // lê tudo de uma vez em vez de um registro por vez
+      const items = list.itens
+        ? list.itens.map((i) => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
+        : (await Promise.all(list.keys.map((k) => window.storage.get(k).catch(() => null))))
+            .filter(Boolean)
+            .map((r) => JSON.parse(r.value));
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setLista(items);
     } catch {
@@ -4647,11 +4670,12 @@ function RecibosModule() {
     try {
       const list = await window.storage.list("recibos:");
       if (!list || !list.keys || !list.keys.length) return setRecibos([]);
-      const items = [];
-      for (const key of list.keys) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) items.push(JSON.parse(r.value));
-      }
+      // lê tudo de uma vez em vez de um registro por vez
+      const items = list.itens
+        ? list.itens.map((i) => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
+        : (await Promise.all(list.keys.map((k) => window.storage.get(k).catch(() => null))))
+            .filter(Boolean)
+            .map((r) => JSON.parse(r.value));
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setRecibos(items);
     } catch {
@@ -5209,11 +5233,12 @@ function OrdensServicoModule() {
     try {
       const list = await window.storage.list("ordens-servico:");
       if (!list || !list.keys || !list.keys.length) return setLista([]);
-      const items = [];
-      for (const key of list.keys) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) items.push(JSON.parse(r.value));
-      }
+      // lê tudo de uma vez em vez de um registro por vez
+      const items = list.itens
+        ? list.itens.map((i) => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
+        : (await Promise.all(list.keys.map((k) => window.storage.get(k).catch(() => null))))
+            .filter(Boolean)
+            .map((r) => JSON.parse(r.value));
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setLista(items);
     } catch {
@@ -5267,6 +5292,8 @@ function OrdensServicoModule() {
     }
     return l;
   }, [lista, busca, filtro]);
+
+  const filtradasVisiveis = useListaProgressiva(filtradas);
 
   const contagem = useMemo(() => {
     const c = { Todas: (lista || []).length };
@@ -5425,10 +5452,11 @@ function OrdensServicoModule() {
           </div>
         </div>
       ) : (
-        filtradas.map((os) => {
+        filtradasVisiveis.map((os) => {
           const cor = OS_STATUS_COLOR[os.status] || "#8A8A90";
           return (
             <button
+              className="alla-item"
               key={os.id}
               onClick={() => {
                 setSelected(os);
@@ -6580,11 +6608,12 @@ function OSFrioModule() {
     try {
       const list = await window.storage.list("os-frio:");
       if (!list || !list.keys || !list.keys.length) return setLista([]);
-      const items = [];
-      for (const key of list.keys) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) items.push(JSON.parse(r.value));
-      }
+      // lê tudo de uma vez em vez de um registro por vez
+      const items = list.itens
+        ? list.itens.map((i) => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
+        : (await Promise.all(list.keys.map((k) => window.storage.get(k).catch(() => null))))
+            .filter(Boolean)
+            .map((r) => JSON.parse(r.value));
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setLista(items);
     } catch {
@@ -6772,10 +6801,12 @@ async function buscarClientesReais() {
   for (const fonte of fontes) {
     try {
       const list = await window.storage.list(fonte.prefix);
-      for (const key of list.keys || []) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (!r) continue;
-        const obj = JSON.parse(r.value);
+      const _brutos = list.itens
+        ? list.itens.map((i) => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
+        : (await Promise.all((list.keys || []).map((k) => window.storage.get(k).catch(() => null))))
+            .filter(Boolean)
+            .map((r) => JSON.parse(r.value));
+      for (const obj of _brutos) {
         const nome = obj[fonte.nomeKey];
         if (nome && nome.trim() && !mapa.has(nome)) {
           mapa.set(nome, { nome, telefone: obj[fonte.telKey] || "" });
@@ -7142,12 +7173,17 @@ function CentralWhatsApp() {
 async function carregarTudoStorage(prefix) {
   try {
     const list = await window.storage.list(prefix);
-    const items = [];
-    for (const key of list.keys || []) {
-      const r = await window.storage.get(key).catch(() => null);
-      if (r) items.push(JSON.parse(r.value));
+    // Caminho rápido: o list() já traz os dados numa única consulta.
+    // Antes fazíamos uma ida ao banco por registro — com 32 OS eram
+    // 33 consultas em fila, o que travava a navegação.
+    if (list && list.itens) {
+      return list.itens.map((i) => (typeof i.value === "string" ? JSON.parse(i.value) : i.value));
     }
-    return items;
+    const chaves = (list && list.keys) || [];
+    const resultados = await Promise.all(
+      chaves.map((key) => window.storage.get(key).catch(() => null))
+    );
+    return resultados.filter(Boolean).map((r) => JSON.parse(r.value));
   } catch {
     return [];
   }
@@ -9396,13 +9432,12 @@ function Historico({ refreshKey }) {
         return;
       }
       const items = [];
-      for (const key of list.keys) {
-        try {
-          const r = await window.storage.get(key);
-          if (r) items.push(JSON.parse(r.value));
-        } catch {
-          /* skip */
-        }
+      // leitura em lote
+      if (list.itens) {
+        list.itens.forEach((i) => items.push(typeof i.value === "string" ? JSON.parse(i.value) : i.value));
+      } else {
+        const _rs = await Promise.all(list.keys.map((k) => window.storage.get(k).catch(() => null)));
+        _rs.filter(Boolean).forEach((r) => { try { items.push(JSON.parse(r.value)); } catch { /* registro ilegível */ } });
       }
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setReports(items);
@@ -9892,11 +9927,12 @@ function AssinaturasModule() {
     try {
       const list = await window.storage.list("assinaturas:");
       if (!list || !list.keys || !list.keys.length) return setLista([]);
-      const items = [];
-      for (const key of list.keys) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) items.push(JSON.parse(r.value));
-      }
+      // lê tudo de uma vez em vez de um registro por vez
+      const items = list.itens
+        ? list.itens.map((i) => (typeof i.value === "string" ? JSON.parse(i.value) : i.value))
+        : (await Promise.all(list.keys.map((k) => window.storage.get(k).catch(() => null))))
+            .filter(Boolean)
+            .map((r) => JSON.parse(r.value));
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setLista(items);
     } catch (err) {
@@ -10123,9 +10159,12 @@ function RastreioTecnico() {
     try {
       const list = await window.storage.list("rastreios:");
       const items = [];
-      for (const key of (list && list.keys) || []) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) items.push(JSON.parse(r.value));
+      // lê tudo de uma vez em vez de um registro por vez
+      if (list && list.itens) {
+        list.itens.forEach((i) => items.push(typeof i.value === "string" ? JSON.parse(i.value) : i.value));
+      } else {
+        const _rs = await Promise.all(((list && list.keys) || []).map((k) => window.storage.get(k).catch(() => null)));
+        _rs.filter(Boolean).forEach((r) => items.push(JSON.parse(r.value)));
       }
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       setLista(items);
@@ -10438,9 +10477,12 @@ async function montarHistoricoEquipamentos() {
     try {
       const list = await window.storage.list(prefixo);
       const out = [];
-      for (const key of (list && list.keys) || []) {
-        const r = await window.storage.get(key).catch(() => null);
-        if (r) out.push(JSON.parse(r.value));
+      // lê tudo de uma vez em vez de um registro por vez
+      if (list && list.itens) {
+        list.itens.forEach((i) => out.push(typeof i.value === "string" ? JSON.parse(i.value) : i.value));
+      } else {
+        const _rs = await Promise.all(((list && list.keys) || []).map((k) => window.storage.get(k).catch(() => null)));
+        _rs.filter(Boolean).forEach((r) => out.push(JSON.parse(r.value)));
       }
       return out;
     } catch {
@@ -10991,9 +11033,12 @@ function RelatoriosFinanceiros() {
         try {
           const list = await window.storage.list(prefixo);
           const out = [];
-          for (const key of (list && list.keys) || []) {
-            const r = await window.storage.get(key).catch(() => null);
-            if (r) out.push(JSON.parse(r.value));
+          // lê tudo de uma vez em vez de um registro por vez
+          if (list && list.itens) {
+            list.itens.forEach((i) => out.push(typeof i.value === "string" ? JSON.parse(i.value) : i.value));
+          } else {
+            const _rs = await Promise.all(((list && list.keys) || []).map((k) => window.storage.get(k).catch(() => null)));
+            _rs.filter(Boolean).forEach((r) => out.push(JSON.parse(r.value)));
           }
           return out;
         } catch {
@@ -12267,9 +12312,27 @@ export default function AllaCheckApp() {
 /* A troca de tela é IMEDIATA — nenhum atraso artificial.
    A suavidade vem só da animação de entrada, que roda enquanto
    o conteúdo já está na tela. */
+/* Listas longas travavam a navegação porque o React montava todos os
+   cards de uma vez. Este hook entrega os primeiros itens imediatamente
+   e o restante no quadro seguinte — visualmente igual, sem bloquear. */
+function useListaProgressiva(itens, primeiros = 12) {
+  const [limite, setLimite] = useState(primeiros);
+  useEffect(() => {
+    setLimite(primeiros);
+    if (!itens || itens.length <= primeiros) return;
+    const id = requestAnimationFrame(() => setLimite(itens.length));
+    return () => cancelAnimationFrame(id);
+  }, [itens, primeiros]);
+  return (itens || []).slice(0, limite);
+}
+
 function useTransicaoTela(view) {
   useEffect(() => {
-    try { window.scrollTo({ top: 0, behavior: "instant" }); } catch { window.scrollTo(0, 0); }
+    // Só rola se já houver rolagem, e depois do quadro atual: evita
+    // forçar um recálculo de layout no meio da troca de tela.
+    if (typeof window === "undefined" || window.scrollY === 0) return;
+    const id = requestAnimationFrame(() => window.scrollTo(0, 0));
+    return () => cancelAnimationFrame(id);
   }, [view]);
   return { telaVisivel: view, saindo: false };
 }
@@ -12425,7 +12488,7 @@ function AllaCheckAppInterno({ usuario }) {
         <LimiteDeErro tela={view} onVoltar={() => setView("home")}>
         {/* key={view}: faz o React remontar ao trocar de tela, disparando
             a animação de entrada a cada navegação (ida e volta). */}
-        <div key={telaVisivel} className={`alla-tela${saindo ? " alla-tela-saindo" : ""}`}>
+        <div key={telaVisivel}>
         {telaVisivel === "home" && (
           <HomeScreen
             onNavigate={setView}
