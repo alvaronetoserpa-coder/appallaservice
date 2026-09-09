@@ -724,7 +724,15 @@ const CANVAS_H = 1491;
 
 function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCount, importProgress, importDone }) {
   const wrapRef = useRef(null);
-  const [scale, setScale] = useState(1);
+  // Estimativa inicial pela largura da janela (não a largura do elemento,
+  // que ainda não existe no primeiro render). Isso evita a Home aparecer
+  // no tamanho real (748px) por um instante antes de encolher para o
+  // tamanho da tela — era esse "salto" que dava a sensação de tranco ao
+  // voltar para a Home.
+  const [scale, setScale] = useState(() => {
+    if (typeof window === "undefined") return 1;
+    return Math.min(1, window.innerWidth / CANVAS_W);
+  });
 
   useEffect(() => {
     const el = wrapRef.current;
