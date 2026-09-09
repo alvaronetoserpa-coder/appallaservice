@@ -12505,6 +12505,49 @@ export default function AllaCheckApp() {
   return <AllaCheckAppInterno usuario={usuario} />;
 }
 
+/* Partículas douradas subindo, bem discretas — puro CSS (compositor da
+   GPU via transform+opacity), sem nenhum JavaScript rodando em loop.
+   Poucas partículas e sem interação, para não repetir os problemas de
+   performance de antes. Desliga sozinho se o usuário reduziu animações. */
+function ParticulasDouradas() {
+  const config = [
+    { esq: "6%", tam: 3, dur: 13, atraso: 0 },
+    { esq: "17%", tam: 2, dur: 16, atraso: 2 },
+    { esq: "28%", tam: 4, dur: 11, atraso: 5 },
+    { esq: "41%", tam: 2, dur: 15, atraso: 1 },
+    { esq: "54%", tam: 3, dur: 12, atraso: 7 },
+    { esq: "66%", tam: 2, dur: 17, atraso: 3 },
+    { esq: "78%", tam: 3, dur: 14, atraso: 6 },
+    { esq: "90%", tam: 2, dur: 16, atraso: 4 },
+  ];
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        overflow: "hidden",
+        pointerEvents: "none",
+        zIndex: 0,
+      }}
+    >
+      {config.map((p, i) => (
+        <span
+          key={i}
+          className="alla-particula-dourada"
+          style={{
+            left: p.esq,
+            width: p.tam,
+            height: p.tam,
+            animationDuration: `${p.dur}s`,
+            animationDelay: `${p.atraso}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function AllaCheckAppInterno({ usuario }) {
   const [view, setView] = useState("home");
   const { telaVisivel, saindo } = useTransicaoTela(view);
@@ -12602,8 +12645,29 @@ function AllaCheckAppInterno({ usuario }) {
         position: "relative",
       }}
     >
+      <ParticulasDouradas />
       <style>{`
         .spin { animation: spin 0.8s linear infinite; }
+        @keyframes allaSubirDourado {
+          0%   { transform: translateY(8vh) scale(0.6); opacity: 0; }
+          12%  { opacity: 0.9; }
+          88%  { opacity: 0.5; }
+          100% { transform: translateY(-108vh) scale(1); opacity: 0; }
+        }
+        .alla-particula-dourada {
+          position: absolute;
+          bottom: 0;
+          border-radius: 50%;
+          background: radial-gradient(circle, #F3D896 0%, #C9A24B 60%, transparent 100%);
+          box-shadow: 0 0 6px 1px rgba(233,200,120,0.55);
+          animation-name: allaSubirDourado;
+          animation-timing-function: ease-in-out;
+          animation-iteration-count: infinite;
+          will-change: transform, opacity;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .alla-particula-dourada { animation: none; display: none; }
+        }
         @keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
         select option { background: #141416; }
         ::placeholder { color: #5A5A5F; }
