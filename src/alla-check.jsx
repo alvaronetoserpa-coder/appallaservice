@@ -803,6 +803,7 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
             pointerEvents: "none",
           }}
         />
+        <ParticulasGeladas />
 
         {/* menu — 33,21, 84x85 */}
         <button
@@ -12509,41 +12510,34 @@ export default function AllaCheckApp() {
    GPU via transform+opacity), sem nenhum JavaScript rodando em loop.
    Poucas partículas e sem interação, para não repetir os problemas de
    performance de antes. Desliga sozinho se o usuário reduziu animações. */
-function ParticulasDouradas() {
-  const config = [
-    { esq: "6%", tam: 3, dur: 13, atraso: 0 },
-    { esq: "17%", tam: 2, dur: 16, atraso: 2 },
-    { esq: "28%", tam: 4, dur: 11, atraso: 5 },
-    { esq: "41%", tam: 2, dur: 15, atraso: 1 },
-    { esq: "54%", tam: 3, dur: 12, atraso: 7 },
-    { esq: "66%", tam: 2, dur: 17, atraso: 3 },
-    { esq: "78%", tam: 3, dur: 14, atraso: 6 },
-    { esq: "90%", tam: 2, dur: 16, atraso: 4 },
-  ];
+function ParticulasGeladas() {
+  // Gerado uma única vez (não a cada render): posição, tamanho, velocidade
+  // e atraso de cada partícula sorteados aleatoriamente, dentro de faixas
+  // que mantêm o efeito discreto.
+  const particulas = useMemo(() => {
+    const qtd = 10;
+    return Array.from({ length: qtd }, () => ({
+      esq: Math.random() * 94 + 2, // 2% a 96%, nunca cortada nas bordas
+      tam: Math.random() * 1.6 + 1.2, // 1.2px a 2.8px — pequenas
+      dur: Math.random() * 10 + 10, // 10s a 20s de subida
+      atraso: Math.random() * 14, // início espalhado, não em bloco
+      opacidadeMax: Math.random() * 0.35 + 0.35, // 0.35 a 0.7
+    }));
+  }, []);
+
   return (
-    <div
-      aria-hidden="true"
-      style={{
-        position: "fixed",
-        inset: 0,
-        overflow: "hidden",
-        pointerEvents: "none",
-        // 0: fica acima do fundo preto (que é opaco) e abaixo dos cards
-        // e do conteúdo — como eles têm o próprio fundo sólido, a
-        // partícula "passa por trás" deles visualmente.
-        zIndex: 0,
-      }}
-    >
-      {config.map((p, i) => (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+      {particulas.map((p, i) => (
         <span
           key={i}
-          className="alla-particula-dourada"
+          className="alla-particula-gelo"
           style={{
-            left: p.esq,
+            left: `${p.esq}%`,
             width: p.tam,
             height: p.tam,
             animationDuration: `${p.dur}s`,
             animationDelay: `${p.atraso}s`,
+            "--op-max": p.opacidadeMax,
           }}
         />
       ))}
@@ -12648,29 +12642,29 @@ function AllaCheckAppInterno({ usuario }) {
         position: "relative",
       }}
     >
-      <ParticulasDouradas />
       <style>{`
         .spin { animation: spin 0.8s linear infinite; }
         @keyframes allaSubirGelo {
-          0%   { transform: translateY(100vh) scale(0.6); opacity: 0; }
-          10%  { opacity: 1; }
-          90%  { opacity: 0.75; }
-          100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+          0%   { transform: translateY(0); opacity: 0; }
+          8%   { opacity: var(--op-max, 0.5); }
+          92%  { opacity: var(--op-max, 0.5); }
+          /* -1491px: sobe a altura inteira do canvas da Home (CANVAS_H),
+             do rodapé até sumir acima do topo */
+          100% { transform: translateY(-1491px); opacity: 0; }
         }
-        .alla-particula-dourada {
+        .alla-particula-gelo {
           position: absolute;
           bottom: 0;
           border-radius: 50%;
-          /* prata/gelo, mais brilhante que o dourado anterior */
-          background: radial-gradient(circle, #FFFFFF 0%, #D9E8F5 45%, #9FBBD1 75%, transparent 100%);
-          box-shadow: 0 0 10px 2px rgba(210,232,250,0.85), 0 0 3px 1px #FFFFFF;
+          background: radial-gradient(circle, #FFFFFF 0%, #D9E8F5 55%, #9FBBD1 85%, transparent 100%);
+          box-shadow: 0 0 4px 1px rgba(210,232,250,0.7);
           animation-name: allaSubirGelo;
           animation-timing-function: ease-in-out;
           animation-iteration-count: infinite;
           will-change: transform, opacity;
         }
         @media (prefers-reduced-motion: reduce) {
-          .alla-particula-dourada { animation: none; display: none; }
+          .alla-particula-gelo { animation: none; display: none; }
         }
         @keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
         select option { background: #141416; }
