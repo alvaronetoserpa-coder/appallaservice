@@ -12528,6 +12528,9 @@ function ParticulasDouradas() {
         inset: 0,
         overflow: "hidden",
         pointerEvents: "none",
+        // 0: fica acima do fundo preto (que é opaco) e abaixo dos cards
+        // e do conteúdo — como eles têm o próprio fundo sólido, a
+        // partícula "passa por trás" deles visualmente.
         zIndex: 0,
       }}
     >
@@ -12648,19 +12651,20 @@ function AllaCheckAppInterno({ usuario }) {
       <ParticulasDouradas />
       <style>{`
         .spin { animation: spin 0.8s linear infinite; }
-        @keyframes allaSubirDourado {
-          0%   { transform: translateY(8vh) scale(0.6); opacity: 0; }
-          12%  { opacity: 0.9; }
-          88%  { opacity: 0.5; }
-          100% { transform: translateY(-108vh) scale(1); opacity: 0; }
+        @keyframes allaSubirGelo {
+          0%   { transform: translateY(100vh) scale(0.6); opacity: 0; }
+          10%  { opacity: 1; }
+          90%  { opacity: 0.75; }
+          100% { transform: translateY(-10vh) scale(1); opacity: 0; }
         }
         .alla-particula-dourada {
           position: absolute;
           bottom: 0;
           border-radius: 50%;
-          background: radial-gradient(circle, #F3D896 0%, #C9A24B 60%, transparent 100%);
-          box-shadow: 0 0 6px 1px rgba(233,200,120,0.55);
-          animation-name: allaSubirDourado;
+          /* prata/gelo, mais brilhante que o dourado anterior */
+          background: radial-gradient(circle, #FFFFFF 0%, #D9E8F5 45%, #9FBBD1 75%, transparent 100%);
+          box-shadow: 0 0 10px 2px rgba(210,232,250,0.85), 0 0 3px 1px #FFFFFF;
+          animation-name: allaSubirGelo;
           animation-timing-function: ease-in-out;
           animation-iteration-count: infinite;
           will-change: transform, opacity;
