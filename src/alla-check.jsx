@@ -5441,230 +5441,255 @@ function OrdensServicoModule() {
   }
 
   return (
-    <div style={{ padding: 16, paddingBottom: 40 }}>
-      <BotaoNovaOS onClick={() => { setSelected(null); setMode("novo"); }} />
-
-      <div style={{ position: "relative", marginBottom: 12 }}>
-        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
-        <input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar por cliente, nº da OS ou equipamento..."
-          style={{
-            ...inputStyle,
-            background: "#0A0A0B",
-            border: "1px solid rgba(255,255,255,0.07)",
-            paddingLeft: 34,
-          }}
-        />
+    <div style={{ padding: "14px 16px 40px" }}>
+      {/* ---- resumo numérico compacto: uma linha, sem cards ---- */}
+      <div
+        style={{
+          display: "flex",
+          overflowX: "auto",
+          gap: 0,
+          marginBottom: 14,
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          paddingBottom: 12,
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {[
+          ["Total", contagem.Todas, "#F3F3F1"],
+          ["Abertas", contagem.ABERTA || 0, "#8A8A90"],
+          ["Agendadas", contagem.AGENDADA || 0, "#4681DF"],
+          ["Em andamento", contagem["EM ANDAMENTO"] || 0, "#E9C878"],
+          ["Finalizadas", contagem.FINALIZADA || 0, "#4ADE80"],
+        ].map(([rotulo, valor, cor], i) => (
+          <div key={rotulo} style={{ flexShrink: 0, paddingRight: 22, borderRight: i < 4 ? "1px solid rgba(255,255,255,0.06)" : "none", marginRight: i < 4 ? 22 : 0 }}>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 19, color: cor, lineHeight: 1 }}>{valor}</div>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#6E6E73", letterSpacing: 0.8, textTransform: "uppercase", marginTop: 4, whiteSpace: "nowrap" }}>
+              {rotulo}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* filtros por status — única área com rolagem horizontal */}
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+      {/* ---- linha única: busca + botão, lado a lado, baixa altura ---- */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+          <Search size={13} color="#5A5A5F" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Cliente, nº ou equipamento..."
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              background: "#0A0A0B",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 8,
+              padding: "8px 10px 8px 30px",
+              color: "#F3F3F1",
+              fontFamily: "'Roboto',sans-serif",
+              fontSize: 12.5,
+              outline: "none",
+            }}
+          />
+        </div>
+        <button
+          onClick={() => { setSelected(null); setMode("novo"); }}
+          style={{
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "rgba(201,162,75,0.14)",
+            border: "1px solid rgba(201,162,75,0.4)",
+            borderRadius: 8,
+            padding: "0 13px",
+            color: "#E9C878",
+            fontFamily: "'Roboto',sans-serif",
+            fontWeight: 600,
+            fontSize: 11.5,
+            textTransform: "uppercase",
+            cursor: "pointer",
+          }}
+        >
+          <Plus size={14} /> Nova OS
+        </button>
+      </div>
+
+      {/* ---- filtros: texto com sublinhado, não pílulas ---- */}
+      <div style={{ display: "flex", gap: 16, overflowX: "auto", marginBottom: 4, WebkitOverflowScrolling: "touch" }}>
         {["Todas", ...Object.keys(OS_STATUS_COLOR)].map((f) => {
           const on = filtro === f;
-          const cor = f === "Todas" ? "#C9A24B" : OS_STATUS_COLOR[f];
-          const qtd = contagem[f] || 0;
           return (
             <button
               key={f}
               onClick={() => setFiltro(f)}
               style={{
                 flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                fontSize: 11,
-                padding: "5.5px 11px",
-                borderRadius: 20,
-                border: `1px solid ${on ? "rgba(201,162,75,0.5)" : "rgba(255,255,255,0.07)"}`,
-                background: on ? "rgba(201,162,75,0.12)" : "#0A0A0B",
-                color: on ? "#E9C878" : "#8A8A90",
+                background: "none",
+                border: "none",
+                borderBottom: `2px solid ${on ? "#C9A24B" : "transparent"}`,
+                color: on ? "#E9C878" : "#6E6E73",
+                fontFamily: "'Roboto',sans-serif",
+                fontWeight: on ? 600 : 400,
+                fontSize: 12,
+                textTransform: "capitalize",
+                padding: "6px 2px 8px",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
-                textTransform: "capitalize",
-                transition: "color 160ms ease, border-color 160ms ease, background 160ms ease",
+                transition: "color 150ms ease, border-color 150ms ease",
               }}
             >
               {f.toLowerCase()}
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, opacity: 0.7 }}>{qtd}</span>
             </button>
           );
         })}
       </div>
 
+      {/* ---- lista: extrato compacto, divisores finos, sem card por item ---- */}
       {lista === null ? (
-        <div style={{ textAlign: "center", padding: 30 }}>
-          <Loader2 size={20} className="spin" />
-        </div>
-      ) : filtradas.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
+      ) : filtradasVisiveis.length === 0 ? (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#6E6E73" }}>
-          <Wrench size={28} style={{ marginBottom: 10, opacity: 0.6 }} />
-          <div style={{ fontSize: 13.5 }}>
-            {(lista || []).length === 0
-              ? "Nenhuma OS cadastrada ainda."
-              : "Nenhuma OS encontrada para esta busca ou filtro."}
+          <Wrench size={26} style={{ marginBottom: 10, opacity: 0.5 }} />
+          <div style={{ fontSize: 13 }}>
+            {(lista || []).length === 0 ? "Nenhuma OS cadastrada ainda." : "Nenhuma OS encontrada para esta busca ou filtro."}
           </div>
         </div>
       ) : (
-        filtradasVisiveis.map((os) => {
-          const cor = OS_STATUS_COLOR[os.status] || "#8A8A90";
-          return (
-            <div
-              key={os.id}
-              className="alla-item"
-              style={{
-                position: "relative",
-                background: "#0D0D0E",
-                border: "1px solid rgba(255,255,255,0.07)",
-                borderRadius: 14,
-                padding: "13px 14px",
-                marginBottom: 9,
-              }}
-            >
-              <button
-                onClick={() => { setSelected(os); setMode("detalhe"); }}
-                style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    {/* número da OS com hierarquia própria, acima do cliente */}
-                    <div
-                      style={{
-                        fontFamily: "'JetBrains Mono',monospace",
-                        fontSize: 10.5,
-                        color: "#8A8A90",
-                        letterSpacing: 0.5,
-                        marginBottom: 3,
-                      }}
-                    >
-                      {os.numero}
-                    </div>
-                    <div
-                      style={{
-                        fontFamily: "'Roboto',sans-serif",
-                        fontWeight: 600,
-                        fontSize: 15,
-                        color: "#F3F3F1",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        paddingRight: 26,
-                      }}
-                    >
-                      {os.clienteNome}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11.5,
-                        color: "#7A7A7A",
-                        marginTop: 3,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {os.eqTipo || "Equipamento"} · {os.tipoServico}
-                    </div>
-                  </div>
-                  <span style={{ color: "#E9C878", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, marginTop: 15 }}>
-                    R$ {Number(os.valorTotal || 0).toFixed(2)}
-                  </span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 9 }}>
-                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: cor, flexShrink: 0 }} />
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: cor }}>{os.status}</span>
-                  <span style={{ fontSize: 10.5, color: "#5A5A5F", marginLeft: "auto" }}>{new Date(os.data).toLocaleDateString("pt-BR")}</span>
-                </div>
-              </button>
-
-              {/* menu de ações rápidas — fora do botão principal para não
-                  disputar o clique com a abertura do detalhe */}
-              <button
-                onClick={(e) => { e.stopPropagation(); setMenuAcoesId(menuAcoesId === os.id ? null : os.id); }}
-                aria-label="Mais ações"
+        <div>
+          {filtradasVisiveis.map((os, i) => {
+            const cor = OS_STATUS_COLOR[os.status] || "#8A8A90";
+            return (
+              <div
+                key={os.id}
                 style={{
-                  position: "absolute",
-                  top: 11,
-                  right: 10,
-                  width: 24,
-                  height: 24,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "none",
-                  border: "none",
-                  color: "#6E6E73",
-                  cursor: "pointer",
-                  borderRadius: 6,
+                  position: "relative",
+                  borderTop: i === 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
                 }}
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="12" cy="5" r="1.9" />
-                  <circle cx="12" cy="12" r="1.9" />
-                  <circle cx="12" cy="19" r="1.9" />
-                </svg>
-              </button>
-
-              {menuAcoesId === os.id && (
-                <>
-                  <div
-                    onClick={() => setMenuAcoesId(null)}
-                    style={{ position: "fixed", inset: 0, zIndex: 29 }}
-                  />
+                <button
+                  onClick={() => { setSelected(os); setMode("detalhe"); }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    background: "none",
+                    border: "none",
+                    padding: "9px 26px 9px 2px",
+                    cursor: "pointer",
+                    display: "block",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#7A7A7A" }}>{os.numero}</span>
+                    <span style={{ color: "#E9C878", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+                      R$ {Number(os.valorTotal || 0).toFixed(2)}
+                    </span>
+                  </div>
                   <div
                     style={{
-                      position: "absolute",
-                      top: 36,
-                      right: 8,
-                      zIndex: 30,
-                      background: "#141416",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: 10,
+                      fontFamily: "'Roboto',sans-serif",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      color: "#F3F3F1",
+                      marginTop: 1,
                       overflow: "hidden",
-                      minWidth: 132,
-                      boxShadow: "0 6px 18px rgba(0,0,0,0.5)",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    {[
-                      ["Editar", () => { setMenuAcoesId(null); setSelected(os); setMode("detalhe"); }],
-                      ["Duplicar", () => { setMenuAcoesId(null); duplicar(os); }],
-                      ["Excluir", () => { setMenuAcoesId(null); remove(os.id); }, true],
-                    ].map(([rotulo, acao, perigo]) => (
-                      <button
-                        key={rotulo}
-                        onClick={acao}
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          textAlign: "left",
-                          padding: "10px 13px",
-                          background: "none",
-                          border: "none",
-                          borderBottom: "1px solid rgba(255,255,255,0.06)",
-                          color: perigo ? "#F0605A" : "#E8E8E6",
-                          fontFamily: "'Roboto',sans-serif",
-                          fontSize: 12.5,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {rotulo}
-                      </button>
-                    ))}
+                    {os.clienteNome}
                   </div>
-                </>
-              )}
-            </div>
-          );
-        })
+                  <div style={{ fontSize: 11, color: "#7A7A7A", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {os.eqTipo || "Equipamento"} · {os.tipoServico}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: cor, flexShrink: 0 }} />
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: cor }}>{os.status}</span>
+                    <span style={{ fontSize: 10, color: "#5A5A5F", marginLeft: "auto" }}>{new Date(os.data).toLocaleDateString("pt-BR")}</span>
+                  </div>
+                </button>
+
+                {/* menu de ações rápidas */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuAcoesId(menuAcoesId === os.id ? null : os.id); }}
+                  aria-label="Mais ações"
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 0,
+                    width: 22,
+                    height: 22,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "none",
+                    border: "none",
+                    color: "#6E6E73",
+                    cursor: "pointer",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5" r="1.9" />
+                    <circle cx="12" cy="12" r="1.9" />
+                    <circle cx="12" cy="19" r="1.9" />
+                  </svg>
+                </button>
+
+                {menuAcoesId === os.id && (
+                  <>
+                    <div onClick={() => setMenuAcoesId(null)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 30,
+                        right: 0,
+                        zIndex: 30,
+                        background: "#141416",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 10,
+                        overflow: "hidden",
+                        minWidth: 132,
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.5)",
+                      }}
+                    >
+                      {[
+                        ["Editar", () => { setMenuAcoesId(null); setSelected({ ...os, editing: true }); setMode("novo"); }],
+                        ["Duplicar", () => { setMenuAcoesId(null); duplicar(os); }],
+                        ["Excluir", () => { setMenuAcoesId(null); remove(os.id); }, true],
+                      ].map(([rotulo, acao, perigo]) => (
+                        <button
+                          key={rotulo}
+                          onClick={acao}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "10px 13px",
+                            background: "none",
+                            border: "none",
+                            borderBottom: "1px solid rgba(255,255,255,0.06)",
+                            color: perigo ? "#F0605A" : "#E8E8E6",
+                            fontFamily: "'Roboto',sans-serif",
+                            fontSize: 12.5,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {rotulo}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
 }
 
-/* ---------------- Módulo: Financeiro ---------------- */
-const DESPESA_CATEGORIAS = ["Material", "Peças", "Combustível", "Ferramentas", "Aluguel", "Energia", "Internet", "Funcionários", "Outros"];
-const FIN_FILTROS = ["Hoje", "Esta semana", "Este mês", "Mês anterior", "Este ano", "Personalizado"];
 
 function dentroDoFiltro(dataStr, filtro, custom) {
   const d = new Date(dataStr);
