@@ -5650,7 +5650,7 @@ function LineAreaChart({ serie }) {
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 150, overflow: "visible" }}>
         <defs>
           <linearGradient id="finAreaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4ADE80" stopOpacity="0.28" />
+            <stop offset="0%" stopColor="#4ADE80" stopOpacity="0.12" />
             <stop offset="100%" stopColor="#4ADE80" stopOpacity="0" />
           </linearGradient>
         </defs>
@@ -5667,22 +5667,22 @@ function LineAreaChart({ serie }) {
             opacity="0.35"
           />
         )}
-        <path d={pathFor("despesas")} fill="none" stroke="#F0605A" strokeWidth="1.6" opacity="0.85" />
-        <path d={pathFor("receitas")} fill="none" stroke="#4ADE80" strokeWidth="1.8" />
-        <path d={pathFor("lucro")} fill="none" stroke="#E9C878" strokeWidth="1.6" strokeDasharray="3 2" opacity="0.9" />
+        <path d={pathFor("despesas")} fill="none" stroke="#F0605A" strokeWidth="1.1" opacity="0.75" />
+        <path d={pathFor("receitas")} fill="none" stroke="#4ADE80" strokeWidth="1.3" />
+        <path d={pathFor("lucro")} fill="none" stroke="#E9C878" strokeWidth="1" strokeDasharray="2.5 2.5" opacity="0.8" />
         {serie.map((s, i) => (
           <circle
             key={i}
             cx={x(i)}
             cy={y(s.receitas)}
-            r={ativo === i ? 3.4 : 2.2}
+            r={ativo === i ? 3 : 1.6}
             fill="#4ADE80"
             style={{ cursor: "pointer" }}
             onClick={() => setAtivo(ativo === i ? null : i)}
           />
         ))}
         {idxLabels.map((i) => (
-          <text key={i} x={x(i)} y={H - 4} fontSize="7" fill="#6E6E73" textAnchor="middle">
+          <text key={i} x={x(i)} y={H - 4} fontSize="6.5" fill="#52525B" textAnchor="middle">
             {serie[i].label}
           </text>
         ))}
@@ -5787,21 +5787,36 @@ function DonutChart({ dados }) {
 function MiniBarChart({ data, colorPos = "#4ADE80", colorNeg = "#F0605A" }) {
   const max = Math.max(1, ...data.map((d) => Math.abs(d.value)));
   return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90, marginTop: 8 }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <div
-            style={{
-              width: "100%",
-              height: Math.max(3, (Math.abs(d.value) / max) * 70),
-              background: d.value < 0 ? colorNeg : colorPos,
-              borderRadius: 3,
-              opacity: 0.85,
-            }}
-          />
-          <span style={{ fontSize: 8.5, color: "#6E6E73" }}>{d.label}</span>
-        </div>
-      ))}
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 90, marginTop: 8, padding: "0 6px" }}>
+      {data.map((d, i) => {
+        const cor = d.value < 0 ? colorNeg : colorPos;
+        return (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 }}>
+            {/* barra fina, com gradiente suave em vez de preenchimento sólido */}
+            <div
+              style={{
+                width: 8,
+                maxWidth: "40%",
+                height: Math.max(3, (Math.abs(d.value) / max) * 68),
+                background: `linear-gradient(180deg, ${cor}CC, ${cor}55)`,
+                borderRadius: 5,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 8.5,
+                color: "#71717A",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                maxWidth: "100%",
+              }}
+            >
+              {d.label}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -6123,30 +6138,52 @@ function FinanceiroModule({ onBack }) {
         )}
 
         {/* cards financeiros */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 13, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
           {cards.map((c) => {
             const Icon = c.icon;
             return (
               <div
                 key={c.label}
                 style={{
-                  background: "#111111",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 16,
-                  padding: "16px 16px 15px",
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
+                  background: "#0A0A0B",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: 14,
+                  padding: "13px 14px",
                   display: "flex",
                   flexDirection: "column",
-                  gap: 10,
+                  gap: 8,
+                  minWidth: 0,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#87878C", letterSpacing: 1, textTransform: "uppercase" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon size={11} color={c.color} strokeWidth={2} style={{ opacity: 0.9, flexShrink: 0 }} />
+                  <span
+                    style={{
+                      fontFamily: "'JetBrains Mono',monospace",
+                      fontSize: 8.5,
+                      color: "#71717A",
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {c.label}
                   </span>
-                  <Icon size={13} color={c.color} strokeWidth={2} style={{ opacity: 0.85 }} />
                 </div>
-                <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.05, color: c.color, whiteSpace: "nowrap" }}>
+                <div
+                  style={{
+                    fontFamily: "'Roboto',sans-serif",
+                    fontWeight: 600,
+                    fontSize: 19,
+                    lineHeight: 1.1,
+                    color: "#F2F2F0",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
                   R$ {c.valor.toFixed(2)}
                 </div>
               </div>
@@ -6157,29 +6194,30 @@ function FinanceiroModule({ onBack }) {
         {/* lucro liquido + margem — bloco de destaque */}
         <div
           style={{
-            background: lucro >= 0 ? "linear-gradient(135deg,#151c15,#0d130d)" : "linear-gradient(135deg,#1c1515,#130d0d)",
-            border: `1px solid ${lucro >= 0 ? "rgba(74,222,128,0.25)" : "rgba(240,96,90,0.25)"}`,
+            background: "#0A0A0B",
+            border: `1px solid ${lucro >= 0 ? "rgba(74,222,128,0.22)" : "rgba(240,96,90,0.22)"}`,
             borderRadius: 16,
-            padding: "18px 18px",
+            padding: "16px 18px",
             marginBottom: 24,
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: "flex-end",
           }}
         >
           <div>
-            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#87878C", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#71717A", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 7 }}>
               Lucro líquido
             </div>
-            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 28, color: lucro >= 0 ? "#4ADE80" : "#F0605A" }}>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 26, color: lucro >= 0 ? "#4ADE80" : "#F0605A" }}>
               R$ {lucro.toFixed(2)}
             </div>
           </div>
+          {/* margem: visualmente secundária, menor e mais discreta que o lucro */}
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#87878C", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8, color: "#5A5A5F", letterSpacing: 1, textTransform: "uppercase", marginBottom: 3 }}>
               Margem
             </div>
-            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 22, color: lucro >= 0 ? "#4ADE80" : "#F0605A" }}>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 500, fontSize: 14, color: "#9A9A9E" }}>
               {margem.toFixed(1)}%
             </div>
           </div>
@@ -6192,7 +6230,7 @@ function FinanceiroModule({ onBack }) {
           </div>
           <div style={{ fontSize: 12, color: "#7A7A7A", marginTop: 3 }}>Receitas x despesas no período</div>
         </div>
-        <div style={{ background: "#111111", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16, marginBottom: 24 }}>
+        <div style={{ background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: "16px 14px", marginBottom: 24 }}>
           {serieTempo.length > 0 ? (
             <LineAreaChart serie={serieTempo} />
           ) : (
@@ -6225,7 +6263,7 @@ function FinanceiroModule({ onBack }) {
             <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 600, color: "#F0F0EE", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
               Receitas x despesas
             </div>
-            <div style={{ background: "#111111", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16, marginBottom: 24 }}>
+            <div style={{ background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 16, marginBottom: 24 }}>
               <MiniBarChart data={[{ label: "Receitas", value: faturamento }, { label: "Despesas", value: -totalDespesas }]} />
             </div>
           </>
@@ -6235,7 +6273,7 @@ function FinanceiroModule({ onBack }) {
         <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 600, color: "#F0F0EE", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
           Despesas por categoria
         </div>
-        <div style={{ background: "#111111", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16, marginBottom: 24 }}>
+        <div style={{ background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 16, marginBottom: 24 }}>
           {dadosCategoria.length > 0 ? (
             <DonutChart dados={dadosCategoria} />
           ) : (
@@ -6251,7 +6289,7 @@ function FinanceiroModule({ onBack }) {
             <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 600, color: "#F0F0EE", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
               Comparativo com período anterior
             </div>
-            <div style={{ background: "#111111", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16, marginBottom: 24 }}>
+            <div style={{ background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 16, marginBottom: 24 }}>
               {comparativos.map((c, idx) => {
                 const variacao = variacaoPercentual(c.atual, c.anterior);
                 const positivo = variacao !== null && variacao >= 0;
