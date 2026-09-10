@@ -440,16 +440,16 @@ function Header({ title, onBack, onMenu }) {
       </button>
       <div style={{ lineHeight: 1.1 }}>
         <div
-          style={{
-            fontFamily: "'Roboto',sans-serif",
-            fontWeight: 600,
-            letterSpacing: 0.5,
-            fontSize: 17,
-            color: "#F3F3F1",
-            textTransform: "uppercase",
-          }}
-        >
-          {title}
+            style={{
+              fontFamily: "'Roboto',sans-serif",
+              fontWeight: 600,
+              letterSpacing: 0.5,
+              fontSize: 17,
+              color: "#F3F3F1",
+              textTransform: "uppercase",
+            }}
+          >
+            {title}
         </div>
         <div
           style={{
@@ -5285,6 +5285,7 @@ function OrdensServicoModule() {
   const [selected, setSelected] = useState(null);
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("Todas");
+  const [menuAcoesId, setMenuAcoesId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -5459,7 +5460,7 @@ function OrdensServicoModule() {
       </div>
 
       {/* filtros por status — única área com rolagem horizontal */}
-      <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 4, marginBottom: 18, WebkitOverflowScrolling: "touch" }}>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
         {["Todas", ...Object.keys(OS_STATUS_COLOR)].map((f) => {
           const on = filtro === f;
           const cor = f === "Todas" ? "#C9A24B" : OS_STATUS_COLOR[f];
@@ -5472,9 +5473,9 @@ function OrdensServicoModule() {
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                fontSize: 11.5,
-                padding: "7px 13px",
+                gap: 5,
+                fontSize: 11,
+                padding: "5.5px 11px",
                 borderRadius: 20,
                 border: `1px solid ${on ? "rgba(201,162,75,0.5)" : "rgba(255,255,255,0.07)"}`,
                 background: on ? "rgba(201,162,75,0.12)" : "#0A0A0B",
@@ -5509,62 +5510,151 @@ function OrdensServicoModule() {
         filtradasVisiveis.map((os) => {
           const cor = OS_STATUS_COLOR[os.status] || "#8A8A90";
           return (
-            <button
-              className="alla-item"
+            <div
               key={os.id}
-              onClick={() => {
-                setSelected(os);
-                setMode("detalhe");
-              }}
+              className="alla-item"
               style={{
-                width: "100%",
-                textAlign: "left",
+                position: "relative",
                 background: "#0D0D0E",
                 border: "1px solid rgba(255,255,255,0.07)",
                 borderRadius: 14,
                 padding: "13px 14px",
                 marginBottom: 9,
-                cursor: "pointer",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontFamily: "'Roboto',sans-serif",
-                      fontWeight: 600,
-                      fontSize: 14.5,
-                      color: "#F3F3F1",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {os.clienteNome}
+              <button
+                onClick={() => { setSelected(os); setMode("detalhe"); }}
+                style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {/* número da OS com hierarquia própria, acima do cliente */}
+                    <div
+                      style={{
+                        fontFamily: "'JetBrains Mono',monospace",
+                        fontSize: 10.5,
+                        color: "#8A8A90",
+                        letterSpacing: 0.5,
+                        marginBottom: 3,
+                      }}
+                    >
+                      {os.numero}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "'Roboto',sans-serif",
+                        fontWeight: 600,
+                        fontSize: 15,
+                        color: "#F3F3F1",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        paddingRight: 26,
+                      }}
+                    >
+                      {os.clienteNome}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: "#7A7A7A",
+                        marginTop: 3,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {os.eqTipo || "Equipamento"} · {os.tipoServico}
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      fontSize: 11.5,
-                      color: "#7A7A7A",
-                      marginTop: 3,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {os.numero} · {os.eqTipo || "Equipamento"} · {os.tipoServico}
-                  </div>
+                  <span style={{ color: "#E9C878", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, marginTop: 15 }}>
+                    R$ {Number(os.valorTotal || 0).toFixed(2)}
+                  </span>
                 </div>
-                <span style={{ color: "#E9C878", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
-                  R$ {Number(os.valorTotal || 0).toFixed(2)}
-                </span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 9 }}>
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: cor, flexShrink: 0 }} />
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: cor }}>{os.status}</span>
-                <span style={{ fontSize: 10.5, color: "#5A5A5F", marginLeft: "auto" }}>{new Date(os.data).toLocaleDateString("pt-BR")}</span>
-              </div>
-            </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 9 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: cor, flexShrink: 0 }} />
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: cor }}>{os.status}</span>
+                  <span style={{ fontSize: 10.5, color: "#5A5A5F", marginLeft: "auto" }}>{new Date(os.data).toLocaleDateString("pt-BR")}</span>
+                </div>
+              </button>
+
+              {/* menu de ações rápidas — fora do botão principal para não
+                  disputar o clique com a abertura do detalhe */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setMenuAcoesId(menuAcoesId === os.id ? null : os.id); }}
+                aria-label="Mais ações"
+                style={{
+                  position: "absolute",
+                  top: 11,
+                  right: 10,
+                  width: 24,
+                  height: 24,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "none",
+                  border: "none",
+                  color: "#6E6E73",
+                  cursor: "pointer",
+                  borderRadius: 6,
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="1.9" />
+                  <circle cx="12" cy="12" r="1.9" />
+                  <circle cx="12" cy="19" r="1.9" />
+                </svg>
+              </button>
+
+              {menuAcoesId === os.id && (
+                <>
+                  <div
+                    onClick={() => setMenuAcoesId(null)}
+                    style={{ position: "fixed", inset: 0, zIndex: 29 }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 36,
+                      right: 8,
+                      zIndex: 30,
+                      background: "#141416",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      minWidth: 132,
+                      boxShadow: "0 6px 18px rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    {[
+                      ["Editar", () => { setMenuAcoesId(null); setSelected(os); setMode("detalhe"); }],
+                      ["Duplicar", () => { setMenuAcoesId(null); duplicar(os); }],
+                      ["Excluir", () => { setMenuAcoesId(null); remove(os.id); }, true],
+                    ].map(([rotulo, acao, perigo]) => (
+                      <button
+                        key={rotulo}
+                        onClick={acao}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "10px 13px",
+                          background: "none",
+                          border: "none",
+                          borderBottom: "1px solid rgba(255,255,255,0.06)",
+                          color: perigo ? "#F0605A" : "#E8E8E6",
+                          fontFamily: "'Roboto',sans-serif",
+                          fontSize: 12.5,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {rotulo}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           );
         })
       )}
@@ -6954,6 +7044,7 @@ function CentralWhatsApp() {
   const [textoFinal, setTextoFinal] = useState("");
   const [copiado, setCopiado] = useState(false);
   const [editor, setEditor] = useState(null); // { key, nome, categoria, texto }
+  const [menuAcoesKey, setMenuAcoesKey] = useState(null);
   const [salvando, setSalvando] = useState(false);
 
   const carregarPersonalizados = useCallback(async () => {
@@ -7210,21 +7301,38 @@ function CentralWhatsApp() {
   /* ---------- lista de mensagens ---------- */
   return (
     <div style={{ padding: 16, paddingBottom: 40 }}>
-      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 21, fontWeight: 700, color: "#F3F3F1" }}>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 18, fontWeight: 700, color: "#F3F3F1" }}>
         Mensagens WhatsApp
       </div>
-      <div style={{ fontSize: 12.5, color: "#8A8A90", marginTop: 4, marginBottom: 16 }}>
+      <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 3, marginBottom: 13 }}>
         Modelos prontos para cada etapa do atendimento
       </div>
 
       <button
         onClick={() => { setEditor({ key: null, nome: "", categoria: WHATSAPP_CATEGORIAS[0], texto: "" }); setAba("editor"); }}
-        style={{ ...btnPrincipal, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px 0", marginBottom: 14 }}
+        style={{
+          width: "100%",
+          background: "linear-gradient(180deg,#D4AF5C,#B8933F)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 11,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          padding: "11px 0",
+          marginBottom: 13,
+          fontFamily: "'Roboto',sans-serif",
+          fontWeight: 600,
+          fontSize: 12.5,
+          color: "#0A0A0B",
+          textTransform: "uppercase",
+          cursor: "pointer",
+        }}
       >
-        <Plus size={16} /> Nova mensagem
+        <Plus size={15} /> Nova mensagem
       </button>
 
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, marginBottom: 14, WebkitOverflowScrolling: "touch" }}>
         {["Todas", ...WHATSAPP_CATEGORIAS].map((c) => {
           const on = categoria === c;
           return (
@@ -7233,15 +7341,15 @@ function CentralWhatsApp() {
               onClick={() => setCategoria(c)}
               style={{
                 flexShrink: 0,
-                fontSize: 11.5,
-                padding: "7px 13px",
+                fontSize: 11,
+                padding: "5.5px 12px",
                 borderRadius: 20,
-                border: `1px solid ${on ? "#C9A24B" : "#2A2A2E"}`,
-                background: on ? "rgba(201,162,75,0.12)" : "transparent",
+                border: `1px solid ${on ? "rgba(201,162,75,0.5)" : "rgba(255,255,255,0.07)"}`,
+                background: on ? "rgba(201,162,75,0.12)" : "#0A0A0B",
                 color: on ? "#E9C878" : "#8A8A90",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
-                transition: "color 180ms, border-color 180ms, background 180ms",
+                transition: "color 160ms ease, border-color 160ms ease, background 160ms ease",
               }}
             >
               {c}
@@ -7256,37 +7364,158 @@ function CentralWhatsApp() {
         visiveis.map((m) => (
           <div
             key={m.key}
-            style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 14, marginBottom: 11 }}
+            style={{
+              position: "relative",
+              background: "#0D0D0D",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 13,
+              padding: "11px 12px",
+              marginBottom: 8,
+            }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 14.5, fontWeight: 600, color: "#F3F3F1", wordBreak: "break-word" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6, paddingRight: 22 }}>
+              <MessageSquareText size={13} color="#4ADE80" style={{ flexShrink: 0 }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 13.5, fontWeight: 600, color: "#F3F3F1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {m.nome}
                 </div>
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#C9A24B", letterSpacing: 1, textTransform: "uppercase", marginTop: 3 }}>
-                  {m.categoria}{m.personalizado ? " · personalizada" : ""}
-                </div>
               </div>
-              <MessageSquareText size={16} color="#4ADE80" style={{ flexShrink: 0, marginTop: 2 }} />
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#C9A24B", letterSpacing: 0.8, textTransform: "uppercase", flexShrink: 0 }}>
+                {m.categoria}
+              </span>
             </div>
 
-            <div style={{ fontSize: 12.5, color: "#8A8A90", lineHeight: 1.5, marginBottom: 12 }}>{m.texto}</div>
+            {/* prévia truncada em 2 linhas, para o card não crescer */}
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "#8A8A90",
+                lineHeight: 1.4,
+                marginBottom: 10,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {m.texto}
+            </div>
 
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => abrirModelo(m)} style={{ ...btnPrincipal, padding: "9px 0", fontSize: 11.5 }}>
+            <div style={{ display: "flex", gap: 7 }}>
+              <button
+                onClick={() => abrirModelo(m)}
+                style={{
+                  flex: 1,
+                  background: "rgba(201,162,75,0.12)",
+                  border: "1px solid rgba(201,162,75,0.35)",
+                  borderRadius: 8,
+                  padding: "7px 0",
+                  color: "#E9C878",
+                  fontFamily: "'Roboto',sans-serif",
+                  fontWeight: 600,
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
                 Usar
               </button>
               <button
-                onClick={() =>
-                  m.personalizado
-                    ? (setEditor({ ...m }), setAba("editor"))
-                    : (setEditor({ key: null, nome: `${m.nome} (cópia)`, categoria: m.categoria, texto: m.texto }), setAba("editor"))
-                }
-                style={{ ...btnSecundario, padding: "9px 0", fontSize: 11.5 }}
+                onClick={() => (setEditor({ key: null, nome: `${m.nome} (cópia)`, categoria: m.categoria, texto: m.texto }), setAba("editor"))}
+                style={{
+                  flex: 1,
+                  background: "none",
+                  border: "1px solid rgba(255,255,255,0.09)",
+                  borderRadius: 8,
+                  padding: "7px 0",
+                  color: "#C7C9CE",
+                  fontFamily: "'Roboto',sans-serif",
+                  fontWeight: 600,
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
               >
-                {m.personalizado ? "Editar" : "Duplicar"}
+                Duplicar
               </button>
             </div>
+
+            {/* menu de ações rápidas — edição/exclusão só para as personalizadas */}
+            <button
+              onClick={(e) => { e.stopPropagation(); setMenuAcoesKey(menuAcoesKey === m.key ? null : m.key); }}
+              aria-label="Mais ações"
+              style={{
+                position: "absolute",
+                top: 9,
+                right: 8,
+                width: 22,
+                height: 22,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "none",
+                border: "none",
+                color: "#6E6E73",
+                cursor: "pointer",
+                borderRadius: 6,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="1.9" />
+                <circle cx="12" cy="12" r="1.9" />
+                <circle cx="12" cy="19" r="1.9" />
+              </svg>
+            </button>
+
+            {menuAcoesKey === m.key && (
+              <>
+                <div onClick={() => setMenuAcoesKey(null)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 32,
+                    right: 6,
+                    zIndex: 30,
+                    background: "#141416",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    minWidth: 128,
+                    boxShadow: "0 6px 18px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  {[
+                    ["Usar", () => { setMenuAcoesKey(null); abrirModelo(m); }],
+                    ...(m.personalizado
+                      ? [
+                          ["Editar", () => { setMenuAcoesKey(null); setEditor({ ...m }); setAba("editor"); }],
+                          ["Excluir", () => { setMenuAcoesKey(null); excluirModelo(m); }, true],
+                        ]
+                      : []),
+                  ].map(([rotulo, acao, perigo]) => (
+                    <button
+                      key={rotulo}
+                      onClick={acao}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 13px",
+                        background: "none",
+                        border: "none",
+                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                        color: perigo ? "#F0605A" : "#E8E8E6",
+                        fontFamily: "'Roboto',sans-serif",
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {rotulo}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         ))
       )}
