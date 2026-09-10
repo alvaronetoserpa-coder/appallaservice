@@ -398,6 +398,7 @@ function useCardFX() {
 
 /* ---------------- Sub-page Header (Novo Relatório, Histórico, módulos) ---------------- */
 function Header({ title, onBack, onMenu }) {
+  const [pressionado, setPressionado] = useState(false);
   return (
     <div
       style={{
@@ -416,21 +417,26 @@ function Header({ title, onBack, onMenu }) {
     >
       <button
         onClick={onBack || onMenu}
+        onPointerDown={() => setPressionado(true)}
+        onPointerUp={() => setPressionado(false)}
+        onPointerLeave={() => setPressionado(false)}
         aria-label={onBack ? "Voltar" : "Menu"}
         style={{
-          background: "#0B0B0A",
-          border: "1px solid rgba(201,162,75,0.35)",
-          borderRadius: 10,
-          width: 36,
-          height: 36,
+          background: "#0D0D0E",
+          border: "1px solid rgba(201,162,75,0.28)",
+          borderRadius: 9,
+          width: 32,
+          height: 32,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           color: "#C9A24B",
           flexShrink: 0,
+          transform: pressionado ? "scale(0.92)" : "scale(1)",
+          transition: "transform 120ms ease, border-color 120ms ease",
         }}
       >
-        {onBack ? <ChevronLeft size={20} /> : <Menu size={18} />}
+        {onBack ? <ChevronLeft size={17} /> : <Menu size={16} />}
       </button>
       <div style={{ lineHeight: 1.1 }}>
         <div
@@ -5080,9 +5086,9 @@ function OSForm({ editingOS, onDone, onCancel }) {
         )}
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
-        <div style={{ flex: 1 }}><Field label="Data"><input type="date" style={inputStyle} value={form.data} onChange={set("data")} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Entrada"><input type="time" style={inputStyle} value={form.horaEntrada} onChange={set("horaEntrada")} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Saída"><input type="time" style={inputStyle} value={form.horaSaida} onChange={set("horaSaida")} /></Field></div>
+        <div style={{ flex: 1, minWidth: 0 }}><Field label="Data"><input type="date" style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} value={form.data} onChange={set("data")} /></Field></div>
+        <div style={{ flex: 1, minWidth: 0 }}><Field label="Entrada"><input type="time" style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} value={form.horaEntrada} onChange={set("horaEntrada")} /></Field></div>
+        <div style={{ flex: 1, minWidth: 0 }}><Field label="Saída"><input type="time" style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} value={form.horaSaida} onChange={set("horaSaida")} /></Field></div>
       </div>
 
       <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Valores (R$)</div>
@@ -5234,6 +5240,43 @@ function osWhatsapp(os) {
   const telefone = (os.clienteTelefone || "").replace(/\D/g, "");
   const url = telefone ? `https://wa.me/55${telefone}?text=${texto}` : `https://wa.me/?text=${texto}`;
   window.open(url, "_blank");
+}
+
+/* Botão principal dourado, com leve efeito de pressão ao tocar.
+   Dourado mais sóbrio (menos degradê chapado) e reutilizável. */
+function BotaoNovaOS({ onClick }) {
+  const [pressionado, setPressionado] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onPointerDown={() => setPressionado(true)}
+      onPointerUp={() => setPressionado(false)}
+      onPointerLeave={() => setPressionado(false)}
+      style={{
+        width: "100%",
+        background: "linear-gradient(180deg,#D4AF5C,#B8933F)",
+        border: "1px solid rgba(255,255,255,0.12)",
+        borderRadius: 12,
+        padding: "13px 0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        fontFamily: "'Roboto',sans-serif",
+        fontWeight: 600,
+        fontSize: 13,
+        color: "#0A0A0B",
+        textTransform: "uppercase",
+        cursor: "pointer",
+        marginBottom: 16,
+        transform: pressionado ? "scale(0.98)" : "scale(1)",
+        filter: pressionado ? "brightness(0.94)" : "brightness(1)",
+        transition: "transform 120ms ease, filter 120ms ease",
+      }}
+    >
+      <Plus size={16} /> Nova Ordem de Serviço
+    </button>
+  );
 }
 
 function OrdensServicoModule() {
@@ -5398,28 +5441,25 @@ function OrdensServicoModule() {
 
   return (
     <div style={{ padding: 16, paddingBottom: 40 }}>
-      <button
-        onClick={() => {
-          setSelected(null);
-          setMode("novo");
-        }}
-        style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}
-      >
-        <Plus size={16} /> Nova Ordem de Serviço
-      </button>
+      <BotaoNovaOS onClick={() => { setSelected(null); setMode("novo"); }} />
 
       <div style={{ position: "relative", marginBottom: 12 }}>
-        <Search size={15} color="#6E6E73" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder="Buscar por cliente, nº da OS ou equipamento..."
-          style={{ ...inputStyle, paddingLeft: 34 }}
+          style={{
+            ...inputStyle,
+            background: "#0A0A0B",
+            border: "1px solid rgba(255,255,255,0.07)",
+            paddingLeft: 34,
+          }}
         />
       </div>
 
       {/* filtros por status — única área com rolagem horizontal */}
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+      <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 4, marginBottom: 18, WebkitOverflowScrolling: "touch" }}>
         {["Todas", ...Object.keys(OS_STATUS_COLOR)].map((f) => {
           const on = filtro === f;
           const cor = f === "Todas" ? "#C9A24B" : OS_STATUS_COLOR[f];
@@ -5434,19 +5474,19 @@ function OrdensServicoModule() {
                 alignItems: "center",
                 gap: 6,
                 fontSize: 11.5,
-                padding: "7px 12px",
+                padding: "7px 13px",
                 borderRadius: 20,
-                border: `1px solid ${on ? cor : "#2A2A2E"}`,
-                background: on ? `${cor}1A` : "transparent",
-                color: on ? cor : "#8A8A90",
+                border: `1px solid ${on ? "rgba(201,162,75,0.5)" : "rgba(255,255,255,0.07)"}`,
+                background: on ? "rgba(201,162,75,0.12)" : "#0A0A0B",
+                color: on ? "#E9C878" : "#8A8A90",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
                 textTransform: "capitalize",
-                transition: "color 180ms, border-color 180ms, background 180ms",
+                transition: "color 160ms ease, border-color 160ms ease, background 160ms ease",
               }}
             >
               {f.toLowerCase()}
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, opacity: 0.75 }}>{qtd}</span>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, opacity: 0.7 }}>{qtd}</span>
             </button>
           );
         })}
@@ -5476,21 +5516,53 @@ function OrdensServicoModule() {
                 setSelected(os);
                 setMode("detalhe");
               }}
-              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "13px 14px", marginBottom: 10, cursor: "pointer" }}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                background: "#0D0D0E",
+                border: "1px solid rgba(255,255,255,0.07)",
+                borderRadius: 14,
+                padding: "13px 14px",
+                marginBottom: 9,
+                cursor: "pointer",
+              }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 14.5, color: "#F3F3F1" }}>{os.clienteNome}</div>
-                  <div style={{ fontSize: 12, color: "#8A8A90", marginTop: 3 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontFamily: "'Roboto',sans-serif",
+                      fontWeight: 600,
+                      fontSize: 14.5,
+                      color: "#F3F3F1",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {os.clienteNome}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: "#7A7A7A",
+                      marginTop: 3,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {os.numero} · {os.eqTipo || "Equipamento"} · {os.tipoServico}
                   </div>
                 </div>
-                <span style={{ color: "#E9C878", fontSize: 13.5, fontWeight: 700 }}>R$ {Number(os.valorTotal || 0).toFixed(2)}</span>
+                <span style={{ color: "#E9C878", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+                  R$ {Number(os.valorTotal || 0).toFixed(2)}
+                </span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 8 }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: cor }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 9 }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: cor, flexShrink: 0 }} />
                 <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: cor }}>{os.status}</span>
-                <span style={{ fontSize: 10.5, color: "#6E6E73", marginLeft: "auto" }}>{new Date(os.data).toLocaleDateString("pt-BR")}</span>
+                <span style={{ fontSize: 10.5, color: "#5A5A5F", marginLeft: "auto" }}>{new Date(os.data).toLocaleDateString("pt-BR")}</span>
               </div>
             </button>
           );
