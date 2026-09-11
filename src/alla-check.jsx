@@ -7675,25 +7675,18 @@ function GestaoInteligente({ onBack }) {
   ];
 
   return (
-    <div>
-      {/* cabeçalho compacto proprio desta tela */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "16px 20px",
-        }}
-      >
+    <div style={{ paddingBottom: 36 }}>
+      {/* header compacto, sem divisória pesada */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px 18px" }}>
         <button
           onClick={onBack}
           aria-label="Voltar"
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 9,
-            background: "#111111",
-            border: "1px solid rgba(255,255,255,0.08)",
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            background: "#0D0D0E",
+            border: "1px solid rgba(255,255,255,0.07)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -7702,209 +7695,129 @@ function GestaoInteligente({ onBack }) {
             cursor: "pointer",
           }}
         >
-          <ChevronLeft size={17} />
+          <ChevronLeft size={16} />
         </button>
-        <div style={{ lineHeight: 1.2 }}>
-          <div
-            style={{
-              fontFamily: "'Roboto',sans-serif",
-              fontWeight: 600,
-              fontSize: 21,
-              color: "#F5F5F3",
-              letterSpacing: 0.3,
-            }}
-          >
+        <div style={{ lineHeight: 1.15 }}>
+          <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 18, color: "#F5F5F3" }}>
             Gestão Inteligente
           </div>
-          <div
-            style={{
-              fontFamily: "'JetBrains Mono',monospace",
-              fontSize: 9.5,
-              color: "#7A7A7A",
-              letterSpacing: 2,
-              textTransform: "uppercase",
-              marginTop: 1,
-            }}
-          >
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#6E6E73", letterSpacing: 1.8, textTransform: "uppercase", marginTop: 1 }}>
             Alla Check
           </div>
         </div>
       </div>
-      <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
 
-      <div style={{ padding: "24px 20px 40px", maxWidth: "100%", overflowX: "hidden" }}>
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 24, maxWidth: "100%" }}>
-          {FIN_FILTROS.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFiltro(f)}
-              style={{
-                flexShrink: 0,
-                fontSize: 11.5,
-                padding: "7px 12px",
-                borderRadius: 20,
-                border: `1px solid ${filtro === f ? "#C9A24B" : "#2A2A2E"}`,
-                background: filtro === f ? "rgba(201,162,75,0.15)" : "transparent",
-                color: filtro === f ? "#E9C878" : "#8A8A90",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {f}
-            </button>
-          ))}
+      <div style={{ padding: "0 20px", maxWidth: "100%", overflowX: "hidden" }}>
+
+        {/* filtro de período: seletor horizontal compacto, sem pílulas pesadas */}
+        <div style={{ display: "flex", gap: 16, overflowX: "auto", marginBottom: 20, WebkitOverflowScrolling: "touch" }}>
+          {FIN_FILTROS.map((f) => {
+            const on = filtro === f;
+            return (
+              <button
+                key={f}
+                onClick={() => setFiltro(f)}
+                style={{
+                  flexShrink: 0,
+                  background: "none",
+                  border: "none",
+                  borderBottom: `2px solid ${on ? "#C9A24B" : "transparent"}`,
+                  color: on ? "#E9C878" : "#6E6E73",
+                  fontFamily: "'Roboto',sans-serif",
+                  fontWeight: on ? 600 : 400,
+                  fontSize: 12,
+                  padding: "0 0 8px",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  transition: "color 150ms ease, border-color 150ms ease",
+                }}
+              >
+                {f}
+              </button>
+            );
+          })}
         </div>
         {filtro === "Personalizado" && (
-          <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
             <div style={{ flex: 1 }}><Field label="De"><input type="date" style={inputStyle} value={custom.inicio} onChange={(e) => setCustom((c) => ({ ...c, inicio: e.target.value }))} /></Field></div>
             <div style={{ flex: 1 }}><Field label="Até"><input type="date" style={inputStyle} value={custom.fim} onChange={(e) => setCustom((c) => ({ ...c, fim: e.target.value }))} /></Field></div>
           </div>
         )}
 
-        {/* RESUMO DO NEGOCIO */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <span
-            style={{
-              fontFamily: "'JetBrains Mono',monospace",
-              fontSize: 11,
-              fontWeight: 600,
-              color: "#F5F5F5",
-              letterSpacing: 1.5,
-              textTransform: "uppercase",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Resumo do negócio
-          </span>
-          <span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, rgba(201,162,75,0.35), transparent)" }} />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 12 }}>
-          {cards.map((c) => {
-            const Icon = c.icon;
-            return (
-              <div
-                key={c.label}
-                className="premium-card"
-                style={{
-                  background: "#0D0D0D",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 18,
-                  padding: "18px 18px 17px",
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.035), 0 8px 30px rgba(0,0,0,0.3)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span
-                    style={{
-                      fontFamily: "'JetBrains Mono',monospace",
-                      fontSize: 9,
-                      color: "#8A8A8A",
-                      letterSpacing: 2,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {c.label}
-                  </span>
-                  <Icon size={13} color="#5F5F5F" strokeWidth={1.8} />
-                </div>
-                <div
-                  style={{
-                    fontFamily: "'Roboto',sans-serif",
-                    fontWeight: 600,
-                    // clamp: diminui sozinho em telas estreitas para o valor
-                    // nunca vazar para fora do card (ex: "R$ 1450.00")
-                    fontSize: "clamp(17px, 6.2vw, 26px)",
-                    lineHeight: 1.05,
-                    color: c.destaque ? "#C9A24B" : "#F5F5F5",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {c.valor}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* clientes ativos - mesma linguagem, largura total, intencional */}
-        <div
-          className="premium-card"
-          style={{
-            background: "#0D0D0D",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: 18,
-            padding: "17px 18px",
-            marginBottom: 32,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.035), 0 8px 30px rgba(0,0,0,0.3)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontFamily: "'JetBrains Mono',monospace",
-                fontSize: 9,
-                color: "#8A8A8A",
-                letterSpacing: 2,
-                textTransform: "uppercase",
-                marginBottom: 9,
-              }}
-            >
-              Clientes ativos
-            </div>
-            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 26, color: "#F5F5F5", lineHeight: 1 }}>
-              {clientesAtivos}
-            </div>
+        {/* ---- métrica principal: faturamento em destaque total ---- */}
+        <div style={{ marginBottom: 4 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#71717A", letterSpacing: 1.4, textTransform: "uppercase" }}>
+            Faturamento
           </div>
-          <Users size={15} color="#5F5F5F" strokeWidth={1.8} />
-        </div>
-
-        {/* INSIGHTS */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <Sparkles size={13} color="#C9A24B" />
-            <span
-              style={{
-                fontFamily: "'JetBrains Mono',monospace",
-                fontSize: 11,
-                fontWeight: 600,
-                color: "#F0F0EE",
-                letterSpacing: 1.5,
-                textTransform: "uppercase",
-              }}
-            >
-              Insights
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 3 }}>
+            <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: "clamp(28px, 9vw, 36px)", color: "#F3F3F1", lineHeight: 1 }}>
+              R$ {faturamento.toFixed(2)}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: "#7A7A7A", marginTop: 4 }}>
-            Inteligência sobre o desempenho da operação
-          </div>
+        </div>
+
+        {/* lucro: segunda métrica, logo abaixo, mais discreta */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 18 }}>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#71717A", letterSpacing: 1.2, textTransform: "uppercase" }}>
+            Lucro
+          </span>
+          <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 15, color: lucro >= 0 ? "#4ADE80" : "#F0605A" }}>
+            R$ {lucro.toFixed(2)}
+          </span>
+        </div>
+
+        {/* ---- linha compacta: metricas secundarias, sem cards ---- */}
+        <div
+          style={{
+            display: "flex",
+            overflowX: "auto",
+            gap: 0,
+            marginBottom: 26,
+            paddingBottom: 14,
+            borderBottom: "1px solid rgba(255,255,255,0.07)",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          {[
+            [osFinalizadas, "OS finalizadas", "#4ADE80"],
+            [osAbertas, "OS aberta" + (osAbertas === 1 ? "" : "s"), "#E9C878"],
+            [orcamentos.length, "orçamento" + (orcamentos.length === 1 ? "" : "s"), "#4681DF"],
+            [clientesAtivos, "clientes ativos", "#C9A24B"],
+          ].map(([valor, rotulo, cor], i) => (
+            <div key={rotulo} style={{ flexShrink: 0, paddingRight: 20, borderRight: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none", marginRight: i < 3 ? 20 : 0 }}>
+              <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 18, color: cor, lineHeight: 1 }}>{valor}</div>
+              <div style={{ fontSize: 10, color: "#7A7A7A", marginTop: 3, whiteSpace: "nowrap" }}>{rotulo}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ---- insights: area de destaque, cards de IA compactos ---- */}
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+          <Sparkles size={13} color="#C9A24B" />
+          <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14, color: "#F3F3F1" }}>
+            Insights
+          </span>
+        </div>
+        <div style={{ fontSize: 11.5, color: "#71717A", marginBottom: 14 }}>
+          Leitura automática da operação neste período
         </div>
 
         {insights.length === 0 ? (
           <div
             style={{
-              background: "#0D0D0D",
-              border: "1px dashed rgba(255,255,255,0.1)",
-              borderRadius: 16,
-              padding: "32px 24px",
+              background: "#0A0A0B",
+              border: "1px dashed rgba(255,255,255,0.09)",
+              borderRadius: 14,
+              padding: "26px 20px",
               textAlign: "center",
             }}
           >
-            <div style={{ color: "#C9A24B", fontSize: 20, marginBottom: 10 }}>✦</div>
-            <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 14.5, color: "#D9D9D6", marginBottom: 6 }}>
+            <div style={{ color: "#C9A24B", fontSize: 17, marginBottom: 8 }}>✦</div>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 13, color: "#C7C9CE", marginBottom: 5 }}>
               Ainda não há dados suficientes
             </div>
-            <div style={{ fontSize: 12.5, color: "#7A7A7A", lineHeight: 1.5 }}>
-              Registre OS, orçamentos e movimentações para que o ALLA CHECK gere insights sobre sua operação.
+            <div style={{ fontSize: 11.5, color: "#71717A", lineHeight: 1.5 }}>
+              Registre OS, orçamentos e movimentações para o ALLA CHECK gerar insights.
             </div>
           </div>
         ) : (
@@ -7912,18 +7825,35 @@ function GestaoInteligente({ onBack }) {
             <div
               key={idx}
               style={{
-                background: "#111111",
-                border: "1px solid rgba(201,162,75,0.18)",
-                borderRadius: 14,
-                padding: "13px 15px",
-                marginBottom: 9,
+                background: "#0A0A0B",
+                border: "1px solid rgba(255,255,255,0.07)",
+                borderRadius: 13,
+                padding: "12px 13px",
+                marginBottom: 8,
                 display: "flex",
-                gap: 10,
                 alignItems: "flex-start",
+                gap: 10,
               }}
             >
-              <span style={{ color: "#C9A24B", fontSize: 13, lineHeight: 1.4, marginTop: 1 }}>✦</span>
-              <span style={{ fontSize: 13, color: "#D0D0CE", lineHeight: 1.5 }}>{ins}</span>
+              <span
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 7,
+                  background: "rgba(201,162,75,0.10)",
+                  border: "1px solid rgba(201,162,75,0.3)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  marginTop: 1,
+                }}
+              >
+                <Sparkles size={11} color="#C9A24B" />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: "#D5D5D8", lineHeight: 1.5 }}>{ins}</div>
+              </div>
             </div>
           ))
         )}
@@ -7932,8 +7862,6 @@ function GestaoInteligente({ onBack }) {
   );
 }
 
-/* ---------------- Módulo: Vendas Cervejeira ---------------- */
-const CERVEJEIRA_ESTADOS = ["Nova", "Usada", "Reformada", "Revisada"];
 
 function ProdutoForm({ onDone, onCancel }) {
   const [form, setForm] = useState({
