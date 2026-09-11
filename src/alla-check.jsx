@@ -6069,6 +6069,10 @@ function ReceitaForm({ onDone, onCancel }) {
   );
 }
 
+/* Categorias de despesa do negócio (distintas de ORC_ITEM_CATEGORIAS,
+   que são itens de orçamento ao cliente). */
+const DESPESA_CATEGORIAS = ["Material", "Peças", "Combustível", "Ferramentas", "Aluguel", "Energia", "Internet", "Funcionários", "Outros"];
+
 function DespesaForm({ onDone, onCancel }) {
   const [form, setForm] = useState({
     categoria: "Material",
@@ -6122,6 +6126,12 @@ function DespesaForm({ onDone, onCancel }) {
     </div>
   );
 }
+
+/* Opções de período usadas nos filtros do Financeiro. A lógica que
+   interpreta cada uma (getPeriodBounds, getPreviousPeriodBounds,
+   dentroDoFiltro) já tratava exatamente estes 6 valores — esta é a
+   lista que faltava declarar. */
+const FIN_FILTROS = ["Hoje", "Esta semana", "Este mês", "Mês anterior", "Este ano", "Personalizado"];
 
 function FinanceiroModule({ onBack }) {
   const [receitas, setReceitas] = useState(null);
