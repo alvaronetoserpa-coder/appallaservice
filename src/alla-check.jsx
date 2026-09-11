@@ -1195,6 +1195,7 @@ const inputStyle = {
 /* ---------------- Ferramentas — catálogo ---------------- */
 const TOOLS = [
   { key: "alla-venda", label: "ALLA VENDA", desc: "Venda de ar-condicionado: catálogo, cotações e propostas", icon: Snowflake, active: true },
+  { key: "agenda-cortes", label: "Agenda de Cortes", desc: "Agenda provisória de sábado — Barbearia Serpas", icon: CalendarClock, active: true },
   { key: "assinaturas", label: "Assinaturas", desc: "Contratos recorrentes, vencimentos e cobrança", icon: CalendarClock, active: true },
   { key: "btu", label: "Calculadora de BTU", desc: "Dimensionamento de ar-condicionado por ambiente", icon: Calculator, active: true },
   { key: "conversor", label: "Conversor Técnico", desc: "BTU, pressão, temperatura, potência e medidas", icon: Ruler, active: true },
@@ -1208,7 +1209,7 @@ const TOOLS = [
   { key: "laudo-tecnico", label: "Gerador de Laudo Técnico", desc: "Laudo profissional a partir do diagnóstico", icon: FileCheck2, active: true },
   { key: "pmoc-tool", label: "PMOC", desc: "Plano de manutenção com alertas de vencimento", icon: CalendarClock, active: true },
   { key: "mensagens-whatsapp", label: "Mensagens WhatsApp", desc: "Mensagens prontas para cada etapa do serviço", icon: MessageSquareText, active: true },
-  { key: "assistente-ia", label: "Assistente Técnico IA", desc: "Tira dúvidas técnicas de climatização e elétrica", icon: Bot, active: false },
+  { key: "assistente-ia", label: "Assistente Técnico IA", desc: "Tira dúvidas técnicas de climatização e elétrica", icon: Bot, active: true },
 ];
 
 function ToolCard({ tool, onClick }) {
@@ -1293,7 +1294,7 @@ function ToolCard({ tool, onClick }) {
 /* Agrupamento visual das ferramentas. Nenhuma ferramenta é removida:
    o que não estiver listado aqui cai automaticamente em "Utilidades". */
 const TOOL_CATEGORIAS = [
-  { titulo: "Gestão", chaves: ["alla-venda", "assinaturas", "pmoc-tool"] },
+  { titulo: "Gestão", chaves: ["alla-venda", "agenda-cortes", "assinaturas", "pmoc-tool"] },
   { titulo: "Operação", chaves: ["rastreio-tecnico", "laudo-tecnico"] },
   { titulo: "Equipamentos", chaves: ["historico-equipamento", "manuais"] },
   { titulo: "Financeiro", chaves: ["relatorios-financeiros"] },
@@ -1305,6 +1306,7 @@ const TOOL_CATEGORIAS = [
 /* Cor característica de cada ferramenta, para os ícones não ficarem todos iguais. */
 const TOOL_CORES = {
   "alla-venda": "#3FBCD1",
+  "agenda-cortes": "#E9C878",
   assinaturas: "#C9A24B",
   "pmoc-tool": "#9B8AFB",
   "rastreio-tecnico": "#4681DF",
@@ -12760,6 +12762,1204 @@ function useTransicaoTela(view) {
 
 /* Porta de entrada: sem sessão válida o app interno nem chega a ser
    montado, então nenhuma tela protegida fica acessível sem login. */
+/* ================= Assistente Técnico IA =================
+   IMPORTANTE: não há modelo de linguagem conectado neste app (não existe
+   backend nem chave de API configurada). Este "assistente" funciona por
+   regras determinísticas sobre uma base de sintomas e códigos de erro reais
+   de climatização/elétrica — a mesma abordagem já usada no Checklist IA
+   (gerarConclusaoChecklist), para nunca inventar valores técnicos. Quando
+   a base não cobre o caso, ele diz isso e pede os dados que faltam. */
+
+/* ---------------- Base de sintomas ---------------- */
+const IA_SINTOMAS = [
+  {
+    chaves: ["nao gela", "não gela", "liga mas nao gela", "liga mas não gela", "nao esta gelando"],
+    titulo: "Ar-condicionado liga mas não gela",
+    causaProvavel: "Perda de capacidade de troca térmica no sistema — pode ser falta de gás refrigerante, sujeira nas serpentinas, restrição no sistema ou compressor com baixo rendimento.",
+    verificacoes: [
+      "Verificar se a condensadora está ligando e o ventilador girando",
+      "Medir a pressão de sucção e descarga com manifold",
+      "Verificar temperatura do ar de insuflamento na evaporadora",
+      "Inspecionar visualmente serpentinas (evaporadora e condensadora) quanto a sujeira",
+      "Verificar se há gelo na linha de sucção ou na evaporadora",
+    ],
+    medicoes: ["pressão de sucção", "pressão de descarga", "temperatura de linha", "corrente do compressor"],
+    possiveisCausas: [
+      "Falta de gás refrigerante (vazamento)",
+      "Serpentina suja (evaporadora ou condensadora)",
+      "Compressor com baixo rendimento",
+      "Restrição no sistema (filtro secador ou capilar entupido)",
+      "Válvula de expansão ou capilar dimensionado incorretamente",
+    ],
+    procedimento: "1) Confirme que a condensadora liga e ventila. 2) Conecte o manifold e meça as pressões de sucção e descarga. 3) Compare com a faixa esperada para o gás e a condição ambiente. 4) Se a pressão de sucção estiver baixa e houver gelo na linha, é forte indício de falta de carga — busque o ponto de vazamento antes de completar gás. 5) Se as pressões estiverem normais, verifique a limpeza das serpentinas e o fluxo de ar.",
+    atencao: "Nunca abra o sistema de refrigeração sem recuperar o gás adequadamente. Use óculos de proteção ao manusear linhas pressurizadas.",
+  },
+  {
+    chaves: ["evaporadora funciona e condensadora nao liga", "condensadora nao liga", "condensadora não liga"],
+    titulo: "Evaporadora funciona e condensadora não liga",
+    causaProvavel: "Falha na alimentação elétrica da unidade externa, na placa/módulo de comando, no capacitor de partida ou no próprio motor/compressor.",
+    verificacoes: [
+      "Medir tensão de alimentação na condensadora",
+      "Verificar continuidade do cabo de sinal entre evaporadora e condensadora",
+      "Inspecionar capacitor de partida do compressor e do ventilador",
+      "Verificar se a placa da condensadora recebe comando (LED, sinal do módulo)",
+      "Testar continuidade e isolamento do compressor",
+    ],
+    medicoes: ["tensão", "corrente", "continuidade", "isolamento", "resistência"],
+    possiveisCausas: [
+      "Capacitor de partida estufado ou com capacitância baixa",
+      "Fusível ou proteção térmica interrompida",
+      "Falha na placa eletrônica da condensadora",
+      "Compressor travado ou em curto",
+      "Mau contato no cabo de interligação",
+    ],
+    procedimento: "1) Com o sistema desenergizado, inspecione visualmente o capacitor (estufamento, vazamento). 2) Religue e meça a tensão de alimentação na condensadora. 3) Se houver tensão mas nada liga, verifique o sinal de comando vindo da evaporadora. 4) Teste a continuidade e o isolamento do compressor com o equipamento desligado da rede.",
+    atencao: "Capacitores retêm carga mesmo desligados — descarregue-os com segurança antes de manusear. Sempre desligue o disjuntor antes de qualquer teste de continuidade.",
+  },
+  {
+    chaves: ["compressor nao parte", "compressor não parte", "compressor nao liga", "compressor não liga"],
+    titulo: "Compressor não parte",
+    causaProvavel: "Pode ser elétrica (capacitor, relé de partida, proteção térmica) ou mecânica (compressor travado).",
+    verificacoes: [
+      "Medir tensão nos terminais do compressor durante a tentativa de partida",
+      "Verificar capacitor de partida/permanente",
+      "Testar continuidade e resistência dos enrolamentos (comum, marcha, partida)",
+      "Verificar protetor térmico (se está aberto)",
+      "Verificar se há zumbido (indica tentativa elétrica sem giro mecânico)",
+    ],
+    medicoes: ["tensão", "corrente", "resistência", "continuidade", "isolamento"],
+    possiveisCausas: [
+      "Capacitor de partida com capacitância insuficiente",
+      "Protetor térmico interno aberto (compressor superaquecido)",
+      "Compressor mecanicamente travado",
+      "Enrolamento em curto ou aberto",
+      "Baixa tensão de alimentação",
+    ],
+    procedimento: "1) Com o equipamento desligado, meça a resistência entre os terminais comum-marcha, comum-partida e marcha-partida. 2) Compare os valores entre si (a soma comum-marcha + comum-partida deve ser próxima da marcha-partida). 3) Verifique isolamento entre qualquer terminal e a carcaça. 4) Se os enrolamentos estiverem bons, teste o capacitor e o relé de partida.",
+    atencao: "Se houver zumbido forte e o compressor não girar, desligue imediatamente — insistir pode queimar o motor. Risco de choque elétrico: sempre desenergize antes de medir resistência.",
+  },
+  {
+    chaves: ["congelando a evaporadora", "esta congelando", "está congelando", "gelo na evaporadora", "formando gelo"],
+    titulo: "Evaporadora congelando",
+    causaProvavel: "Baixo fluxo de ar sobre a serpentina ou baixa pressão de sucção (falta de gás), impedindo a troca térmica adequada.",
+    verificacoes: [
+      "Verificar se o filtro de ar está sujo/obstruído",
+      "Verificar se o ventilador da evaporadora está girando na velocidade correta",
+      "Medir a pressão de sucção",
+      "Verificar se há restrição na tubulação (capilar ou válvula de expansão)",
+      "Verificar temperatura ambiente (uso fora da faixa recomendada)",
+    ],
+    medicoes: ["pressão de sucção", "temperatura de linha", "temperatura ambiente"],
+    possiveisCausas: [
+      "Filtro de ar sujo",
+      "Baixa carga de gás refrigerante",
+      "Motor do ventilador da evaporadora com defeito ou capacitor fraco",
+      "Restrição parcial no sistema",
+      "Termostato ou sensor de temperatura descalibrado",
+    ],
+    procedimento: "1) Desligue o equipamento e deixe descongelar totalmente antes de qualquer medição. 2) Limpe ou substitua o filtro de ar. 3) Religue e verifique o fluxo de ar na saída. 4) Meça a pressão de sucção — se estiver baixa, investigue vazamento.",
+    atencao: "Nunca force o descongelamento com objetos pontiagudos na serpentina — risco de furo e vazamento de gás.",
+  },
+  {
+    chaves: ["capacitor", "testar capacitor", "como testar o capacitor"],
+    titulo: "Como testar o capacitor",
+    causaProvavel: "Verificação de capacitância para confirmar se o capacitor está dentro da especificação do fabricante.",
+    verificacoes: [
+      "Desligar e isolar a alimentação elétrica",
+      "Descarregar o capacitor com segurança (resistor de descarga)",
+      "Medir a capacitância com multímetro no modo capacitância (µF)",
+      "Comparar o valor medido com o valor nominal impresso no capacitor",
+    ],
+    medicoes: ["capacitância (µF)"],
+    possiveisCausas: [
+      "Capacitor com capacitância abaixo de ~90% do valor nominal — trocar",
+      "Capacitor estufado ou vazando óleo — trocar sem testar, é sinal de falha",
+    ],
+    procedimento: "1) Desligue o disjuntor e aguarde. 2) Descarregue o capacitor com um resistor apropriado (nunca curto-circuite diretamente). 3) Com o multímetro em modo capacitância, meça entre os terminais indicados. 4) Compare com o valor nominal — se estiver muito abaixo (tipicamente <90%), substitua por um de mesma capacitância e tensão nominal.",
+    atencao: "Capacitor pode reter carga perigosa mesmo desligado. Nunca toque os terminais sem descarregar antes.",
+  },
+  {
+    chaves: ["falta de gas", "falta de gás", "identificar falta de gas", "identificar falta de gás"],
+    titulo: "Como identificar falta de gás",
+    causaProvavel: "Sinais indiretos de baixa carga de refrigerante no sistema.",
+    verificacoes: [
+      "Verificar formação de gelo na linha de sucção",
+      "Medir pressão de sucção com manifold",
+      "Verificar superaquecimento (temperatura da linha de sucção vs. pressão de saturação)",
+      "Inspecionar pontos comuns de vazamento: conexões flare, solda, válvulas de serviço",
+    ],
+    medicoes: ["pressão de sucção", "pressão de descarga", "temperatura de linha"],
+    possiveisCausas: [
+      "Vazamento em conexão flare",
+      "Vazamento em solda da tubulação",
+      "Válvula de serviço com vedação comprometida",
+      "Carga original insuficiente (erro de instalação)",
+    ],
+    procedimento: "1) Conecte o manifold e observe a pressão de sucção em relação ao esperado para o gás e temperatura ambiente. 2) Procure gelo ou óleo (rastro) nas conexões — óleo indica ponto de vazamento. 3) Use detector eletrônico de vazamento ou solução de bolhas nas conexões suspeitas. 4) Corrija o vazamento antes de completar a carga — nunca apenas complete gás sem localizar a fuga.",
+    atencao: "Sistemas com R-32 são levemente inflamáveis — evite fontes de ignição próximas durante o manuseio. Recupere o gás remanescente adequadamente, nunca libere para a atmosfera.",
+  },
+  {
+    chaves: ["bitola de cabo", "qual bitola", "bitola do cabo"],
+    titulo: "Qual bitola de cabo usar",
+    causaProvavel: "A bitola correta depende da corrente do equipamento, da distância do circuito e do tipo de instalação — não deve ser estimada sem esses dados.",
+    verificacoes: [
+      "Verificar a corrente nominal do equipamento na etiqueta/manual",
+      "Verificar a distância entre o quadro e o equipamento",
+      "Verificar o tipo de instalação (embutida, aparente, eletroduto)",
+    ],
+    medicoes: ["corrente nominal do equipamento"],
+    possiveisCausas: [],
+    procedimento: "Este item depende diretamente da tabela de dimensionamento da NBR 5410, considerando corrente, método de instalação e queda de tensão admissível. Informe a corrente nominal do equipamento (na etiqueta) e a distância aproximada do circuito para eu orientar dentro dos parâmetros técnicos — não é seguro indicar uma bitola sem esses dados.",
+    atencao: "Dimensionamento de cabo é item de segurança elétrica — subdimensionar pode causar sobreaquecimento e incêndio. Sempre siga a NBR 5410.",
+  },
+  {
+    chaves: ["fazer o vacuo", "fazer o vácuo", "vacuo corretamente", "vácuo corretamente"],
+    titulo: "Como fazer o vácuo corretamente",
+    causaProvavel: "Procedimento padrão para remover ar e umidade do sistema antes da carga de gás.",
+    verificacoes: [
+      "Conectar a bomba de vácuo nas duas vias (alta e baixa) quando possível",
+      "Verificar se todas as conexões estão bem vedadas",
+      "Utilizar vacuômetro digital para leitura precisa",
+    ],
+    medicoes: ["pressão de vácuo (microns ou polegadas de Hg)"],
+    possiveisCausas: [],
+    procedimento: "1) Conecte a bomba de vácuo ao manifold, preferencialmente nas duas vias. 2) Ligue a bomba e evacue até atingir pelo menos 500 microns (ideal) ou o critério do fabricante. 3) Feche o registro e observe por 10–15 minutos — se a pressão subir pouco, o sistema está estanque. Se subir rapidamente, há vazamento a ser localizado antes de prosseguir. 4) Só então libere o gás do lado do reservatório.",
+    atencao: "Vácuo insuficiente deixa umidade no sistema, o que forma ácidos e compromete o compressor a médio prazo.",
+  },
+];
+
+/* ---------------- Base de códigos de erro (apenas os documentados aqui) ---------------- */
+const IA_CODIGOS_ERRO = {
+  samsung: {
+    E1: "Falha de comunicação entre unidade interna e externa — verificar cabo de sinal e conexões.",
+    E5: "Proteção por sobrecorrente do compressor — verificar tensão de alimentação e capacitor.",
+    E6: "Falha de comunicação (algumas linhas) ou sensor de temperatura da evaporadora, dependendo do modelo — informe o modelo exato para eu confirmar.",
+    E101: "Erro de comunicação entre placas — verificar cabeamento e conectores.",
+  },
+  lg: {
+    CH01: "Falha de comunicação entre unidades — verificar cabo de interligação.",
+    CH05: "Erro de comunicação — verificar conexões e alimentação.",
+    CH21: "Sensor de temperatura da unidade interna com leitura fora da faixa.",
+  },
+  midea_springer: {
+    E1: "Proteção de alta pressão — verificar condensadora, ventilador e limpeza da serpentina.",
+    E2: "Proteção de baixa pressão/anticongelamento — verificar carga de gás e fluxo de ar.",
+    E3: "Falha do sensor de temperatura do ambiente ou da serpentina.",
+    F1: "Falha de comunicação entre unidades.",
+  },
+  gree: {
+    E1: "Proteção de alta pressão.",
+    E5: "Proteção de sobrecorrente do compressor.",
+    F0: "Falha no sensor de temperatura ambiente.",
+  },
+  fujitsu: {
+    E1: "Falha de comunicação entre unidades.",
+    E6: "Falha do motor do ventilador da unidade interna.",
+  },
+};
+
+function iaBuscarSintoma(texto) {
+  const t = texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return IA_SINTOMAS.find((s) => s.chaves.some((c) => t.includes(c.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))));
+}
+
+function iaBuscarCodigoErro(texto) {
+  const t = texto.toLowerCase();
+  const marcas = { samsung: "samsung", lg: "lg", midea: "midea_springer", springer: "midea_springer", gree: "gree", fujitsu: "fujitsu" };
+  let marcaAchada = null;
+  for (const [chave, valor] of Object.entries(marcas)) {
+    if (t.includes(chave)) { marcaAchada = valor; break; }
+  }
+  const codMatch = texto.toUpperCase().match(/\b([EFC][EHR]?\d{1,3})\b/);
+  const codigo = codMatch ? codMatch[1] : null;
+  if (!codigo) return { encontrado: false, precisaCodigo: true };
+  if (!marcaAchada) return { encontrado: false, codigo, precisaMarca: true };
+  const base = IA_CODIGOS_ERRO[marcaAchada];
+  const explicacao = base && base[codigo];
+  return explicacao
+    ? { encontrado: true, marca: marcaAchada, codigo, explicacao }
+    : { encontrado: false, codigo, marca: marcaAchada, semRegistro: true };
+}
+
+/* Análise qualitativa de medições — nunca compara com um número "mágico"
+   que dependeria do modelo/gás específico; só sinaliza padrões amplamente
+   reconhecidos e sempre lembra que o valor-alvo exato depende do sistema. */
+function iaAnalisarMedicoes(m) {
+  const obs = [];
+  const num = (v) => (v === "" || v == null ? null : Number(String(v).replace(",", ".")));
+
+  const tensao = num(m.tensao);
+  if (tensao != null) {
+    if (tensao < 190) obs.push({ tipo: "atencao", texto: `Tensão de ${tensao}V está abaixo do usual para circuitos de 220V — pode causar sobrecorrente e desarme por proteção. Verifique a instalação e a concessionária se persistir.` });
+    else if (tensao > 240) obs.push({ tipo: "atencao", texto: `Tensão de ${tensao}V está acima do usual para 220V — risco de dano a componentes eletrônicos. Investigue a rede elétrica.` });
+    else obs.push({ tipo: "ok", texto: `Tensão de ${tensao}V dentro da faixa usual para circuitos de 220V.` });
+  }
+
+  const corrente = num(m.corrente);
+  if (corrente != null) {
+    obs.push({ tipo: "info", texto: `Corrente medida: ${corrente}A. Compare com a corrente nominal da etiqueta do equipamento — valores muito acima indicam sobrecarga mecânica ou elétrica; muito abaixo pode indicar baixa carga de gás ou compressor com baixo rendimento.` });
+  }
+
+  const pSuc = num(m.pressaoSuccao);
+  const pDesc = num(m.pressaoDescarga);
+  if (pSuc != null && pDesc != null) {
+    obs.push({ tipo: "info", texto: `Pressões informadas: sucção ${pSuc} / descarga ${pDesc}. O valor esperado depende do gás refrigerante e da temperatura ambiente — informe o gás (R-32, R-410A, R-22) e a temperatura ambiente para uma leitura mais precisa.` });
+  }
+
+  const tLinha = num(m.temperaturaLinha);
+  const tAmb = num(m.temperaturaAmbiente);
+  if (tLinha != null && tAmb != null) {
+    const diff = tAmb - tLinha;
+    if (diff < 8) obs.push({ tipo: "atencao", texto: `Diferença entre ambiente (${tAmb}°C) e linha (${tLinha}°C) de ${diff.toFixed(1)}°C está abaixo do usual — pode indicar baixa troca térmica.` });
+    else obs.push({ tipo: "ok", texto: `Diferença entre ambiente e linha de ${diff.toFixed(1)}°C está dentro de uma faixa aceitável.` });
+  }
+
+  const resistencia = num(m.resistencia);
+  if (resistencia != null) {
+    obs.push({ tipo: "info", texto: `Resistência medida: ${resistencia}Ω. Compare comum-marcha, comum-partida e marcha-partida entre si — grandes discrepâncias indicam enrolamento com defeito.` });
+  }
+
+  if (obs.length === 0) {
+    return [{ tipo: "info", texto: "Informe ao menos uma medição para eu analisar." }];
+  }
+  return obs;
+}
+
+/* ---------------- Diagnóstico guiado: fluxo de perguntas ---------------- */
+const IA_ETAPAS_GUIADO = [
+  { campo: "equipamento", pergunta: "Qual equipamento?", tipo: "texto", placeholder: "Ex: Split Hi-Wall 12.000 BTUs" },
+  { campo: "marca", pergunta: "Marca", tipo: "texto" },
+  { campo: "modelo", pergunta: "Modelo", tipo: "texto" },
+  { campo: "btu", pergunta: "Capacidade (BTUs)", tipo: "texto" },
+  { campo: "gas", pergunta: "Gás refrigerante", tipo: "select", opcoes: ["R-32", "R-410A", "R-22", "Não sei"] },
+  { campo: "tensao", pergunta: "Tensão", tipo: "select", opcoes: ["220V", "127V", "380V", "Bivolt"] },
+  { campo: "sintoma", pergunta: "Qual o sintoma principal?", tipo: "texto", placeholder: "Descreva o problema" },
+  { campo: "liga", pergunta: "O equipamento liga?", tipo: "select", opcoes: ["Sim", "Não", "Liga e desliga sozinho"] },
+  { campo: "evaporadora", pergunta: "A evaporadora funciona?", tipo: "select", opcoes: ["Sim", "Não", "Parcialmente"] },
+  { campo: "condensadora", pergunta: "A condensadora funciona?", tipo: "select", opcoes: ["Sim", "Não", "Só o ventilador", "Só o compressor"] },
+  { campo: "compressor", pergunta: "O compressor liga?", tipo: "select", opcoes: ["Sim", "Não", "Tenta e desarma", "Não sei"] },
+  { campo: "codigoErro", pergunta: "Há código de erro?", tipo: "texto", placeholder: "Ex: E6, ou deixe em branco" },
+  { campo: "medicoesFeitas", pergunta: "Quais medições já foram feitas?", tipo: "texto", placeholder: "Ex: tensão, pressão de sucção..." },
+];
+
+/* Monta um diagnóstico provável a partir das respostas do fluxo guiado.
+   É uma árvore de decisão sobre respostas objetivas (liga/não liga etc.),
+   não uma geração livre de texto. */
+function iaDiagnosticoGuiado(r) {
+  const testes = [];
+  let titulo = "";
+  let nivel = "Média";
+  let explicacao = "";
+
+  if (r.liga === "Não") {
+    titulo = "Equipamento não liga";
+    nivel = "Alta";
+    explicacao = "Quando o equipamento não liga de forma alguma, o mais comum é falha na alimentação elétrica antes de qualquer componente interno.";
+    testes.push("Verificar disjuntor e tensão na tomada/quadro de alimentação");
+    testes.push("Verificar fusível da placa principal, se houver");
+    testes.push("Verificar cabo de alimentação e conector na placa");
+  } else if (r.condensadora === "Não" && r.evaporadora === "Sim") {
+    titulo = "Evaporadora funciona, condensadora não";
+    nivel = "Alta";
+    explicacao = "Isso concentra a investigação na unidade externa: alimentação, capacitores, placa da condensadora ou compressor.";
+    testes.push("Medir tensão de alimentação na condensadora");
+    testes.push("Inspecionar e testar o capacitor de partida");
+    testes.push("Verificar sinal de comando vindo da evaporadora");
+  } else if (r.compressor === "Tenta e desarma") {
+    titulo = "Compressor tenta partir e desarma";
+    nivel = "Alta";
+    explicacao = "Padrão típico de proteção por sobrecorrente — geralmente capacitor fraco, compressor com esforço mecânico elevado ou tensão baixa.";
+    testes.push("Medir tensão durante a tentativa de partida");
+    testes.push("Testar capacitância do capacitor de partida");
+    testes.push("Medir resistência dos enrolamentos do compressor");
+  } else if (r.compressor === "Não") {
+    titulo = "Compressor não liga";
+    nivel = "Média";
+    explicacao = "Pode ser elétrico (capacitor, relé, proteção térmica) ou mecânico (compressor travado).";
+    testes.push("Medir resistência dos enrolamentos (comum-marcha-partida)");
+    testes.push("Verificar isolamento entre terminais e carcaça");
+    testes.push("Verificar se o protetor térmico está aberto");
+  } else if (r.evaporadora === "Sim" && r.condensadora === "Sim" && /gela|congel/i.test(r.sintoma || "")) {
+    titulo = "Sistema liga completamente mas não climatiza bem";
+    nivel = "Média";
+    explicacao = "Com ambas as unidades funcionando, a causa costuma estar na carga de gás ou na troca térmica (sujeira, fluxo de ar).";
+    testes.push("Medir pressão de sucção e descarga com manifold");
+    testes.push("Verificar limpeza das serpentinas e filtros");
+    testes.push("Verificar se há gelo na linha de sucção");
+  } else {
+    titulo = "Diagnóstico inicial a partir dos sintomas informados";
+    nivel = "Baixa";
+    explicacao = "Com as informações fornecidas ainda não é possível apontar uma causa mais provável — as medições vão ajudar a estreitar as hipóteses.";
+    testes.push("Medir tensão de alimentação");
+    testes.push("Verificar continuidade dos componentes principais");
+    testes.push("Realizar leitura de pressões com manifold");
+  }
+
+  if (r.codigoErro && r.codigoErro.trim()) {
+    const res = iaBuscarCodigoErro(`${r.codigoErro} ${r.marca || ""}`);
+    if (res.encontrado) {
+      explicacao += ` Código ${res.codigo} (${r.marca}): ${res.explicacao}`;
+      nivel = "Alta";
+    }
+  }
+
+  return { titulo, nivel, explicacao, testes };
+}
+
+/* ---------------- Componentes visuais da resposta estruturada ---------------- */
+function IaSecao({ titulo, cor, children }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: cor, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 5 }}>
+        {titulo}
+      </div>
+      <div style={{ fontSize: 12.5, color: "#D5D5D8", lineHeight: 1.55 }}>{children}</div>
+    </div>
+  );
+}
+
+function IaListaSecao({ titulo, cor, itens }) {
+  if (!itens || itens.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: cor, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 5 }}>
+        {titulo}
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "#D5D5D8", lineHeight: 1.6 }}>
+        {itens.map((it, i) => <li key={i}>{it}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+/* Renderiza a resposta técnica completa (sintoma da base ou fallback). */
+function IaRespostaTecnica({ s }) {
+  return (
+    <div style={{ background: "#0D0D0E", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 14, marginTop: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+        <Bot size={14} color="#9B8AFB" />
+        <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13.5, color: "#F3F3F1" }}>{s.titulo}</span>
+      </div>
+      <IaSecao titulo="Causa provável" cor="#9B8AFB">{s.causaProvavel}</IaSecao>
+      <IaListaSecao titulo="Verificações" cor="#4681DF" itens={s.verificacoes} />
+      {s.medicoes && s.medicoes.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#E9C878", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 5 }}>Medições</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {s.medicoes.map((m) => (
+              <span key={m} style={{ fontSize: 10.5, padding: "3px 9px", borderRadius: 20, background: "rgba(233,200,120,0.10)", color: "#E9C878", border: "1px solid rgba(233,200,120,0.3)" }}>{m}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      <IaListaSecao titulo="Possíveis causas" cor="#4ADE80" itens={s.possiveisCausas} />
+      <IaSecao titulo="Procedimento" cor="#4681DF">{s.procedimento}</IaSecao>
+      <div style={{ background: "rgba(240,96,90,0.06)", border: "1px solid rgba(240,96,90,0.3)", borderRadius: 10, padding: "9px 11px", display: "flex", gap: 8 }}>
+        <span style={{ color: "#F0605A", flexShrink: 0, fontSize: 13 }}>⚠</span>
+        <span style={{ fontSize: 11.5, color: "#F0605A", lineHeight: 1.5 }}>{s.atencao}</span>
+      </div>
+    </div>
+  );
+}
+
+const IA_ATALHOS = [
+  { label: "Diagnóstico", icone: Search, texto: "Preciso de ajuda para diagnosticar um problema" },
+  { label: "Instalação", icone: Wrench, texto: "Tenho uma dúvida sobre instalação" },
+  { label: "Manutenção", icone: ClipboardCheck, texto: "Preciso de orientação de manutenção preventiva" },
+  { label: "Elétrica", icone: Zap, texto: "Tenho uma dúvida elétrica" },
+  { label: "Refrigeração", icone: Snowflake, texto: "Tenho uma dúvida sobre o ciclo de refrigeração" },
+  { label: "Códigos de erro", icone: FileText, texto: "__codigos__" },
+];
+
+/* ---------------- Componente principal ---------------- */
+function AssistenteTecnicoIA() {
+  const [aba, setAba] = useState("chat"); // chat | guiado | codigo | medicoes | historico
+  const [mensagens, setMensagens] = useState([
+    { autor: "ia", tipo: "texto", texto: "Olá! Sou o assistente técnico do ALLA CHECK. Descreva um sintoma, informe um código de erro ou toque em um atalho abaixo." },
+  ]);
+  const [entrada, setEntrada] = useState("");
+  const [historico, setHistorico] = useState([]);
+  const scrollRef = useRef(null);
+
+  // guiado
+  const [etapaGuiado, setEtapaGuiado] = useState(0);
+  const [respGuiado, setRespGuiado] = useState({});
+  const [resultadoGuiado, setResultadoGuiado] = useState(null);
+
+  // medicoes
+  const [medicoes, setMedicoes] = useState({ tensao: "", corrente: "", pressaoSuccao: "", pressaoDescarga: "", temperaturaLinha: "", temperaturaAmbiente: "", resistencia: "" });
+
+  const carregarHistorico = useCallback(async () => {
+    try {
+      const l = await carregarTudoStorage("ia-tecnico-historico:");
+      l.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      setHistorico(l);
+    } catch {
+      setHistorico([]);
+    }
+  }, []);
+
+  useEffect(() => { carregarHistorico(); }, [carregarHistorico]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [mensagens]);
+
+  const salvarNoHistorico = async (titulo, conteudoResumo) => {
+    try {
+      const id = uid();
+      await window.storage.set(
+        `ia-tecnico-historico:${id}`,
+        JSON.stringify({ id, titulo, resumo: conteudoResumo, createdAt: new Date().toISOString() })
+      );
+      carregarHistorico();
+    } catch (err) {
+      console.error("Não foi possível salvar no histórico", err);
+    }
+  };
+
+  const processarPergunta = (texto) => {
+    setMensagens((m) => [...m, { autor: "usuario", tipo: "texto", texto }]);
+
+    // código de erro?
+    const pareceCodigo = /\b[EFC][EHR]?\d{1,3}\b/i.test(texto);
+    if (pareceCodigo) {
+      const res = iaBuscarCodigoErro(texto);
+      setTimeout(() => {
+        if (res.encontrado) {
+          const resumo = `Código ${res.codigo} (${res.marca}): ${res.explicacao}`;
+          setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: resumo }]);
+          salvarNoHistorico(`Código ${res.codigo}`, resumo);
+        } else if (res.precisaMarca) {
+          setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: `Encontrei o código ${res.codigo}, mas preciso saber a marca do equipamento (Samsung, LG, Midea/Springer, Gree ou Fujitsu) para dar a explicação correta — cada fabricante usa os códigos de forma diferente.` }]);
+        } else if (res.semRegistro) {
+          setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: `Não tenho o código ${res.codigo} da marca informada na minha base. Consulte o manual do fabricante ou me diga o sintoma observado (não liga, não gela, etc.) que eu ajudo por aí.` }]);
+        } else {
+          setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: "Não consegui identificar um código de erro no texto. Informe o código junto com a marca do equipamento, por exemplo: \"E6 Samsung\"." }]);
+        }
+      }, 300);
+      return;
+    }
+
+    // sintoma na base?
+    const sintoma = iaBuscarSintoma(texto);
+    setTimeout(() => {
+      if (sintoma) {
+        setMensagens((m) => [...m, { autor: "ia", tipo: "sintoma", dados: sintoma }]);
+        salvarNoHistorico(sintoma.titulo, sintoma.causaProvavel);
+      } else {
+        setMensagens((m) => [
+          ...m,
+          {
+            autor: "ia",
+            tipo: "texto",
+            texto: "Ainda não tenho uma resposta pronta para esse sintoma específico na minha base. Posso ajudar com: não gela, não liga, condensadora não liga, compressor não parte, evaporadora congelando, teste de capacitor, identificação de falta de gás, bitola de cabo ou vácuo. Você também pode usar o Diagnóstico guiado, que faz perguntas objetivas.",
+          },
+        ]);
+      }
+    }, 300);
+  };
+
+  const enviar = () => {
+    const texto = entrada.trim();
+    if (!texto) return;
+    setEntrada("");
+    processarPergunta(texto);
+  };
+
+  const usarAtalho = (a) => {
+    if (a.texto === "__codigos__") { setAba("codigo"); return; }
+    processarPergunta(a.texto);
+  };
+
+  const proximaEtapaGuiado = () => {
+    if (etapaGuiado < IA_ETAPAS_GUIADO.length - 1) {
+      setEtapaGuiado((e) => e + 1);
+    } else {
+      const r = iaDiagnosticoGuiado(respGuiado);
+      setResultadoGuiado(r);
+      salvarNoHistorico(r.titulo, r.explicacao);
+    }
+  };
+
+  const reiniciarGuiado = () => {
+    setEtapaGuiado(0);
+    setRespGuiado({});
+    setResultadoGuiado(null);
+  };
+
+  const [codigoInput, setCodigoInput] = useState("");
+  const [marcaInput, setMarcaInput] = useState("Samsung");
+  const [resultadoCodigo, setResultadoCodigo] = useState(null);
+  const buscarCodigo = () => {
+    if (!codigoInput.trim()) return;
+    const res = iaBuscarCodigoErro(`${codigoInput} ${marcaInput}`);
+    setResultadoCodigo(res);
+    if (res.encontrado) salvarNoHistorico(`Código ${res.codigo} (${marcaInput})`, res.explicacao);
+  };
+
+  const ABAS = [
+    ["chat", "Chat", MessageSquareText],
+    ["guiado", "Diagnóstico", Search],
+    ["codigo", "Cód. erro", FileText],
+    ["medicoes", "Medições", BarChart3],
+    ["historico", "Histórico", History],
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ padding: "16px 16px 0" }}>
+        <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 700, color: "#F3F3F1" }}>
+          Assistente Técnico
+        </div>
+        <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2, marginBottom: 4 }}>
+          Base de conhecimento técnico de climatização e elétrica — respostas por regras, sem inventar valores
+        </div>
+
+        <div style={{ display: "flex", gap: 14, overflowX: "auto", marginTop: 10, marginBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.07)", WebkitOverflowScrolling: "touch" }}>
+          {ABAS.map(([id, nome, Icone]) => {
+            const on = aba === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setAba(id)}
+                style={{
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  background: "none",
+                  border: "none",
+                  borderBottom: `2px solid ${on ? "#9B8AFB" : "transparent"}`,
+                  color: on ? "#B9ADFC" : "#6E6E73",
+                  fontFamily: "'Roboto',sans-serif",
+                  fontWeight: on ? 600 : 400,
+                  fontSize: 11.5,
+                  padding: "0 0 9px",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <Icone size={13} /> {nome}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {aba === "chat" && (
+        <>
+          <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "0 16px" }}>
+            {mensagens.length <= 1 && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+                {IA_ATALHOS.map((a) => {
+                  const Icone = a.icone;
+                  return (
+                    <button
+                      key={a.label}
+                      onClick={() => usarAtalho(a)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        background: "#0D0D0E",
+                        border: "1px solid rgba(255,255,255,0.07)",
+                        borderRadius: 11,
+                        padding: "10px 11px",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <Icone size={14} color="#9B8AFB" style={{ flexShrink: 0 }} />
+                      <span style={{ fontSize: 11.5, color: "#D5D5D8", fontFamily: "'Roboto',sans-serif" }}>{a.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {mensagens.map((m, i) => (
+              <div key={i} style={{ marginBottom: 12, display: "flex", justifyContent: m.autor === "usuario" ? "flex-end" : "flex-start" }}>
+                {m.tipo === "sintoma" ? (
+                  <div style={{ maxWidth: "94%", width: "100%" }}><IaRespostaTecnica s={m.dados} /></div>
+                ) : (
+                  <div
+                    style={{
+                      maxWidth: "84%",
+                      background: m.autor === "usuario" ? "rgba(201,162,75,0.12)" : "#0D0D0E",
+                      border: `1px solid ${m.autor === "usuario" ? "rgba(201,162,75,0.3)" : "rgba(255,255,255,0.07)"}`,
+                      borderRadius: 13,
+                      padding: "9px 12px",
+                      fontSize: 12.5,
+                      color: m.autor === "usuario" ? "#E9C878" : "#D5D5D8",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {m.texto}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, padding: 16, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <input
+              value={entrada}
+              onChange={(e) => setEntrada(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && enviar()}
+              placeholder="Descreva o sintoma ou código de erro..."
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <button
+              onClick={enviar}
+              style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 11, background: "rgba(155,138,251,0.15)", border: "1px solid rgba(155,138,251,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            >
+              <Send size={16} color="#B9ADFC" />
+            </button>
+          </div>
+        </>
+      )}
+
+      {aba === "guiado" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          {resultadoGuiado ? (
+            <>
+              <div style={{ background: "#0D0D0E", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 15, marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "3px 9px", borderRadius: 20, background: resultadoGuiado.nivel === "Alta" ? "rgba(74,222,128,0.12)" : resultadoGuiado.nivel === "Média" ? "rgba(233,200,120,0.12)" : "rgba(138,138,144,0.12)", color: resultadoGuiado.nivel === "Alta" ? "#4ADE80" : resultadoGuiado.nivel === "Média" ? "#E9C878" : "#8A8A90" }}>
+                    Confiança: {resultadoGuiado.nivel}
+                  </span>
+                </div>
+                <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14.5, color: "#F3F3F1", marginBottom: 8 }}>{resultadoGuiado.titulo}</div>
+                <div style={{ fontSize: 12.5, color: "#C7C9CE", lineHeight: 1.55, marginBottom: 12 }}>{resultadoGuiado.explicacao}</div>
+                <IaListaSecao titulo="Testes recomendados" cor="#4681DF" itens={resultadoGuiado.testes} />
+              </div>
+              <button onClick={reiniciarGuiado} style={{ ...btnSecundario, width: "100%" }}>Novo diagnóstico</button>
+            </>
+          ) : (
+            <>
+              <div style={{ height: 4, background: "#1A1A1D", borderRadius: 2, marginBottom: 18, overflow: "hidden" }}>
+                <div style={{ width: `${((etapaGuiado + 1) / IA_ETAPAS_GUIADO.length) * 100}%`, height: "100%", background: "linear-gradient(90deg,#9B8AFB,#B9ADFC)", transition: "width 300ms ease" }} />
+              </div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", marginBottom: 8 }}>
+                PASSO {etapaGuiado + 1} DE {IA_ETAPAS_GUIADO.length}
+              </div>
+              {(() => {
+                const etapa = IA_ETAPAS_GUIADO[etapaGuiado];
+                return (
+                  <Field label={etapa.pergunta}>
+                    {etapa.tipo === "select" ? (
+                      <select
+                        style={{ ...inputStyle, appearance: "none" }}
+                        value={respGuiado[etapa.campo] || ""}
+                        onChange={(e) => setRespGuiado((r) => ({ ...r, [etapa.campo]: e.target.value }))}
+                      >
+                        <option value="">Selecionar...</option>
+                        {etapa.opcoes.map((o) => <option key={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        style={inputStyle}
+                        value={respGuiado[etapa.campo] || ""}
+                        onChange={(e) => setRespGuiado((r) => ({ ...r, [etapa.campo]: e.target.value }))}
+                        placeholder={etapa.placeholder}
+                      />
+                    )}
+                  </Field>
+                );
+              })()}
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                {etapaGuiado > 0 && (
+                  <button onClick={() => setEtapaGuiado((e) => e - 1)} style={btnSecundario}>Voltar</button>
+                )}
+                <button onClick={proximaEtapaGuiado} style={{ ...btnPrincipal, flex: 1.4 }}>
+                  {etapaGuiado < IA_ETAPAS_GUIADO.length - 1 ? "Próximo" : "Gerar diagnóstico"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {aba === "codigo" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          <LinhaDupla>
+            <Field label="Marca">
+              <select style={{ ...inputStyle, appearance: "none" }} value={marcaInput} onChange={(e) => setMarcaInput(e.target.value)}>
+                {["Samsung", "LG", "Midea", "Springer", "Gree", "Fujitsu"].map((m) => <option key={m}>{m}</option>)}
+              </select>
+            </Field>
+            <Field label="Código">
+              <input style={inputStyle} value={codigoInput} onChange={(e) => setCodigoInput(e.target.value)} placeholder="Ex: E6" />
+            </Field>
+          </LinhaDupla>
+          <button onClick={buscarCodigo} style={{ ...btnPrincipal, width: "100%", marginBottom: 16 }}>Buscar</button>
+
+          {resultadoCodigo && (
+            resultadoCodigo.encontrado ? (
+              <div style={{ background: "#0D0D0E", border: "1px solid rgba(155,138,251,0.3)", borderRadius: 13, padding: 14 }}>
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#B9ADFC", marginBottom: 6 }}>{resultadoCodigo.codigo}</div>
+                <div style={{ fontSize: 12.5, color: "#D5D5D8", lineHeight: 1.55 }}>{resultadoCodigo.explicacao}</div>
+              </div>
+            ) : (
+              <div style={{ background: "rgba(240,96,90,0.06)", border: "1px solid rgba(240,96,90,0.3)", borderRadius: 13, padding: 14, fontSize: 12.5, color: "#F0605A", lineHeight: 1.5 }}>
+                Não encontrei o código {resultadoCodigo.codigo || codigoInput} para {marcaInput} na minha base. Consulte o manual do fabricante para não arriscar uma interpretação incorreta.
+              </div>
+            )
+          )}
+
+          <div style={{ marginTop: 20, fontSize: 11, color: "#6E6E73", lineHeight: 1.5 }}>
+            Base cobre códigos comuns de Samsung, LG, Midea/Springer, Gree e Fujitsu. Códigos não listados aqui não devem ser interpretados por aproximação — consulte a documentação do fabricante.
+          </div>
+        </div>
+      )}
+
+      {aba === "medicoes" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          <div style={{ fontSize: 11.5, color: "#8A8A90", marginBottom: 14, lineHeight: 1.5 }}>
+            Preencha as medições que você já tirou em campo. A análise é qualitativa — os valores-alvo exatos dependem do gás e do modelo do equipamento.
+          </div>
+          <LinhaDupla>
+            <Field label="Tensão (V)"><input style={inputStyle} value={medicoes.tensao} onChange={(e) => setMedicoes((m) => ({ ...m, tensao: e.target.value }))} inputMode="decimal" /></Field>
+            <Field label="Corrente (A)"><input style={inputStyle} value={medicoes.corrente} onChange={(e) => setMedicoes((m) => ({ ...m, corrente: e.target.value }))} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          <LinhaDupla>
+            <Field label="Pressão sucção"><input style={inputStyle} value={medicoes.pressaoSuccao} onChange={(e) => setMedicoes((m) => ({ ...m, pressaoSuccao: e.target.value }))} inputMode="decimal" /></Field>
+            <Field label="Pressão descarga"><input style={inputStyle} value={medicoes.pressaoDescarga} onChange={(e) => setMedicoes((m) => ({ ...m, pressaoDescarga: e.target.value }))} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          <LinhaDupla>
+            <Field label="Temp. linha (°C)"><input style={inputStyle} value={medicoes.temperaturaLinha} onChange={(e) => setMedicoes((m) => ({ ...m, temperaturaLinha: e.target.value }))} inputMode="decimal" /></Field>
+            <Field label="Temp. ambiente (°C)"><input style={inputStyle} value={medicoes.temperaturaAmbiente} onChange={(e) => setMedicoes((m) => ({ ...m, temperaturaAmbiente: e.target.value }))} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          <Field label="Resistência (Ω)"><input style={inputStyle} value={medicoes.resistencia} onChange={(e) => setMedicoes((m) => ({ ...m, resistencia: e.target.value }))} inputMode="decimal" /></Field>
+
+          <SecaoTitulo>Análise</SecaoTitulo>
+          {iaAnalisarMedicoes(medicoes).map((o, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                gap: 8,
+                background: "#0D0D0E",
+                border: `1px solid ${o.tipo === "atencao" ? "rgba(240,96,90,0.3)" : o.tipo === "ok" ? "rgba(74,222,128,0.25)" : "rgba(255,255,255,0.07)"}`,
+                borderRadius: 11,
+                padding: "10px 12px",
+                marginBottom: 8,
+              }}
+            >
+              <span style={{ fontSize: 12, flexShrink: 0, color: o.tipo === "atencao" ? "#F0605A" : o.tipo === "ok" ? "#4ADE80" : "#8A8A90" }}>
+                {o.tipo === "atencao" ? "⚠" : o.tipo === "ok" ? "✓" : "ℹ"}
+              </span>
+              <span style={{ fontSize: 12, color: "#D5D5D8", lineHeight: 1.5 }}>{o.texto}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {aba === "historico" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          {historico.length === 0 ? (
+            <EstadoVazio icone={History} titulo="Nenhuma consulta ainda" texto="Suas consultas ao assistente aparecerão aqui." />
+          ) : (
+            historico.map((h) => (
+              <div key={h.id} style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: 12, marginBottom: 9 }}>
+                <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 13, fontWeight: 600, color: "#F3F3F1", marginBottom: 4 }}>{h.titulo}</div>
+                <div style={{ fontSize: 11.5, color: "#8A8A90", lineHeight: 1.45, marginBottom: 6 }}>{h.resumo}</div>
+                <div style={{ fontSize: 10, color: "#5A5A5F" }}>{new Date(h.createdAt).toLocaleString("pt-BR")}</div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================= Agenda de Cortes (Barbearia Serpas) =================
+   Ferramenta provisória, simples, só para organizar os sábados.
+   Segue o MESMO padrão visual de Ordens de Serviço (resumo numérico,
+   filtros sublinhados, lista com divisores finos, menu "⋮"). */
+
+const AGD_SERVICOS_PADRAO = [
+  { nome: "Corte", valor: "35" },
+  { nome: "Barba", valor: "25" },
+  { nome: "Corte + Barba", valor: "55" },
+  { nome: "Corte + Barba + Sobrancelha", valor: "65" },
+];
+
+const AGD_STATUS = ["Agendado", "Confirmado", "Concluído", "Cancelado"];
+const AGD_STATUS_COR = {
+  Agendado: "#4681DF",
+  Confirmado: "#E9C878",
+  Concluído: "#4ADE80",
+  Cancelado: "#F0605A",
+};
+
+function agdMoeda(v) { return `R$ ${(Number(v) || 0).toFixed(2)}`; }
+
+function agdMensagemWhatsapp(a) {
+  const dataFmt = a.data ? new Date(a.data + "T00:00:00").toLocaleDateString("pt-BR") : "";
+  return `Olá, ${a.cliente}! Seu horário na Barbearia Serpas está reservado para sábado (${dataFmt}) às ${a.horario}. Serviço: ${a.servico}. Valor: ${agdMoeda(a.valor)}. Posso confirmar seu horário? 💈`;
+}
+
+/* ---------------- Formulário ---------------- */
+function AgendaCorteForm({ editing, servicos, onDone, onCancel, onNovoServico }) {
+  const [form, setForm] = useState(
+    editing || {
+      data: proximoSabado(),
+      horario: "09:00",
+      cliente: "",
+      telefone: "",
+      servico: servicos[0]?.nome || "Corte",
+      valor: servicos[0]?.valor || "35",
+      observacao: "",
+      status: "Agendado",
+    }
+  );
+  const [saving, setSaving] = useState(false);
+  // Se o agendamento (ao editar) usa um serviço que não está na lista de
+  // opções, o campo precisa nascer em modo "digitar", senão o <select>
+  // ficaria mostrando um valor inexistente nas opções.
+  const [servicoCustom, setServicoCustom] = useState(
+    () => !!editing && !servicos.some((s) => s.nome === editing.servico)
+  );
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const escolherServico = (e) => {
+    const nome = e.target.value;
+    if (nome === "__outro__") { setServicoCustom(true); setForm((f) => ({ ...f, servico: "" })); return; }
+    setServicoCustom(false);
+    const s = servicos.find((x) => x.nome === nome);
+    setForm((f) => ({ ...f, servico: nome, valor: s ? s.valor : f.valor }));
+  };
+
+  const salvar = async () => {
+    if (saving) return;
+    if (!form.cliente.trim()) return notificarErroBanco("Informe o nome do cliente.");
+    if (!form.horario) return notificarErroBanco("Informe o horário.");
+    setSaving(true);
+    try {
+      const id = editing?.id || uid();
+      await window.storage.set(`agenda-cortes:${id}`, JSON.stringify({ ...form, id, createdAt: editing?.createdAt || new Date().toISOString() }));
+      // se o técnico digitou um serviço novo, guarda para reaproveitar depois
+      if (servicoCustom && form.servico.trim() && !servicos.some((s) => s.nome === form.servico.trim())) {
+        onNovoServico({ nome: form.servico.trim(), valor: form.valor || "0" });
+      }
+      onDone();
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar agendamento"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+
+      <LinhaDupla>
+        <Field label="Data (sábado)"><input type="date" style={inputStyle} value={form.data} onChange={set("data")} /></Field>
+        <Field label="Horário"><input type="time" style={inputStyle} value={form.horario} onChange={set("horario")} /></Field>
+      </LinhaDupla>
+      <Field label="Cliente"><input style={inputStyle} value={form.cliente} onChange={set("cliente")} /></Field>
+      <Field label="WhatsApp"><input style={inputStyle} value={form.telefone} onChange={set("telefone")} inputMode="numeric" placeholder="15999999999" /></Field>
+
+      <Field label="Serviço">
+        <select style={{ ...inputStyle, appearance: "none" }} value={servicoCustom ? "__outro__" : form.servico} onChange={escolherServico}>
+          {servicos.map((s) => <option key={s.nome} value={s.nome}>{s.nome} — {agdMoeda(s.valor)}</option>)}
+          <option value="__outro__">Outro (digitar)</option>
+        </select>
+      </Field>
+      {servicoCustom && (
+        <Field label="Nome do serviço"><input style={inputStyle} value={form.servico} onChange={set("servico")} placeholder="Ex: Corte degradê" /></Field>
+      )}
+      <Field label="Valor (R$)"><input style={inputStyle} value={form.valor} onChange={set("valor")} inputMode="decimal" /></Field>
+      <Field label="Observação"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={form.observacao} onChange={set("observacao")} /></Field>
+
+      <Field label="Status">
+        <select style={{ ...inputStyle, appearance: "none" }} value={form.status} onChange={set("status")}>
+          {AGD_STATUS.map((s) => <option key={s}>{s}</option>)}
+        </select>
+      </Field>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+        <button onClick={onCancel} style={btnSecundario}>Cancelar</button>
+        <button onClick={salvar} disabled={saving} style={{ ...btnPrincipal, flex: 1.4, opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Salvando..." : "Salvar agendamento"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* Próximo sábado a partir de hoje, para já sugerir a data certa. */
+function proximoSabado() {
+  const d = new Date();
+  const dias = (6 - d.getDay() + 7) % 7 || 7;
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/* ---------------- Módulo principal ---------------- */
+function AgendaCortesModule() {
+  const [lista, setLista] = useState(null);
+  const [servicos, setServicos] = useState(AGD_SERVICOS_PADRAO);
+  const [mode, setMode] = useState("lista"); // lista | novo
+  const [selected, setSelected] = useState(null);
+  const [filtro, setFiltro] = useState("Todos");
+  const [menuAcoesId, setMenuAcoesId] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const items = await carregarTudoStorage("agenda-cortes:");
+      items.sort((a, b) => (a.horario > b.horario ? 1 : -1));
+      setLista(items);
+      const sv = await carregarTudoStorage("agenda-cortes-servicos:");
+      if (sv.length) setServicos([...AGD_SERVICOS_PADRAO, ...sv.filter((s) => !AGD_SERVICOS_PADRAO.some((p) => p.nome === s.nome))]);
+    } catch {
+      setLista([]);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const salvarNovoServico = async (s) => {
+    try {
+      await window.storage.set(`agenda-cortes-servicos:${uid()}`, JSON.stringify(s));
+    } catch { /* não impede o agendamento de ser salvo */ }
+  };
+
+  const remove = async (id) => {
+    try {
+      await window.storage.delete(`agenda-cortes:${id}`);
+      load();
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "excluir agendamento"));
+    }
+  };
+
+  const contagem = useMemo(() => {
+    const c = { Todos: (lista || []).length };
+    AGD_STATUS.forEach((st) => { c[st] = (lista || []).filter((a) => a.status === st).length; });
+    return c;
+  }, [lista]);
+
+  const filtrados = useMemo(() => {
+    if (filtro === "Todos") return lista || [];
+    return (lista || []).filter((a) => a.status === filtro);
+  }, [lista, filtro]);
+
+  const totalDia = useMemo(
+    () => (lista || []).filter((a) => a.status !== "Cancelado").reduce((acc, a) => acc + (Number(a.valor) || 0), 0),
+    [lista]
+  );
+
+  if (mode === "novo") {
+    return (
+      <AgendaCorteForm
+        editing={selected}
+        servicos={servicos}
+        onCancel={() => { setSelected(null); setMode("lista"); }}
+        onDone={() => { setSelected(null); setMode("lista"); load(); }}
+        onNovoServico={salvarNovoServico}
+      />
+    );
+  }
+
+  return (
+    <div style={{ padding: "14px 16px 40px" }}>
+      {/* resumo numérico compacto, mesmo padrão da tela de OS */}
+      <div
+        style={{
+          display: "flex",
+          overflowX: "auto",
+          gap: 0,
+          marginBottom: 14,
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          paddingBottom: 12,
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {[
+          ["Agendados", contagem.Agendado || 0, "#4681DF"],
+          ["Confirmados", contagem.Confirmado || 0, "#E9C878"],
+          ["Concluídos", contagem["Concluído"] || 0, "#4ADE80"],
+          ["Total do dia", agdMoeda(totalDia), "#C9A24B"],
+        ].map(([rotulo, valor, cor], i) => (
+          <div key={rotulo} style={{ flexShrink: 0, paddingRight: 22, borderRight: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none", marginRight: i < 3 ? 22 : 0 }}>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 18, color: cor, lineHeight: 1, whiteSpace: "nowrap" }}>{valor}</div>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#6E6E73", letterSpacing: 0.8, textTransform: "uppercase", marginTop: 4, whiteSpace: "nowrap" }}>
+              {rotulo}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => { setSelected(null); setMode("novo"); }}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          background: "linear-gradient(180deg,#D4AF5C,#B8933F)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 12,
+          padding: "12px 0",
+          marginBottom: 14,
+          fontFamily: "'Roboto',sans-serif",
+          fontWeight: 600,
+          fontSize: 13,
+          color: "#0A0A0B",
+          textTransform: "uppercase",
+          cursor: "pointer",
+        }}
+      >
+        <Plus size={16} /> Novo agendamento
+      </button>
+
+      {/* filtros: texto sublinhado, mesmo padrão da OS */}
+      <div style={{ display: "flex", gap: 16, overflowX: "auto", marginBottom: 4, WebkitOverflowScrolling: "touch" }}>
+        {["Todos", ...AGD_STATUS].map((f) => {
+          const on = filtro === f;
+          return (
+            <button
+              key={f}
+              onClick={() => setFiltro(f)}
+              style={{
+                flexShrink: 0,
+                background: "none",
+                border: "none",
+                borderBottom: `2px solid ${on ? "#C9A24B" : "transparent"}`,
+                color: on ? "#E9C878" : "#6E6E73",
+                fontFamily: "'Roboto',sans-serif",
+                fontWeight: on ? 600 : 400,
+                fontSize: 12,
+                padding: "6px 2px 8px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {f}
+            </button>
+          );
+        })}
+      </div>
+
+      {lista === null ? (
+        <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
+      ) : filtrados.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "50px 20px", color: "#6E6E73" }}>
+          <CalendarClock size={26} style={{ marginBottom: 10, opacity: 0.5 }} />
+          <div style={{ fontSize: 13 }}>
+            {(lista || []).length === 0 ? "Nenhum agendamento ainda." : "Nenhum agendamento para este filtro."}
+          </div>
+        </div>
+      ) : (
+        <div>
+          {filtrados.map((a, i) => {
+            const cor = AGD_STATUS_COR[a.status] || "#8A8A90";
+            const dataFmt = a.data ? new Date(a.data + "T00:00:00").toLocaleDateString("pt-BR") : "";
+            return (
+              <div
+                key={a.id}
+                style={{
+                  position: "relative",
+                  borderTop: i === 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <button
+                  onClick={() => { setSelected(a); setMode("novo"); }}
+                  style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "10px 30px 10px 2px", cursor: "pointer", display: "block" }}
+                >
+                  {/* mesma hierarquia da OS: identificador técnico à esquerda,
+                      valor em destaque à direita */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#7A7A7A" }}>{a.horario}</span>
+                    <span style={{ color: "#E9C878", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>{agdMoeda(a.valor)}</span>
+                  </div>
+                  <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14, color: "#F3F3F1", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {a.cliente}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#7A7A7A", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {a.servico}
+                  </div>
+                  {/* status + data no rodapé, igual à OS */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: cor, flexShrink: 0 }} />
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: cor }}>{a.status}</span>
+                    <span style={{ fontSize: 10, color: "#5A5A5F", marginLeft: "auto" }}>{dataFmt}</span>
+                  </div>
+                </button>
+
+                {a.telefone && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); compartilhar({ titulo: `Agendamento — ${a.cliente}`, texto: agdMensagemWhatsapp(a), telefone: a.telefone }); }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      // alvo de toque confortável: altura mínima de 36px
+                      minHeight: 36,
+                      background: "rgba(74,222,128,0.10)",
+                      border: "1px solid rgba(74,222,128,0.3)",
+                      borderRadius: 9,
+                      padding: "8px 13px",
+                      color: "#4ADE80",
+                      fontFamily: "'Roboto',sans-serif",
+                      fontWeight: 600,
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      cursor: "pointer",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <Send size={12} /> WhatsApp
+                  </button>
+                )}
+
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuAcoesId(menuAcoesId === a.id ? null : a.id); }}
+                  aria-label="Mais ações"
+                  style={{ position: "absolute", top: 4, right: 0, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: "#6E6E73", cursor: "pointer" }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5" r="1.9" /><circle cx="12" cy="12" r="1.9" /><circle cx="12" cy="19" r="1.9" />
+                  </svg>
+                </button>
+
+                {menuAcoesId === a.id && (
+                  <>
+                    <div onClick={() => setMenuAcoesId(null)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+                    <div style={{ position: "absolute", top: 30, right: 0, zIndex: 30, background: "#141416", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, overflow: "hidden", minWidth: 132, boxShadow: "0 6px 18px rgba(0,0,0,0.5)" }}>
+                      {[
+                        ["Editar", () => { setMenuAcoesId(null); setSelected(a); setMode("novo"); }],
+                        ["Excluir", () => { setMenuAcoesId(null); remove(a.id); }, true],
+                      ].map(([rotulo, acao, perigo]) => (
+                        <button
+                          key={rotulo}
+                          onClick={acao}
+                          style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 14px", minHeight: 44, background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.06)", color: perigo ? "#F0605A" : "#E8E8E6", fontFamily: "'Roboto',sans-serif", fontSize: 13, cursor: "pointer" }}
+                        >
+                          {rotulo}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AllaCheckApp() {
   const [usuario, setUsuario] = useState(undefined); // undefined = ainda verificando
   const [semAuth, setSemAuth] = useState(false);
@@ -13045,10 +14245,12 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "tool-pecas-ia" && <PartsAssistant />}
         {telaVisivel === "tool-laudo-tecnico" && <LaudoTecnico />}
         {telaVisivel === "tool-alla-venda" && <AllaVendaModule />}
+        {telaVisivel === "tool-agenda-cortes" && <AgendaCortesModule />}
         {telaVisivel === "tool-assinaturas" && <AssinaturasModule />}
         {telaVisivel === "tool-rastreio-tecnico" && <RastreioTecnico />}
         {telaVisivel === "tool-historico-equipamento" && <HistoricoEquipamento />}
         {telaVisivel === "tool-checklist-ia" && <ChecklistEquipamento />}
+        {telaVisivel === "tool-assistente-ia" && <AssistenteTecnicoIA />}
         {telaVisivel === "tool-relatorios-financeiros" && <RelatoriosFinanceiros />}
         {telaVisivel === "pmocs" && <PmocTool />}
         {telaVisivel === "documentos" && <RecibosEOrcamentosHub onNavigate={setView} />}
