@@ -984,11 +984,11 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
           height={365}
         />
         <StatCard
-          icon={TrendingUp}
+          icon={Sparkles}
           glow="#C9A24B"
           arrow="→"
-          label="Gestão Inteligente"
-          onClick={() => onNavigate("gestao-inteligente")}
+          label="Ferramentas"
+          onClick={() => onNavigate("ferramentas")}
           left={384}
           top={915}
           width={286}
