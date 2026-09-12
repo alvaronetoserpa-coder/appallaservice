@@ -63,6 +63,8 @@ const FIRESTORE_COLLECTION_MAP = {
   checklists: "checklists",
   "venda-produtos": "venda_produtos",
   "venda-cotacoes": "venda_cotacoes",
+  "agenda-cortes": "agenda_cortes",
+  "agenda-cortes-servicos": "agenda_cortes_servicos",
 };
 
 function _fsCollectionFor(prefixKey) {
@@ -14018,13 +14020,19 @@ function ParticulasGeladas() {
   // que mantêm o efeito discreto.
   const particulas = useMemo(() => {
     const qtd = 10;
-    return Array.from({ length: qtd }, () => ({
-      esq: Math.random() * 94 + 2, // 2% a 96%, nunca cortada nas bordas
-      tam: Math.random() * 1.6 + 1.2, // 1.2px a 2.8px — pequenas
-      dur: Math.random() * 10 + 10, // 10s a 20s de subida
-      atraso: Math.random() * 14, // início espalhado, não em bloco
-      opacidadeMax: Math.random() * 0.35 + 0.35, // 0.35 a 0.7
-    }));
+    return Array.from({ length: qtd }, () => {
+      const dur = Math.random() * 10 + 10; // 10s a 20s de subida
+      return {
+        esq: Math.random() * 94 + 2, // 2% a 96%, nunca cortada nas bordas
+        tam: Math.random() * 1.6 + 1.2, // 1.2px a 2.8px — pequenas
+        dur,
+        // Atraso NEGATIVO: a partícula já nasce no meio do próprio trajeto,
+        // então todas aparecem subindo desde o primeiro quadro — em vez de
+        // esperar paradas embaixo até a vez de cada uma começar.
+        atraso: -Math.random() * dur,
+        opacidadeMax: Math.random() * 0.35 + 0.35, // 0.35 a 0.7
+      };
+    });
   }, []);
 
   return (
