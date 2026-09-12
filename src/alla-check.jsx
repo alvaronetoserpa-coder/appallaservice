@@ -984,7 +984,7 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
           height={365}
         />
         <StatCard
-          icon={Sparkles}
+          icon={Wrench}
           glow="#C9A24B"
           arrow="→"
           label="Ferramentas"
