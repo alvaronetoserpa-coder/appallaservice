@@ -338,19 +338,20 @@ function useFonts() {
 }
 
 const MODULES = [
-  // Cada módulo com um ícone próprio — sem repetições entre funções distintas
-  { key: "novo-relatorio", desc: "Iniciar atendimento técnico", label: "Novo Relatório", icon: FileText, active: true },
-  { key: "historico", desc: "Atendimentos realizados", label: "Histórico", icon: History, active: true },
-  { key: "ferramentas", desc: "Calculadoras e assistentes", label: "Ferramentas", icon: Calculator, active: true },
-  { key: "documentos", desc: "Propostas e comprovantes", label: "Recibos & Orçamentos", icon: FileCheck2, active: true },
-  { key: "pmocs", desc: "Verificações obrigatórias", label: "PMOCs", icon: ClipboardList, active: true },
-  { key: "os", desc: "OS abertas e concluídas", label: "Ordens de Serviço", icon: Wrench, active: true },
-  { key: "financeiro", desc: "Receitas, despesas e lucro", label: "Financeiro", icon: LineChart, active: true },
-  { key: "os-frio", desc: "Refrigeração comercial", label: "OS Frio", icon: Snowflake, active: true },
-  { key: "central-whatsapp", desc: "Mensagens para clientes", label: "Central WhatsApp", icon: MessageCircle, active: true },
-  { key: "gestao-inteligente", desc: "Indicadores do negócio", label: "Gestão Inteligente", icon: Sparkles, active: true },
-  { key: "vendas-cervejeira", desc: "Gestão de vendas", label: "Vendas Cervejeira", icon: Beer, active: true },
-  { key: "funcionarios", desc: "Equipe e permissões", label: "Funcionários", icon: Users, active: true },
+  // "icone" continua usado em outras telas (ex.: card da Home).
+  // "iconePremium" é exclusivo do menu de navegação — desenho próprio.
+  { key: "novo-relatorio", desc: "Iniciar atendimento técnico", label: "Novo Relatório", icon: FileText, iconePremium: IconeNovoRelatorio, active: true },
+  { key: "historico", desc: "Atendimentos realizados", label: "Histórico", icon: History, iconePremium: IconeHistorico, active: true },
+  { key: "ferramentas", desc: "Calculadoras e assistentes", label: "Ferramentas", icon: Calculator, iconePremium: IconeFerramentas, active: true },
+  { key: "documentos", desc: "Propostas e comprovantes", label: "Recibos & Orçamentos", icon: FileCheck2, iconePremium: IconeDocumentoFinanceiro, active: true },
+  { key: "pmocs", desc: "Verificações obrigatórias", label: "PMOCs", icon: ClipboardList, iconePremium: IconeChecklist, active: true },
+  { key: "os", desc: "OS abertas e concluídas", label: "Ordens de Serviço", icon: Wrench, iconePremium: IconeChaveInglesa, active: true },
+  { key: "financeiro", desc: "Receitas, despesas e lucro", label: "Financeiro", icon: LineChart, iconePremium: IconeGraficoFinanceiro, active: true },
+  { key: "os-frio", desc: "Refrigeração comercial", label: "OS Frio", icon: Snowflake, iconePremium: IconeFlocoNeve, active: true },
+  { key: "central-whatsapp", desc: "Mensagens para clientes", label: "Central WhatsApp", icon: MessageCircle, iconePremium: IconeBalaoConversa, active: true },
+  { key: "gestao-inteligente", desc: "Indicadores do negócio", label: "Gestão Inteligente", icon: Sparkles, iconePremium: IconeGestaoIA, active: true },
+  { key: "vendas-cervejeira", desc: "Gestão de vendas", label: "Vendas Cervejeira", icon: Beer, iconePremium: IconeCervejeira, active: true },
+  { key: "funcionarios", desc: "Equipe e permissões", label: "Funcionários", icon: Users, iconePremium: IconePessoas, active: true },
 ];
 
 function uid() {
@@ -476,76 +477,236 @@ function Header({ title, onBack, onMenu }) {
 /* Card de navegação moderno: bloco próprio com fundo elevado e cantos
    arredondados, espaçado dos vizinhos — não mais uma lista com linhas
    divisórias. Seta discreta reforça que o item navega para outra tela. */
-function ItemMenu({ modulo: m, Icon, onClick }) {
-  const [pressionado, setPressionado] = useState(false);
+/* Visual original: lista simples, fundo preto, linha divisória fina.
+   Único ajuste em relação ao original: cada módulo agora tem um ícone
+   próprio (antes "OS Frio"/"Vendas Cervejeira" e "Financeiro"/"Gestão
+   Inteligente" repetiam o mesmo ícone). */
+/* ================= Ícones premium do menu de navegação =================
+   Desenhados especificamente para o ALLA CHECK — traço fino em gradiente
+   dourado (não ícones de biblioteca com cor sólida), com um pequeno acento
+   preenchido por módulo. Usados só aqui, sem afetar os mesmos conceitos
+   (chave, floco de neve etc.) usados como ícones em outras telas do app. */
+function DefsIconePremium() {
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }}>
+      <defs>
+        <linearGradient id="allaIconGoldAtivo" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#F3D896" />
+          <stop offset="100%" stopColor="#B8863A" />
+        </linearGradient>
+        <linearGradient id="allaIconGoldInativo" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#6E6E73" />
+          <stop offset="100%" stopColor="#4A4A4E" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function BaseIconePremium({ ativo, children, viewBox = "0 0 24 24" }) {
+  const cor = ativo ? "url(#allaIconGoldAtivo)" : "url(#allaIconGoldInativo)";
+  return (
+    <svg width={18} height={18} viewBox={viewBox} fill="none" stroke={cor} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+
+/* Novo Relatório: documento técnico com um check de criação no canto. */
+function IconeNovoRelatorio({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M7 3.5h7l4 4V19a1.2 1.2 0 0 1-1.2 1.2H7A1.2 1.2 0 0 1 5.8 19V4.7A1.2 1.2 0 0 1 7 3.5Z" />
+      <path d="M14 3.5V8h4.2" />
+      <path d="M8.3 12h5.4M8.3 15h3.6" />
+      <circle cx="16.3" cy="16.6" r="2.6" fill={ativo ? "#0A0A0B" : "none"} />
+      <path d="M15.2 16.6l.8.8 1.5-1.7" />
+    </BaseIconePremium>
+  );
+}
+
+/* Histórico: relógio com uma linha temporal sutil. */
+function IconeHistorico({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <circle cx="12" cy="12.5" r="7.2" />
+      <path d="M12 8.3v4.2l3 2" />
+      <path d="M8.5 3.6l-2 1.7M15.5 3.6l2 1.7" />
+    </BaseIconePremium>
+  );
+}
+
+/* Ferramentas: chave/ferramenta técnica + pequeno brilho de IA. */
+function IconeFerramentas({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M9.3 9.3 4 14.6a1.7 1.7 0 0 0 2.4 2.4l5.3-5.3" />
+      <path d="M13 5.2a3.6 3.6 0 0 1 4.9 4.9l-1-.3-.8-1.8-1.8-.8-.3-1Z" />
+      <path d="M9.3 9.3l4.9-4.9" />
+      <path d="M18.2 17.5l1 1M19.5 15.7l1.2.6M17.2 19.2l.6 1.2" />
+    </BaseIconePremium>
+  );
+}
+
+/* Recibos & Orçamentos: documento com cifrão discreto. */
+function IconeDocumentoFinanceiro({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M7 3.5h7l4 4V19a1.2 1.2 0 0 1-1.2 1.2H7A1.2 1.2 0 0 1 5.8 19V4.7A1.2 1.2 0 0 1 7 3.5Z" />
+      <path d="M14 3.5V8h4.2" />
+      <path d="M12 10.3v6.4" />
+      <path d="M13.6 11.3c-.4-.3-1-.5-1.6-.5-.9 0-1.7.5-1.7 1.2 0 1.7 3.3.9 3.3 2.6 0 .7-.8 1.2-1.7 1.2-.6 0-1.2-.2-1.6-.5" />
+    </BaseIconePremium>
+  );
+}
+
+/* PMOCs: clipboard com checklist técnico. */
+function IconeChecklist({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <rect x="5.5" y="4.2" width="13" height="16" rx="1.6" />
+      <path d="M9 3.4h6a.9.9 0 0 1 .9.9v1.1a.9.9 0 0 1-.9.9H9a.9.9 0 0 1-.9-.9V4.3a.9.9 0 0 1 .9-.9Z" fill={ativo ? "#0A0A0B" : "none"} />
+      <path d="M8.6 11.6l1.4 1.4 2.6-2.8" />
+      <path d="M8.6 16.6l1.4 1.4 2.6-2.8" />
+      <path d="M14.6 12.2h2.9M14.6 17.2h2.9" />
+    </BaseIconePremium>
+  );
+}
+
+/* Ordens de Serviço: chave inglesa técnica. */
+function IconeChaveInglesa({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M15.6 4.2a4.3 4.3 0 0 0-5.7 5l-6 6a1.9 1.9 0 0 0 2.7 2.7l6-6a4.3 4.3 0 0 0 5-5.7l-2.5 2.5-2-.7-.7-2 2.5-2.5Z" />
+      <circle cx="6.2" cy="17.8" r="0.9" fill={ativo ? "#F3D896" : "#6E6E73"} stroke="none" />
+    </BaseIconePremium>
+  );
+}
+
+/* Financeiro: gráfico minimalista de barras ascendentes. */
+function IconeGraficoFinanceiro({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M4.5 19.5h15" />
+      <rect x="6.3" y="13.5" width="2.6" height="6" rx="0.6" fill={ativo ? "#0A0A0B" : "none"} />
+      <rect x="10.7" y="9.8" width="2.6" height="9.7" rx="0.6" fill={ativo ? "#0A0A0B" : "none"} />
+      <rect x="15.1" y="6" width="2.6" height="13.5" rx="0.6" fill={ativo ? "#0A0A0B" : "none"} />
+      <path d="M6 9.2l4-3 3.4 2.2L18 4.4" />
+    </BaseIconePremium>
+  );
+}
+
+/* OS Frio: floco de neve técnico. */
+function IconeFlocoNeve({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M12 3.5v17M4.6 7.75l14.8 8.5M19.4 7.75L4.6 16.25" />
+      <path d="M12 6.5 10 5M12 6.5l2-1.5M12 17.5 10 19M12 17.5l2 1.5" />
+      <path d="M7.6 9.3 6 8.9m1.6.4-.7 1.7M16.4 9.3l1.6-.4m-1.6.4.7 1.7M7.6 14.7 6 15.1m1.6-.4-.7-1.7M16.4 14.7l1.6.4m-1.6-.4.7-1.7" />
+    </BaseIconePremium>
+  );
+}
+
+/* Central WhatsApp: balão de conversa refinado. */
+function IconeBalaoConversa({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M12 4.2c-4.6 0-8.2 3.2-8.2 7.2 0 2.1 1 4 2.6 5.3l-.7 3.1 3.4-1.4c.9.3 1.9.4 2.9.4 4.6 0 8.2-3.2 8.2-7.4S16.6 4.2 12 4.2Z" />
+      <circle cx="8.6" cy="11.4" r="0.9" fill={ativo ? "#F3D896" : "#6E6E73"} stroke="none" />
+      <circle cx="12" cy="11.4" r="0.9" fill={ativo ? "#F3D896" : "#6E6E73"} stroke="none" />
+      <circle cx="15.4" cy="11.4" r="0.9" fill={ativo ? "#F3D896" : "#6E6E73"} stroke="none" />
+    </BaseIconePremium>
+  );
+}
+
+/* Gestão Inteligente: gráfico + brilho de IA. */
+function IconeGestaoIA({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M4.5 18.5h15" />
+      <path d="M5.5 15l3.6-4 3 2.4L18.5 6" />
+      <circle cx="18.5" cy="6" r="1" fill={ativo ? "#0A0A0B" : "none"} />
+      <path d="M17 3.6l.4 1 1 .4-1 .4-.4 1-.4-1-1-.4 1-.4Z" fill={ativo ? "#F3D896" : "#6E6E73"} stroke="none" />
+    </BaseIconePremium>
+  );
+}
+
+/* Vendas Cervejeira: caneca estilizada. */
+function IconeCervejeira({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <path d="M6.5 8h8.4v9.4a1.6 1.6 0 0 1-1.6 1.6H8.1a1.6 1.6 0 0 1-1.6-1.6V8Z" />
+      <path d="M14.9 9.6h1.8a2 2 0 0 1 2 2v1.8a2 2 0 0 1-2 2h-1.8" />
+      <path d="M8.2 5.4c.2-.7.9-1.1 1.5-.8.3-.7 1.1-1 1.7-.6.5-.5 1.3-.4 1.7.2" />
+    </BaseIconePremium>
+  );
+}
+
+/* Funcionários: duas pessoas discretas. */
+function IconePessoas({ ativo }) {
+  return (
+    <BaseIconePremium ativo={ativo}>
+      <circle cx="9.3" cy="8.3" r="2.4" />
+      <path d="M4.3 19c.4-3 2.4-4.8 5-4.8s4.6 1.8 5 4.8" />
+      <circle cx="16.3" cy="9.2" r="1.9" />
+      <path d="M14.9 14.6c.5-.4 1.1-.6 1.8-.6 2.1 0 3.7 1.5 4 4" />
+    </BaseIconePremium>
+  );
+}
+
+function ItemMenu({ modulo: m, onClick }) {
+  const IconePremium = m.iconePremium;
   return (
     <button
       onClick={onClick}
-      onPointerDown={() => m.active && setPressionado(true)}
-      onPointerUp={() => setPressionado(false)}
-      onPointerLeave={() => setPressionado(false)}
       style={{
         width: "100%",
         display: "flex",
         alignItems: "center",
-        gap: 13,
-        background: pressionado ? "rgba(201,162,75,0.07)" : "#0C0C0D",
-        border: `1px solid ${pressionado ? "rgba(201,162,75,0.3)" : "rgba(255,255,255,0.06)"}`,
-        borderRadius: 14,
-        padding: "13px 12px",
-        marginBottom: 8,
+        gap: 12,
+        background: "transparent",
+        border: "none",
+        borderBottom: "1px solid #161616",
+        padding: "15px 4px",
         textAlign: "left",
         cursor: m.active ? "pointer" : "default",
         opacity: m.active ? 1 : 0.5,
-        transform: pressionado ? "scale(0.985)" : "scale(1)",
-        transition: "background 150ms ease, border-color 150ms ease, transform 120ms ease",
       }}
     >
       <span
         style={{
-          width: 38,
-          height: 38,
+          width: 34,
+          height: 34,
           flexShrink: 0,
-          borderRadius: 11,
-          background: m.active
-            ? pressionado
-              ? "linear-gradient(145deg, rgba(233,200,120,0.22), rgba(201,162,75,0.10))"
-              : "linear-gradient(145deg, rgba(255,255,255,0.05), rgba(201,162,75,0.08))"
-            : "rgba(255,255,255,0.03)",
-          border: `1px solid ${m.active ? (pressionado ? "rgba(233,200,120,0.75)" : "rgba(201,162,75,0.4)") : "#262626"}`,
-          boxShadow: m.active && pressionado ? "0 0 8px rgba(233,200,120,0.35)" : "none",
+          borderRadius: 10,
+          background: m.active ? "rgba(201,162,75,0.10)" : "rgba(255,255,255,0.03)",
+          border: `1px solid ${m.active ? "rgba(201,162,75,0.45)" : "#262626"}`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          transition: "background 150ms ease, border-color 150ms ease, box-shadow 150ms ease",
         }}
       >
-        <Icon size={16} color={m.active ? "#E6C888" : "#5A5A5A"} strokeWidth={1.5} />
+        <IconePremium ativo={m.active} />
       </span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontFamily: "'Roboto',sans-serif",
-            fontSize: 14.5,
-            fontWeight: 600,
-            color: m.active ? "#F3F3F1" : "#7A7A7A",
-            letterSpacing: 0.2,
-          }}
-        >
-          {m.label}
-        </div>
+      <span
+        style={{
+          fontFamily: "'Roboto',sans-serif",
+          fontSize: 15,
+          color: m.active ? "#F3F3F1" : "#7A7A7A",
+          letterSpacing: 0.3,
+        }}
+      >
+        {m.label}
         {m.desc && (
-          <div style={{ fontSize: 11.5, color: "#7A7A7A", fontWeight: 400, marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: "#7A7A7A", fontWeight: 400, marginTop: 2 }}>
             {m.desc}
           </div>
         )}
       </span>
-      {m.active ? (
-        <ChevronLeft size={15} color="#4A4A4A" style={{ transform: "rotate(180deg)", flexShrink: 0 }} />
-      ) : (
+      {!m.active && (
         <span
           style={{
-            flexShrink: 0,
+            marginLeft: "auto",
             fontSize: 8,
             fontFamily: "'JetBrains Mono',monospace",
             color: "#5A5A5A",
@@ -564,6 +725,8 @@ function ItemMenu({ modulo: m, Icon, onClick }) {
 function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
   const { podeInstalar, instalar } = useInstalacao();
   return (
+    <>
+    <DefsIconePremium />
     <div
       style={{
         position: "fixed",
@@ -620,7 +783,7 @@ function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
         {MODULES.map((m) => {
           const Icon = m.icon;
           return (
-            <ItemMenu key={m.key} modulo={m} Icon={Icon} onClick={() => m.active && (onNavigate(m.key), onClose())} />
+            <ItemMenu key={m.key} modulo={m} onClick={() => m.active && (onNavigate(m.key), onClose())} />
           );
         })}
         {/* conta do usuário e saída */}
@@ -675,6 +838,7 @@ function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
