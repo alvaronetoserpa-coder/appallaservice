@@ -1200,8 +1200,8 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
             width: CANVAS_W,
             textAlign: "center",
             fontFamily: "'JetBrains Mono',monospace",
-            fontSize: 11,
-            color: "#C9A24B",
+            fontSize: 14,
+            color: "#9A9A9E",
             letterSpacing: 3,
             fontWeight: 600,
           }}
