@@ -338,17 +338,18 @@ function useFonts() {
 }
 
 const MODULES = [
+  // Cada módulo com um ícone próprio — sem repetições entre funções distintas
   { key: "novo-relatorio", desc: "Iniciar atendimento técnico", label: "Novo Relatório", icon: FileText, active: true },
-  { key: "historico", desc: "Atendimentos realizados", label: "Histórico", icon: Clock, active: true },
-  { key: "ferramentas", desc: "Calculadoras e assistentes", label: "Ferramentas", icon: Sparkles, active: true },
+  { key: "historico", desc: "Atendimentos realizados", label: "Histórico", icon: History, active: true },
+  { key: "ferramentas", desc: "Calculadoras e assistentes", label: "Ferramentas", icon: Calculator, active: true },
   { key: "documentos", desc: "Propostas e comprovantes", label: "Recibos & Orçamentos", icon: FileCheck2, active: true },
   { key: "pmocs", desc: "Verificações obrigatórias", label: "PMOCs", icon: ClipboardList, active: true },
   { key: "os", desc: "OS abertas e concluídas", label: "Ordens de Serviço", icon: Wrench, active: true },
-  { key: "financeiro", desc: "Receitas, despesas e lucro", label: "Financeiro", icon: BarChart3, active: true },
+  { key: "financeiro", desc: "Receitas, despesas e lucro", label: "Financeiro", icon: LineChart, active: true },
   { key: "os-frio", desc: "Refrigeração comercial", label: "OS Frio", icon: Snowflake, active: true },
   { key: "central-whatsapp", desc: "Mensagens para clientes", label: "Central WhatsApp", icon: MessageCircle, active: true },
-  { key: "gestao-inteligente", desc: "Indicadores do negócio", label: "Gestão Inteligente", icon: BarChart3, active: true },
-  { key: "vendas-cervejeira", desc: "Gestão de vendas", label: "Vendas Cervejeira", icon: Snowflake, active: true },
+  { key: "gestao-inteligente", desc: "Indicadores do negócio", label: "Gestão Inteligente", icon: Sparkles, active: true },
+  { key: "vendas-cervejeira", desc: "Gestão de vendas", label: "Vendas Cervejeira", icon: Beer, active: true },
   { key: "funcionarios", desc: "Equipe e permissões", label: "Funcionários", icon: Users, active: true },
 ];
 
@@ -469,6 +470,97 @@ function Header({ title, onBack, onMenu }) {
 }
 
 /* ---------------- Menu Drawer (hamburger) ---------------- */
+/* Item do menu de navegação: container do ícone refinado — borda dourada
+   fina, fundo "vidro" translúcido com leve gradiente, e um microefeito de
+   iluminação dourada ao tocar (sensação de acabamento metálico, discreto). */
+/* Card de navegação moderno: bloco próprio com fundo elevado e cantos
+   arredondados, espaçado dos vizinhos — não mais uma lista com linhas
+   divisórias. Seta discreta reforça que o item navega para outra tela. */
+function ItemMenu({ modulo: m, Icon, onClick }) {
+  const [pressionado, setPressionado] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onPointerDown={() => m.active && setPressionado(true)}
+      onPointerUp={() => setPressionado(false)}
+      onPointerLeave={() => setPressionado(false)}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 13,
+        background: pressionado ? "rgba(201,162,75,0.07)" : "#0C0C0D",
+        border: `1px solid ${pressionado ? "rgba(201,162,75,0.3)" : "rgba(255,255,255,0.06)"}`,
+        borderRadius: 14,
+        padding: "13px 12px",
+        marginBottom: 8,
+        textAlign: "left",
+        cursor: m.active ? "pointer" : "default",
+        opacity: m.active ? 1 : 0.5,
+        transform: pressionado ? "scale(0.985)" : "scale(1)",
+        transition: "background 150ms ease, border-color 150ms ease, transform 120ms ease",
+      }}
+    >
+      <span
+        style={{
+          width: 38,
+          height: 38,
+          flexShrink: 0,
+          borderRadius: 11,
+          background: m.active
+            ? pressionado
+              ? "linear-gradient(145deg, rgba(233,200,120,0.22), rgba(201,162,75,0.10))"
+              : "linear-gradient(145deg, rgba(255,255,255,0.05), rgba(201,162,75,0.08))"
+            : "rgba(255,255,255,0.03)",
+          border: `1px solid ${m.active ? (pressionado ? "rgba(233,200,120,0.75)" : "rgba(201,162,75,0.4)") : "#262626"}`,
+          boxShadow: m.active && pressionado ? "0 0 8px rgba(233,200,120,0.35)" : "none",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "background 150ms ease, border-color 150ms ease, box-shadow 150ms ease",
+        }}
+      >
+        <Icon size={16} color={m.active ? "#E6C888" : "#5A5A5A"} strokeWidth={1.5} />
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: "'Roboto',sans-serif",
+            fontSize: 14.5,
+            fontWeight: 600,
+            color: m.active ? "#F3F3F1" : "#7A7A7A",
+            letterSpacing: 0.2,
+          }}
+        >
+          {m.label}
+        </div>
+        {m.desc && (
+          <div style={{ fontSize: 11.5, color: "#7A7A7A", fontWeight: 400, marginTop: 2 }}>
+            {m.desc}
+          </div>
+        )}
+      </span>
+      {m.active ? (
+        <ChevronLeft size={15} color="#4A4A4A" style={{ transform: "rotate(180deg)", flexShrink: 0 }} />
+      ) : (
+        <span
+          style={{
+            flexShrink: 0,
+            fontSize: 8,
+            fontFamily: "'JetBrains Mono',monospace",
+            color: "#5A5A5A",
+            border: "1px solid #262626",
+            borderRadius: 4,
+            padding: "2px 5px",
+          }}
+        >
+          EM BREVE
+        </span>
+      )}
+    </button>
+  );
+}
+
 function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
   const { podeInstalar, instalar } = useInstalacao();
   return (
@@ -528,72 +620,9 @@ function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
         {MODULES.map((m) => {
           const Icon = m.icon;
           return (
-            <button
-              key={m.key}
-              onClick={() => m.active && (onNavigate(m.key), onClose())}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                background: "transparent",
-                border: "none",
-                borderBottom: "1px solid #161616",
-                padding: "15px 4px",
-                textAlign: "left",
-                cursor: m.active ? "pointer" : "default",
-                opacity: m.active ? 1 : 0.5,
-              }}
-            >
-              <span
-                style={{
-                  width: 34,
-                  height: 34,
-                  flexShrink: 0,
-                  borderRadius: 10,
-                  background: m.active ? "rgba(201,162,75,0.10)" : "rgba(255,255,255,0.03)",
-                  border: `1px solid ${m.active ? "rgba(201,162,75,0.45)" : "#262626"}`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Icon size={14} color={m.active ? "#C9A24B" : "#5A5A5A"} strokeWidth={1.6} />
-              </span>
-              <span
-                style={{
-                  fontFamily: "'Roboto',sans-serif",
-                  fontSize: 15,
-                  color: m.active ? "#F3F3F1" : "#7A7A7A",
-                  letterSpacing: 0.3,
-                }}
-              >
-                {m.label}
-                {m.desc && (
-                  <div style={{ fontSize: 12, color: "#7A7A7A", fontWeight: 400, marginTop: 2 }}>
-                    {m.desc}
-                  </div>
-                )}
-              </span>
-              {!m.active && (
-                <span
-                  style={{
-                    marginLeft: "auto",
-                    fontSize: 8,
-                    fontFamily: "'JetBrains Mono',monospace",
-                    color: "#5A5A5A",
-                    border: "1px solid #262626",
-                    borderRadius: 4,
-                    padding: "2px 5px",
-                  }}
-                >
-                  EM BREVE
-                </span>
-              )}
-            </button>
+            <ItemMenu key={m.key} modulo={m} Icon={Icon} onClick={() => m.active && (onNavigate(m.key), onClose())} />
           );
         })}
-
         {/* conta do usuário e saída */}
         <div style={{ marginTop: 22, paddingTop: 16, borderTop: "1px solid #161616" }}>
           {usuario && (
@@ -3519,67 +3548,95 @@ function OrcamentosModule({ onRefreshApp }) {
   }
 
   return (
-    <div style={{ padding: 16, paddingBottom: 40 }}>
-      <button
-        onClick={abrirNovo}
-        style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 18 }}
-      >
-        <Plus size={16} /> Novo orçamento
-      </button>
+    <div style={{ padding: "14px 16px 40px" }}>
+      <BotaoPremium onClick={abrirNovo} texto="Novo orçamento" />
 
-      {/* dashboard */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+      {/* ---- indicadores: hierarquia, não grade uniforme ---- */}
+      <div style={{ display: "flex", overflowX: "auto", gap: 0, marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.07)", WebkitOverflowScrolling: "touch" }}>
         {[
-          ["Total de orçamentos", totalOrc],
-          ["Em análise", emAnalise],
-          ["Aprovados", aprovados.length],
-          ["Recusados", recusados],
-          ["Valor em negociação", `R$ ${valorNegociacao.toFixed(2)}`],
-          ["Valor aprovado", `R$ ${valorAprovado.toFixed(2)}`],
-        ].map(([label, val]) => (
-          <div key={label} className="premium-card" style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "13px 14px" }}>
-            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A8A", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
-            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 18, color: "#F5F5F5" }}>{val}</div>
+          ["Total", totalOrc, "#F3F3F1"],
+          ["Em análise", emAnalise, "#4681DF"],
+          ["Aprovados", aprovados.length, "#4ADE80"],
+          ["Recusados", recusados, "#F0605A"],
+        ].map(([rotulo, valor, cor], i) => (
+          <div key={rotulo} style={{ flexShrink: 0, paddingRight: 20, borderRight: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none", marginRight: i < 3 ? 20 : 0 }}>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 18, color: cor, lineHeight: 1, whiteSpace: "nowrap" }}>{valor}</div>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#6E6E73", letterSpacing: 0.8, textTransform: "uppercase", marginTop: 4, whiteSpace: "nowrap" }}>{rotulo}</div>
           </div>
         ))}
       </div>
-      <div className="premium-card" style={{ background: "#0D0D0D", border: "1px solid rgba(201,162,75,0.3)", borderRadius: 14, padding: "13px 14px", marginBottom: 18, textAlign: "center" }}>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A8A", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Taxa de aprovação</div>
-        <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 24, color: "#C9A24B" }}>{taxaAprovacao}%</div>
+
+      {/* ---- valores: par lado a lado, sem grade de cards iguais ---- */}
+      <div style={{ display: "flex", gap: 14, marginBottom: 18 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#6E6E73", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 3 }}>Em negociação</div>
+          <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 17, color: "#E9C878", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>R$ {valorNegociacao.toFixed(2)}</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#6E6E73", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 3 }}>Aprovado</div>
+          <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 17, color: "#4ADE80", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>R$ {valorAprovado.toFixed(2)}</div>
+        </div>
+      </div>
+
+      {/* ---- taxa de aprovação: barra sofisticada em vez de card quadrado ---- */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 1, textTransform: "uppercase" }}>Taxa de aprovação</span>
+          <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 15, color: "#C9A24B" }}>{taxaAprovacao}%</span>
+        </div>
+        <div style={{ height: 5, background: "#141416", borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ width: `${taxaAprovacao}%`, height: "100%", background: "linear-gradient(90deg,#C9A24B,#E9C878)", borderRadius: 3, transition: "width 400ms ease" }} />
+        </div>
       </div>
 
       {/* busca */}
       <div style={{ position: "relative", marginBottom: 12 }}>
-        <Search size={15} color="#6E6E73" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder="Buscar por cliente, número, telefone, equipamento..."
-          style={{ ...inputStyle, paddingLeft: 34 }}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#0A0A0B",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 10,
+            padding: "10px 12px 10px 34px",
+            color: "#F3F3F1",
+            fontFamily: "'Roboto',sans-serif",
+            fontSize: 13,
+            outline: "none",
+          }}
         />
       </div>
 
-      {/* filtros de status */}
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 16 }}>
-        {ORC_FILTROS_STATUS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFiltroStatus(f)}
-            style={{
-              flexShrink: 0,
-              fontSize: 11.5,
-              padding: "7px 12px",
-              borderRadius: 20,
-              border: `1px solid ${filtroStatus === f ? "#C9A24B" : "#2A2A2E"}`,
-              background: filtroStatus === f ? "rgba(201,162,75,0.15)" : "transparent",
-              color: filtroStatus === f ? "#E9C878" : "#8A8A90",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {f}
-          </button>
-        ))}
+      {/* filtros: texto sublinhado, mesmo padrão da OS */}
+      <div style={{ display: "flex", gap: 16, overflowX: "auto", marginBottom: 4, paddingBottom: 8, WebkitOverflowScrolling: "touch" }}>
+        {ORC_FILTROS_STATUS.map((f) => {
+          const on = filtroStatus === f;
+          return (
+            <button
+              key={f}
+              onClick={() => setFiltroStatus(f)}
+              style={{
+                flexShrink: 0,
+                background: "none",
+                border: "none",
+                borderBottom: `2px solid ${on ? "#C9A24B" : "transparent"}`,
+                color: on ? "#E9C878" : "#6E6E73",
+                fontFamily: "'Roboto',sans-serif",
+                fontWeight: on ? 600 : 400,
+                fontSize: 12,
+                padding: "0 0 8px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {f}
+            </button>
+          );
+        })}
       </div>
 
       {orcamentos === null ? (
@@ -3588,38 +3645,52 @@ function OrcamentosModule({ onRefreshApp }) {
         </div>
       ) : filtrados.length === 0 ? (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#6E6E73" }}>
-          <DollarSign size={28} style={{ marginBottom: 10, opacity: 0.6 }} />
-          <div style={{ fontSize: 13.5 }}>{orcamentos.length === 0 ? "Nenhum orçamento criado ainda." : "Nenhum resultado para esse filtro."}</div>
+          <DollarSign size={26} style={{ marginBottom: 10, opacity: 0.5 }} />
+          <div style={{ fontSize: 13 }}>{orcamentos.length === 0 ? "Nenhum orçamento criado ainda." : "Nenhum resultado para esse filtro."}</div>
         </div>
       ) : (
-        filtrados.map((o) => {
-          const cor = ORC_STATUS_COLOR[o._statusEfetivo] || "#8A8A90";
-          return (
-            <button
-              key={o.id}
-              onClick={() => abrirDetalhe(o)}
-              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "13px 14px", marginBottom: 10, cursor: "pointer" }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#8A8A90" }}>{o.numero}</div>
-                  <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 14.5, color: "#F3F3F1", marginTop: 2 }}>{o.nome || "Cliente não informado"}</div>
-                  <div style={{ fontSize: 12, color: "#8A8A90", marginTop: 3 }}>{o.servico?.tipo || "-"}</div>
+        <div>
+          {filtrados.map((o, i) => {
+            const cor = ORC_STATUS_COLOR[o._statusEfetivo] || "#8A8A90";
+            return (
+              <button
+                key={o.id}
+                onClick={() => abrirDetalhe(o)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  background: "none",
+                  border: "none",
+                  borderTop: i === 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                  padding: "10px 2px",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#7A7A7A" }}>{o.numero}</span>
+                  <span style={{ color: "#E9C878", fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>R$ {(o.valorFinal || 0).toFixed(2)}</span>
                 </div>
-                <span style={{ color: "#E9C878", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap" }}>R$ {(o.valorFinal || 0).toFixed(2)}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 8 }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: cor }} />
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: cor }}>{o._statusEfetivo}</span>
-                <span style={{ fontSize: 10.5, color: "#6E6E73", marginLeft: "auto" }}>{new Date(o.createdAt).toLocaleDateString("pt-BR")}</span>
-              </div>
-            </button>
-          );
-        })
+                <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14, color: "#F3F3F1", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {o.nome || "Cliente não informado"}
+                </div>
+                <div style={{ fontSize: 11, color: "#7A7A7A", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {o.servico?.tipo || "-"}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: cor, flexShrink: 0 }} />
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: cor }}>{o._statusEfetivo}</span>
+                  <span style={{ fontSize: 10, color: "#5A5A5F", marginLeft: "auto" }}>{new Date(o.createdAt).toLocaleDateString("pt-BR")}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
 }
+
 
 function gerarLaudoTexto(d) {
   const linhas = [];
@@ -4807,21 +4878,29 @@ function RecibosModule() {
   }
 
   return (
-    <div style={{ padding: 16, paddingBottom: 40 }}>
-      <button
-        onClick={() => setMode("novo")}
-        style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}
-      >
-        <Plus size={16} /> Novo recibo
-      </button>
+    <div style={{ padding: "14px 16px 40px" }}>
+      {/* botão principal: mesmo padrão da OS — dourado sóbrio + efeito de pressão */}
+      <BotaoPremium onClick={() => setMode("novo")} texto="Novo recibo" />
 
-      <div style={{ position: "relative", marginBottom: 16 }}>
-        <Search size={15} color="#6E6E73" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+      {/* busca compacta, mesmo padrão da OS */}
+      <div style={{ position: "relative", marginBottom: 14 }}>
+        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por cliente, número, data ou valor..."
-          style={{ ...inputStyle, paddingLeft: 34 }}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#0A0A0B",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 10,
+            padding: "10px 12px 10px 34px",
+            color: "#F3F3F1",
+            fontFamily: "'Roboto',sans-serif",
+            fontSize: 13,
+            outline: "none",
+          }}
         />
       </div>
 
@@ -4831,26 +4910,54 @@ function RecibosModule() {
         </div>
       ) : filtrados.length === 0 ? (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#6E6E73" }}>
-          <Receipt size={28} style={{ marginBottom: 10, opacity: 0.6 }} />
-          <div style={{ fontSize: 13.5 }}>{recibos.length === 0 ? "Nenhum recibo emitido ainda." : "Nenhum resultado para essa busca."}</div>
+          <Receipt size={26} style={{ marginBottom: 10, opacity: 0.5 }} />
+          <div style={{ fontSize: 13 }}>{recibos.length === 0 ? "Nenhum recibo emitido ainda." : "Nenhum resultado para essa busca."}</div>
         </div>
       ) : (
-        filtrados.map((r) => (
-          <button
-            key={r.id}
-            onClick={() => {
-              setSelected(r);
-              setMode("detalhe");
-            }}
-            style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "13px 14px", marginBottom: 10, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-          >
-            <div>
-              <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 14.5, color: "#F3F3F1" }}>{r.clienteNome}</div>
-              <div style={{ fontSize: 12, color: "#8A8A90", marginTop: 3 }}>{r.numero} · {new Date(r.data).toLocaleDateString("pt-BR")}</div>
-            </div>
-            <span style={{ color: "#E9C878", fontSize: 14, fontWeight: 700 }}>R$ {Number(r.valor || 0).toFixed(2)}</span>
-          </button>
-        ))
+        <div>
+          {filtrados.map((r, i) => (
+            <button
+              key={r.id}
+              onClick={() => { setSelected(r); setMode("detalhe"); }}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                background: "none",
+                border: "none",
+                borderTop: i === 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+                padding: "12px 2px",
+                cursor: "pointer",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: "'Roboto',sans-serif",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    color: "#F3F3F1",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.clienteNome}
+                </div>
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#7A7A7A", marginTop: 3 }}>
+                  {r.numero} · {new Date(r.data).toLocaleDateString("pt-BR")}
+                </div>
+              </div>
+              <span style={{ color: "#E9C878", fontSize: 15, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+                R$ {Number(r.valor || 0).toFixed(2)}
+              </span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -5248,6 +5355,44 @@ function osWhatsapp(os) {
 
 /* Botão principal dourado, com leve efeito de pressão ao tocar.
    Dourado mais sóbrio (menos degradê chapado) e reutilizável. */
+/* Botão principal genérico, no mesmo padrão visual do BotaoNovaOS —
+   dourado sóbrio com leve efeito de pressão. Reutilizado por Recibos e
+   Orçamentos para manter a mesma identidade da tela de OS. */
+function BotaoPremium({ onClick, texto, icone: Icone = Plus }) {
+  const [pressionado, setPressionado] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onPointerDown={() => setPressionado(true)}
+      onPointerUp={() => setPressionado(false)}
+      onPointerLeave={() => setPressionado(false)}
+      style={{
+        width: "100%",
+        background: "linear-gradient(180deg,#D4AF5C,#B8933F)",
+        border: "1px solid rgba(255,255,255,0.12)",
+        borderRadius: 12,
+        padding: "13px 0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        fontFamily: "'Roboto',sans-serif",
+        fontWeight: 600,
+        fontSize: 13,
+        color: "#0A0A0B",
+        textTransform: "uppercase",
+        cursor: "pointer",
+        marginBottom: 16,
+        transform: pressionado ? "scale(0.98)" : "scale(1)",
+        filter: pressionado ? "brightness(0.94)" : "brightness(1)",
+        transition: "transform 120ms ease, filter 120ms ease",
+      }}
+    >
+      <Icone size={16} /> {texto}
+    </button>
+  );
+}
+
 function BotaoNovaOS({ onClick }) {
   const [pressionado, setPressionado] = useState(false);
   return (
