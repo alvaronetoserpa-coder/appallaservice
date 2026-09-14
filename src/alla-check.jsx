@@ -1200,8 +1200,8 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
             width: CANVAS_W,
             textAlign: "center",
             fontFamily: "'JetBrains Mono',monospace",
-            fontSize: 14,
-            color: "#9A9A9E",
+            fontSize: 16,
+            color: "rgba(180,180,185,0.55)",
             letterSpacing: 3,
             fontWeight: 600,
           }}
@@ -14365,7 +14365,45 @@ function ParticulasGeladas() {
 }
 
 function AllaCheckAppInterno({ usuario }) {
-  const [view, setView] = useState("home");
+  /* Pilha de navegação: "view" é sempre o topo (a tela atual), então
+     nenhuma das ~30 comparações "view === ..." espalhadas pelo roteador
+     precisa mudar. "navigate" empilha; "goBack" desempilha. Isso corrige
+     o botão Voltar, que antes ia direto para "home" em qualquer tela. */
+  const [pilha, setPilha] = useState(["home"]);
+  const view = pilha[pilha.length - 1];
+
+  const navigate = useCallback((destino) => {
+    setPilha((p) => {
+      // não empilha se já estamos exatamente nessa tela (evita duplicar
+      // no histórico ao clicar repetido na mesma área — regra 10)
+      if (p[p.length - 1] === destino) return p;
+      // navegar para "home" a partir de qualquer ponto reinicia a pilha:
+      // é o "início" da hierarquia, não deveria empilhar sobre si mesma.
+      if (destino === "home") return ["home"];
+      return [...p, destino];
+    });
+  }, []);
+
+  const goBack = useCallback(() => {
+    setPilha((p) => (p.length > 1 ? p.slice(0, -1) : p));
+  }, []);
+
+  // Botão físico Voltar do Android: cada navegação empurra uma entrada no
+  // histórico do navegador; voltar aciona popstate, que desempilha uma
+  // tela em vez de sair do app ou pular direto para o Painel.
+  useEffect(() => {
+    try { window.history.pushState({ allaDepth: pilha.length }, ""); } catch {}
+  }, [pilha.length]);
+
+  useEffect(() => {
+    const aoVoltarFisico = (e) => {
+      setPilha((p) => (p.length > 1 ? p.slice(0, -1) : p));
+    };
+    window.addEventListener("popstate", aoVoltarFisico);
+    return () => window.removeEventListener("popstate", aoVoltarFisico);
+  }, []);
+
+  const setView = navigate; // mantém compatibilidade com o nome antigo
   const { telaVisivel, saindo } = useTransicaoTela(view);
   const [reportCount, setReportCount] = useState(0);
   const [orcamentosCount, setOrcamentosCount] = useState(0);
@@ -14528,13 +14566,13 @@ function AllaCheckAppInterno({ usuario }) {
       {view !== "home" && view !== "gestao-inteligente" && view !== "financeiro" && (
         <Header
           title={titles[view]}
-          onBack={() => setView("home")}
+          onBack={goBack}
           onMenu={() => setMenuOpen(true)}
         />
       )}
 
       <div style={{ flex: view === "home" ? "0 0 auto" : 1 }}>
-        <LimiteDeErro tela={view} onVoltar={() => setView("home")}>
+        <LimiteDeErro tela={view} onVoltar={goBack}>
         {/* key={view}: faz o React remontar ao trocar de tela, disparando
             a animação de entrada a cada navegação (ida e volta). */}
         <div key={telaVisivel}>
@@ -14574,10 +14612,10 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "orcamentos" && <OrcamentosModule onRefreshApp={() => setRefreshKey((k) => k + 1)} />}
         {telaVisivel === "recibos" && <RecibosModule />}
         {telaVisivel === "os" && <OrdensServicoModule />}
-        {telaVisivel === "financeiro" && <FinanceiroModule onBack={() => setView("home")} />}
+        {telaVisivel === "financeiro" && <FinanceiroModule onBack={goBack} />}
         {telaVisivel === "os-frio" && <OSFrioModule />}
         {telaVisivel === "central-whatsapp" && <CentralWhatsApp />}
-        {telaVisivel === "gestao-inteligente" && <GestaoInteligente onBack={() => setView("home")} />}
+        {telaVisivel === "gestao-inteligente" && <GestaoInteligente onBack={goBack} />}
         {telaVisivel === "vendas-cervejeira" && <VendasCervejeiraModule />}
         {telaVisivel === "funcionarios" && <FuncionariosModule />}
         {TOOLS.filter((t) => !t.active).some((t) => `tool-${t.key}` === telaVisivel) && (
