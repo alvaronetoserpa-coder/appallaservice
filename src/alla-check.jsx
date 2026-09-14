@@ -65,6 +65,7 @@ const FIRESTORE_COLLECTION_MAP = {
   "venda-cotacoes": "venda_cotacoes",
   "agenda-cortes": "agenda_cortes",
   "agenda-cortes-servicos": "agenda_cortes_servicos",
+  manuais: "manuais",
 };
 
 function _fsCollectionFor(prefixKey) {
@@ -5594,7 +5595,7 @@ function BotaoNovaOS({ onClick }) {
   );
 }
 
-function OrdensServicoModule() {
+function OrdensServicoModule({ onNavigate }) {
   const [mode, setMode] = useState("lista"); // lista | novo | detalhe
   const [lista, setLista] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -5703,9 +5704,19 @@ function OrdensServicoModule() {
         </button>
         <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#C9A24B" }}>{os.numero}</div>
         <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 600, color: "#F3F3F1", marginBottom: 8 }}>{os.clienteNome}</div>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#141416", border: `1px solid ${cor}55`, borderRadius: 20, padding: "5px 12px", marginBottom: 16 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: cor }} />
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: cor, letterSpacing: 1 }}>{os.status}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#141416", border: `1px solid ${cor}55`, borderRadius: 20, padding: "5px 12px" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: cor }} />
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: cor, letterSpacing: 1 }}>{os.status}</span>
+          </div>
+          {onNavigate && (
+            <button
+              onClick={() => iaAbrirComContexto(os, onNavigate)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(155,138,251,0.10)", border: "1px solid rgba(155,138,251,0.35)", borderRadius: 20, padding: "5px 12px", color: "#B9ADFC", fontSize: 11, fontFamily: "'Roboto',sans-serif", fontWeight: 600, cursor: "pointer" }}
+            >
+              <Bot size={13} /> Diagnóstico IA
+            </button>
+          )}
         </div>
 
         <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
@@ -13352,7 +13363,10 @@ const IA_ETAPAS_GUIADO = [
   { campo: "condensadora", pergunta: "A condensadora funciona?", tipo: "select", opcoes: ["Sim", "Não", "Só o ventilador", "Só o compressor"] },
   { campo: "compressor", pergunta: "O compressor liga?", tipo: "select", opcoes: ["Sim", "Não", "Tenta e desarma", "Não sei"] },
   { campo: "codigoErro", pergunta: "Há código de erro?", tipo: "texto", placeholder: "Ex: E6, ou deixe em branco" },
-  { campo: "medicoesFeitas", pergunta: "Quais medições já foram feitas?", tipo: "texto", placeholder: "Ex: tensão, pressão de sucção..." },
+  { campo: "temperaturaRetorno", pergunta: "Temperatura de retorno (°C)", tipo: "texto", placeholder: "Opcional" },
+  { campo: "temperaturaInsuflamento", pergunta: "Temperatura de insuflamento (°C)", tipo: "texto", placeholder: "Opcional" },
+  { campo: "correnteMedida", pergunta: "Corrente medida (A)", tipo: "texto", placeholder: "Opcional" },
+  { campo: "pressaoMedida", pergunta: "Pressão medida", tipo: "texto", placeholder: "Opcional — sucção/descarga" },
 ];
 
 /* Monta um diagnóstico provável a partir das respostas do fluxo guiado.
@@ -13416,7 +13430,17 @@ function iaDiagnosticoGuiado(r) {
     }
   }
 
-  return { titulo, nivel, explicacao, testes };
+  // Medições opcionais informadas no fluxo (retorno/insuflamento, corrente,
+  // pressão) — reaproveita a mesma análise qualitativa já usada na aba de
+  // Medições, sem inventar nenhum valor de referência.
+  const observacoesMedicoes = iaAnalisarMedicoes({
+    temperaturaAmbiente: r.temperaturaRetorno,
+    temperaturaLinha: r.temperaturaInsuflamento,
+    corrente: r.correnteMedida,
+    pressaoSuccao: r.pressaoMedida,
+  }).filter((o) => o.tipo !== "info" || o.texto !== "Informe ao menos uma medição para eu analisar.");
+
+  return { titulo, observacoesMedicoes, nivel, explicacao, testes, sintoma: r.sintoma };
 }
 
 /* ---------------- Componentes visuais da resposta estruturada ---------------- */
@@ -13482,21 +13506,187 @@ const IA_ATALHOS = [
   { label: "Elétrica", icone: Zap, texto: "Tenho uma dúvida elétrica" },
   { label: "Refrigeração", icone: Snowflake, texto: "Tenho uma dúvida sobre o ciclo de refrigeração" },
   { label: "Códigos de erro", icone: FileText, texto: "__codigos__" },
+  { label: "Analisar foto", icone: Camera, texto: "__foto__" },
 ];
 
 /* ---------------- Componente principal ---------------- */
+/* ================= Camadas do Assistente Técnico IA (evolução) =================
+   IMPORTANTE — honestidade sobre o que existe de verdade neste ambiente:
+   não há backend, chave de API de busca web nem modelo de visão computacional
+   configurados no projeto. Por isso este módulo NUNCA simula pesquisa na
+   internet nem análise de foto — ele usa apenas fontes reais (dados da OS,
+   histórico do equipamento, manuais cadastrados no app) e deixa pronta a
+   função "iaBuscarWeb" para plugar uma API de busca de verdade no futuro,
+   sem precisar mexer no resto da ferramenta. */
+
+/* ---------------- Manuais cadastrados (coleção real no Firestore) ---------------- */
+async function iaBuscarManualCadastrado(fabricante, modelo) {
+  try {
+    const todos = await carregarTudoStorage("manuais:");
+    const fab = (fabricante || "").trim().toLowerCase();
+    const mod = (modelo || "").trim().toLowerCase();
+    if (!fab && !mod) return [];
+    return todos.filter((m) => {
+      const mf = (m.fabricante || "").toLowerCase();
+      const mm = (m.modelo || "").toLowerCase();
+      return (fab && mf.includes(fab)) || (mod && mm && mod.includes(mm));
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function iaSalvarManual({ fabricante, modelo, nome, link }) {
+  const existentes = await carregarTudoStorage("manuais:").catch(() => []);
+  // evita duplicar o mesmo manual (mesmo fabricante+modelo+nome)
+  const jaExiste = existentes.some(
+    (m) =>
+      (m.fabricante || "").toLowerCase() === (fabricante || "").toLowerCase() &&
+      (m.modelo || "").toLowerCase() === (modelo || "").toLowerCase() &&
+      (m.nome || "").toLowerCase() === (nome || "").toLowerCase()
+  );
+  if (jaExiste) return { duplicado: true };
+  const id = uid();
+  await window.storage.set(
+    `manuais:${id}`,
+    JSON.stringify({ id, fabricante, modelo, nome, link: link || "", createdAt: new Date().toISOString() })
+  );
+  return { duplicado: false };
+}
+
+/* ---------------- Pesquisa web: arquitetura real, sem simulação ----------------
+   Esta função é o ÚNICO ponto que precisaria mudar para ligar uma API de
+   busca de verdade (ex.: um endpoint próprio que chama Google/Bing, ou uma
+   API de busca da Anthropic/OpenAI). Hoje ela responde imediatamente que a
+   pesquisa não está disponível — nunca finge estar pesquisando. */
+async function iaBuscarWeb(query) {
+  const SEARCH_API_DISPONIVEL = false; // troque para true quando plugar uma API real
+  if (!SEARCH_API_DISPONIVEL) {
+    return { disponivel: false, query };
+  }
+  // Ponto de extensão futuro — mantém tratamento de timeout/erro já pronto:
+  try {
+    const controle = new AbortController();
+    const tempoLimite = setTimeout(() => controle.abort(), 8000);
+    const resp = await fetch("/api/busca-tecnica", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+      signal: controle.signal,
+    });
+    clearTimeout(tempoLimite);
+    if (!resp.ok) return { disponivel: true, erro: true, query };
+    const dados = await resp.json();
+    if (!dados || !dados.resultados || dados.resultados.length === 0) {
+      return { disponivel: true, vazio: true, query };
+    }
+    return { disponivel: true, resultados: dados.resultados, query };
+  } catch (e) {
+    return { disponivel: true, erro: true, falhaConexao: true, query };
+  }
+}
+
+/* Monta a(s) query(ies) que SERIAM usadas na pesquisa, seguindo a regra de
+   nunca pesquisar só o código isolado ("erro E3"), sempre com fabricante e
+   modelo — mesmo sem uma API real ligada, isso já ajuda o técnico a
+   pesquisar manualmente com um termo bem formado. */
+function iaMontarQueriesBusca(ctx) {
+  const { fabricante, modelo, codigoErro } = ctx;
+  if (!fabricante && !modelo) return [];
+  const base = [fabricante, modelo].filter(Boolean).join(" ");
+  const queries = [];
+  if (codigoErro) {
+    queries.push(`${base} ${codigoErro} manual técnico`);
+    queries.push(`${base} error ${codigoErro}`);
+    queries.push(`${base} service manual PDF`);
+  } else {
+    queries.push(`${base} manual técnico PDF`);
+    queries.push(`${base} especificações técnicas`);
+  }
+  return queries;
+}
+
+/* ---------------- Ponte de contexto: abrir o Assistente a partir de uma OS ----------------
+   A navegação do app troca de tela sem passar parâmetros (é um roteador
+   simples por chave). Para o Assistente herdar os dados do equipamento sem
+   o técnico digitar de novo, usamos uma variável de módulo como ponte:
+   quem abre o Assistente a partir de uma OS grava aqui antes de navegar; o
+   Assistente lê e limpa ao montar, para não "vazar" para a próxima vez que
+   a ferramenta for aberta de forma avulsa. */
+let iaContextoPendente = null;
+function iaAbrirComContexto(dadosOS, onNavigate) {
+  iaContextoPendente = {
+    cliente: dadosOS.clienteNome || "",
+    equipamento: dadosOS.eqTipo || "",
+    marca: dadosOS.eqMarca || "",
+    modelo: dadosOS.eqModelo || "",
+    btu: dadosOS.eqBtus || "",
+    serie: dadosOS.eqSerie || "",
+    osId: dadosOS.id || null,
+    osNumero: dadosOS.numero || null,
+    problemaAnterior: dadosOS.problemaRelatado || "",
+    diagnosticoAnterior: dadosOS.diagnostico || "",
+  };
+  onNavigate("tool-assistente-ia");
+}
+
+/* Monta a seção "Fontes consultadas", seguindo a hierarquia real definida
+   no pedido: dados do equipamento > histórico > manual cadastrado > busca
+   web > conhecimento interno da base de sintomas. Nunca inclui uma fonte
+   que não foi de fato consultada. */
+function iaMontarFontes({ temContexto, temHistorico, manuaisAchados, buscaWeb }) {
+  const fontes = [];
+  if (temContexto) fontes.push({ tipo: "Dados do equipamento (ALLA CHECK)", detalhe: "Carregado da Ordem de Serviço" });
+  if (temHistorico) fontes.push({ tipo: "Histórico do equipamento", detalhe: "Ordens de serviço anteriores" });
+  if (manuaisAchados && manuaisAchados.length > 0) {
+    manuaisAchados.forEach((m) => fontes.push({ tipo: "Manual cadastrado", detalhe: `${m.nome} — ${m.fabricante} ${m.modelo}`, link: m.link }));
+  }
+  if (buscaWeb) {
+    if (!buscaWeb.disponivel) {
+      fontes.push({ tipo: "Pesquisa na internet", detalhe: "Não disponível neste ambiente — nenhuma API de busca conectada", indisponivel: true });
+    } else if (buscaWeb.erro) {
+      fontes.push({ tipo: "Pesquisa na internet", detalhe: buscaWeb.falhaConexao ? "Falha de conexão ao consultar a fonte" : "A pesquisa retornou erro", indisponivel: true });
+    } else if (buscaWeb.vazio) {
+      fontes.push({ tipo: "Pesquisa na internet", detalhe: "Nenhum resultado encontrado para esta consulta", indisponivel: true });
+    } else if (buscaWeb.resultados) {
+      buscaWeb.resultados.forEach((r) => fontes.push({ tipo: "Documentação online", detalhe: r.titulo, link: r.url }));
+    }
+  }
+  fontes.push({ tipo: "Base interna do ALLA CHECK", detalhe: "Padrões de sintomas de climatização/elétrica cadastrados no app" });
+  return fontes;
+}
+
 function AssistenteTecnicoIA() {
   const [aba, setAba] = useState("chat"); // chat | guiado | codigo | medicoes | historico
-  const [mensagens, setMensagens] = useState([
-    { autor: "ia", tipo: "texto", texto: "Olá! Sou o assistente técnico do ALLA CHECK. Descreva um sintoma, informe um código de erro ou toque em um atalho abaixo." },
+  // Contexto do equipamento: carregado automaticamente quando o Assistente é
+  // aberto a partir do botão "Diagnóstico IA" dentro de uma OS (ver
+  // iaAbrirComContexto). Consumido uma única vez ao montar.
+  const [contexto] = useState(() => {
+    const c = iaContextoPendente;
+    iaContextoPendente = null;
+    return c;
+  });
+  const [mensagens, setMensagens] = useState(() => [
+    contexto
+      ? {
+          autor: "ia",
+          tipo: "texto",
+          texto: `Dados carregados da OS ${contexto.osNumero || ""}: ${[contexto.marca, contexto.modelo, contexto.equipamento].filter(Boolean).join(" ")} — cliente ${contexto.cliente || "não informado"}. Descreva o sintoma ou continue de onde a OS parou.`,
+        }
+      : { autor: "ia", tipo: "texto", texto: "Olá! Sou o assistente técnico do ALLA CHECK. Descreva um sintoma, informe um código de erro ou toque em um atalho abaixo." },
   ]);
   const [entrada, setEntrada] = useState("");
   const [historico, setHistorico] = useState([]);
   const scrollRef = useRef(null);
+  const [manuaisAchados, setManuaisAchados] = useState([]);
 
-  // guiado
+  // guiado — já parte preenchido se veio de uma OS, para o técnico não digitar de novo
   const [etapaGuiado, setEtapaGuiado] = useState(0);
-  const [respGuiado, setRespGuiado] = useState({});
+  const [respGuiado, setRespGuiado] = useState(() =>
+    contexto
+      ? { equipamento: contexto.equipamento, marca: contexto.marca, modelo: contexto.modelo, btu: contexto.btu, sintoma: contexto.problemaAnterior || "" }
+      : {}
+  );
   const [resultadoGuiado, setResultadoGuiado] = useState(null);
 
   // medicoes
@@ -13514,20 +13704,65 @@ function AssistenteTecnicoIA() {
 
   useEffect(() => { carregarHistorico(); }, [carregarHistorico]);
 
+  // busca manuais já cadastrados assim que soubermos a marca/modelo (da OS
+  // ou do que o técnico for digitando no fluxo guiado)
+  useEffect(() => {
+    const marca = contexto?.marca || respGuiado.marca;
+    const modelo = contexto?.modelo || respGuiado.modelo;
+    if (!marca && !modelo) return;
+    iaBuscarManualCadastrado(marca, modelo).then(setManuaisAchados);
+  }, [contexto, respGuiado.marca, respGuiado.modelo]);
+
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [mensagens]);
 
-  const salvarNoHistorico = async (titulo, conteudoResumo) => {
+  const salvarNoHistorico = async (titulo, conteudoResumo, extra = {}) => {
     try {
       const id = uid();
       await window.storage.set(
         `ia-tecnico-historico:${id}`,
-        JSON.stringify({ id, titulo, resumo: conteudoResumo, createdAt: new Date().toISOString() })
+        JSON.stringify({
+          id,
+          titulo,
+          resumo: conteudoResumo,
+          equipamento: contexto ? [contexto.marca, contexto.modelo, contexto.equipamento].filter(Boolean).join(" ") : (extra.equipamento || ""),
+          cliente: contexto?.cliente || "",
+          osNumero: contexto?.osNumero || null,
+          createdAt: new Date().toISOString(),
+        })
       );
       carregarHistorico();
     } catch (err) {
       console.error("Não foi possível salvar no histórico", err);
+    }
+  };
+
+  const [anexandoOS, setAnexandoOS] = useState(false);
+  /* Anexa o resultado do diagnóstico à OS de origem (quando o Assistente foi
+     aberto a partir dela) SEM apagar nada que já existia — concatena no
+     campo "observações". */
+  const anexarResultadoNaOS = async (resultado) => {
+    if (!contexto?.osId) return;
+    setAnexandoOS(true);
+    try {
+      const atual = await window.storage.get(`ordens-servico:${contexto.osId}`).catch(() => null);
+      if (!atual) throw new Error("OS não encontrada");
+      const os = JSON.parse(atual.value);
+      const bloco = [
+        `— Diagnóstico IA (${new Date().toLocaleDateString("pt-BR")}) —`,
+        `Sintoma: ${resultado.sintoma || respGuiado.sintoma || "-"}`,
+        `Diagnóstico: ${resultado.titulo}`,
+        `Confiança: ${resultado.nivel}`,
+        `Testes recomendados: ${(resultado.testes || []).join("; ")}`,
+      ].join("\n");
+      const observacoesNovas = [os.observacoes, bloco].filter(Boolean).join("\n\n");
+      await window.storage.set(`ordens-servico:${contexto.osId}`, JSON.stringify({ ...os, observacoes: observacoesNovas }));
+      notificarErroBanco(`Diagnóstico adicionado à OS ${contexto.osNumero || ""} sem apagar as observações existentes.`);
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "anexar diagnóstico à OS"));
+    } finally {
+      setAnexandoOS(false);
     }
   };
 
@@ -13582,6 +13817,22 @@ function AssistenteTecnicoIA() {
 
   const usarAtalho = (a) => {
     if (a.texto === "__codigos__") { setAba("codigo"); return; }
+    if (a.texto === "__foto__") {
+      // Honesto: não há modelo de visão computacional conectado neste
+      // ambiente. Em vez de simular uma análise, orienta o técnico a
+      // descrever o que vê — a base de sintomas continua funcionando.
+      setMensagens((m) => [
+        ...m,
+        { autor: "usuario", tipo: "texto", texto: "Quero enviar uma foto para análise" },
+        {
+          autor: "ia",
+          tipo: "texto",
+          texto:
+            "Ainda não tenho um modelo de análise de imagem conectado neste ambiente, então não posso examinar fotos com segurança. Descreva o que você está vendo (código na etiqueta, aspecto da placa, cor do LED, etc.) que eu ajudo a partir da descrição.",
+        },
+      ]);
+      return;
+    }
     processarPergunta(a.texto);
   };
 
@@ -13746,8 +13997,41 @@ function AssistenteTecnicoIA() {
                 <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14.5, color: "#F3F3F1", marginBottom: 8 }}>{resultadoGuiado.titulo}</div>
                 <div style={{ fontSize: 12.5, color: "#C7C9CE", lineHeight: 1.55, marginBottom: 12 }}>{resultadoGuiado.explicacao}</div>
                 <IaListaSecao titulo="Testes recomendados" cor="#4681DF" itens={resultadoGuiado.testes} />
+
+                {resultadoGuiado.observacoesMedicoes && resultadoGuiado.observacoesMedicoes.length > 0 && (
+                  <div style={{ marginTop: 4, marginBottom: 4 }}>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#E9C878", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>
+                      Leitura das medições informadas
+                    </div>
+                    {resultadoGuiado.observacoesMedicoes.map((o, i) => (
+                      <div key={i} style={{ fontSize: 11.5, color: o.tipo === "atencao" ? "#F0605A" : "#C7C9CE", marginBottom: 4 }}>
+                        {o.tipo === "atencao" ? "⚠ " : "· "}{o.texto}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Fontes consultadas — nunca lista uma fonte que não foi realmente usada */}
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>
+                    Fontes consultadas
+                  </div>
+                  {iaMontarFontes({ temContexto: !!contexto, temHistorico: !!contexto?.diagnosticoAnterior, manuaisAchados, buscaWeb: { disponivel: false } }).map((f, i) => (
+                    <div key={i} style={{ fontSize: 11, color: f.indisponivel ? "#6E6E73" : "#9B8AFB", marginBottom: 3 }}>
+                      • {f.tipo}{f.detalhe ? ` — ${f.detalhe}` : ""}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <button onClick={reiniciarGuiado} style={{ ...btnSecundario, width: "100%" }}>Novo diagnóstico</button>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {contexto?.osId && (
+                  <button onClick={() => anexarResultadoNaOS(resultadoGuiado)} disabled={anexandoOS} style={{ ...btnPrincipal, width: "100%", opacity: anexandoOS ? 0.6 : 1 }}>
+                    {anexandoOS ? "Adicionando..." : `Adicionar à OS ${contexto.osNumero || ""}`}
+                  </button>
+                )}
+                <button onClick={reiniciarGuiado} style={{ ...btnSecundario, width: "100%" }}>Novo diagnóstico</button>
+              </div>
             </>
           ) : (
             <>
@@ -14629,7 +14913,7 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "documentos" && <RecibosEOrcamentosHub onNavigate={setView} />}
         {telaVisivel === "orcamentos" && <OrcamentosModule onRefreshApp={() => setRefreshKey((k) => k + 1)} />}
         {telaVisivel === "recibos" && <RecibosModule />}
-        {telaVisivel === "os" && <OrdensServicoModule />}
+        {telaVisivel === "os" && <OrdensServicoModule onNavigate={navigate} />}
         {telaVisivel === "financeiro" && <FinanceiroModule onBack={goBack} />}
         {telaVisivel === "os-frio" && <OSFrioModule />}
         {telaVisivel === "central-whatsapp" && <CentralWhatsApp />}
