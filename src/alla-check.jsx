@@ -3157,6 +3157,21 @@ function OrcamentoForm({ editing, onDone, onCancel }) {
   );
 }
 
+/* Cláusula de garantia OBRIGATÓRIA em todo orçamento, proposta, cotação e
+   Ordem de Serviço gerados pelo app. Texto fixo e não editável pelo
+   técnico — é isso que garante que ele nunca é alterado, resumido nem
+   trocado por um prazo maior, mesmo por engano. Inserida sempre depois
+   dos valores/condições de pagamento, nunca no Recibo (que não é um
+   documento de serviço com garantia). */
+const GARANTIA_CLAUSULA_TEXTO =
+  "Garantia: 90 dias para a infraestrutura e mão de obra de instalação (estanqueidade das conexões e fixação). Defeitos de fabricação dos aparelhos, controle remoto ou falhas elétricas externas (picos de tensão no imóvel) seguem os termos de garantia do fabricante.";
+
+const GARANTIA_CLAUSULA_HTML = `
+  <div class="pdf-card" style="border:1px solid #C9A24B55;">
+    <h4>Garantia</h4>
+    <div style="font-size:11px;line-height:1.5;">${GARANTIA_CLAUSULA_TEXTO}</div>
+  </div>`;
+
 function pdfCabecalhoRodape(logoSrc) {
   const header = `
     <div class="pdf-header">
@@ -3294,6 +3309,7 @@ function orcPDF(o) {
           <span class="pdf-total-label">Valor total</span>
           <span class="pdf-total-value">R$ ${o.valorFinal.toFixed(2)}</span>
         </div>
+        ${GARANTIA_CLAUSULA_HTML}
         <div class="pdf-sig">Assinatura / aceite do cliente</div>
         ${footer}
       </div>
@@ -5486,6 +5502,8 @@ function osPDF(os) {
             <b>${valor(os.valorTotal)}</b>
           </div>
 
+          ${GARANTIA_CLAUSULA_HTML}
+
           ${os.observacoes ? card("Observações técnicas", String(os.observacoes).replace(/\n/g, "<br/>")) : ""}
 
           <div class="pdf-sig-row">
@@ -7150,6 +7168,9 @@ function osFrioPDF(os) {
       <div class="section"><b>Problema:</b> ${os.problemaRelatado || "-"}<br/><b>Diagnóstico:</b> ${os.diagnostico || "-"}</div>
       <div class="section"><b>Testes realizados:</b> ${testesOk.length ? testesOk.join(", ") : "-"}</div>
       <div class="total">Valor total: R$ ${Number(os.valorTotal || 0).toFixed(2)}</div>
+      <div class="section" style="border:1px solid #C9A24B55;border-radius:6px;padding:10px 12px;margin-top:14px;">
+        <b>Garantia</b><br/>${GARANTIA_CLAUSULA_TEXTO}
+      </div>
     </body></html>
   `);
   win.document.close();
@@ -12168,7 +12189,7 @@ function AvCotacaoForm({ editing, produtos, onDone, onCancel }) {
       pagamento: "PIX / À vista",
       prazo: "",
       validadeDias: "7",
-      garantia: "1 ano de garantia do fabricante e 90 dias na instalação.",
+      garantia: "",
       observacoes: "",
       status: "RASCUNHO",
     }
@@ -12384,8 +12405,13 @@ function AvCotacaoForm({ editing, produtos, onDone, onCancel }) {
         <Field label="Prazo de entrega"><input style={inputStyle} value={form.prazo} onChange={set("prazo")} placeholder="Ex: 5 dias úteis" /></Field>
       </LinhaDupla>
       <Field label="Validade da proposta (dias)"><input style={inputStyle} value={form.validadeDias} onChange={set("validadeDias")} inputMode="numeric" /></Field>
-      <Field label="Garantia">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={form.garantia} onChange={set("garantia")} />
+      <Field label="Garantia adicional (opcional)">
+        <textarea
+          style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+          value={form.garantia}
+          onChange={set("garantia")}
+          placeholder="A cláusula padrão de 90 dias é incluída automaticamente na proposta. Use este campo só para observações extras."
+        />
       </Field>
       <Field label="Observações">
         <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={form.observacoes} onChange={set("observacoes")} />
@@ -12457,7 +12483,8 @@ function avPropostaPDF(cot) {
             ${cot.prazo ? `<div><b>Prazo de entrega:</b> ${cot.prazo}</div>` : ""}
             <div><b>Validade da proposta:</b> ${cot.validade ? new Date(cot.validade).toLocaleDateString("pt-BR") : "-"}</div>`)}
 
-          ${card("Garantia", cot.garantia)}
+          ${card("Garantia adicional", cot.garantia)}
+          ${GARANTIA_CLAUSULA_HTML}
           ${card("Observações", cot.observacoes ? String(cot.observacoes).replace(/\n/g, "<br/>") : "")}
 
           <div class="pdf-sig">Aceite do cliente</div>
@@ -12501,7 +12528,9 @@ function avMensagemWhatsapp(cot) {
     ...(cot.prazo ? [`🚚 Entrega: ${cot.prazo}`] : []),
     ...(cot.validade ? [`📅 Proposta válida até ${new Date(cot.validade).toLocaleDateString("pt-BR")}`] : []),
     "",
-    ...(cot.garantia ? [`🛡️ ${cot.garantia}`, ""] : []),
+    `🛡️ ${GARANTIA_CLAUSULA_TEXTO}`,
+    ...(cot.garantia ? [cot.garantia] : []),
+    "",
     sep,
     "",
     "*ALLA SERVICE*",
@@ -13287,6 +13316,40 @@ function iaBuscarSintoma(texto) {
   return IA_SINTOMAS.find((s) => s.chaves.some((c) => t.includes(c.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))));
 }
 
+/* Rótulo "bonito" de cada chave interna de marca, para mensagens ao técnico. */
+const IA_MARCA_LABEL = { samsung: "Samsung", lg: "LG", midea_springer: "Midea/Springer", gree: "Gree", fujitsu: "Fujitsu" };
+
+/* Detecta uma marca mesmo numa mensagem que é SÓ o nome da marca (ex.: o
+   técnico responde apenas "LG" depois que a IA perguntou). Reutiliza o
+   mesmo mapeamento de iaBuscarCodigoErro, para nunca divergir. */
+function iaDetectarMarca(texto) {
+  const t = (texto || "").toLowerCase();
+  const marcas = { samsung: "samsung", lg: "lg", midea: "midea_springer", springer: "midea_springer", gree: "gree", fujitsu: "fujitsu" };
+  for (const [chave, valor] of Object.entries(marcas)) {
+    if (new RegExp(`\\b${chave}\\b`, "i").test(t)) return valor;
+  }
+  return null;
+}
+
+/* Extração heurística (regex, não é IA de linguagem natural) de dados
+   técnicos soltos numa pergunta livre, para montar buscas mais
+   específicas — ex.: "LG Dual Inverter 12000 BTU R32" deve virar uma
+   query melhor do que só o texto puro. Nunca usada para "adivinhar"
+   valores de resposta, só para montar a pesquisa. */
+function iaExtrairEntidadesTecnicas(texto) {
+  const t = texto || "";
+  const btuMatch = t.match(/(\d[\d.,]*)\s*btu/i);
+  const gasMatch = t.match(/\bR[\s-]?(\d{2,3}[aA]?)\b/);
+  const tensaoMatch = t.match(/\b(1[01]0|220|127|380)\s*v\b/i);
+  const freqMatch = t.match(/\b(50|60)\s*hz\b/i);
+  return {
+    btu: btuMatch ? btuMatch[1].replace(/\./g, "") : null,
+    gas: gasMatch ? `R${gasMatch[1].toUpperCase()}` : null,
+    tensao: tensaoMatch ? `${tensaoMatch[1]}V` : null,
+    frequencia: freqMatch ? `${freqMatch[1]}Hz` : null,
+  };
+}
+
 function iaBuscarCodigoErro(texto) {
   const t = texto.toLowerCase();
   const marcas = { samsung: "samsung", lg: "lg", midea: "midea_springer", springer: "midea_springer", gree: "gree", fujitsu: "fujitsu" };
@@ -13560,14 +13623,13 @@ async function iaSalvarManual({ fabricante, modelo, nome, link }) {
    API de busca da Anthropic/OpenAI). Hoje ela responde imediatamente que a
    pesquisa não está disponível — nunca finge estar pesquisando. */
 async function iaBuscarWeb(query) {
-  const SEARCH_API_DISPONIVEL = false; // troque para true quando plugar uma API real
+  const SEARCH_API_DISPONIVEL = true; // ativado: o backend /api/busca-tecnica.js existe de verdade
   if (!SEARCH_API_DISPONIVEL) {
     return { disponivel: false, query };
   }
-  // Ponto de extensão futuro — mantém tratamento de timeout/erro já pronto:
   try {
     const controle = new AbortController();
-    const tempoLimite = setTimeout(() => controle.abort(), 8000);
+    const tempoLimite = setTimeout(() => controle.abort(), 9000);
     const resp = await fetch("/api/busca-tecnica", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -13575,6 +13637,11 @@ async function iaBuscarWeb(query) {
       signal: controle.signal,
     });
     clearTimeout(tempoLimite);
+    if (resp.status === 501) {
+      // O backend existe, mas as chaves de API não foram configuradas
+      // no servidor — mensagem específica, não um erro genérico.
+      return { disponivel: false, naoConfigurado: true, query };
+    }
     if (!resp.ok) return { disponivel: true, erro: true, query };
     const dados = await resp.json();
     if (!dados || !dados.resultados || dados.resultados.length === 0) {
@@ -13676,6 +13743,12 @@ function AssistenteTecnicoIA() {
       : { autor: "ia", tipo: "texto", texto: "Olá! Sou o assistente técnico do ALLA CHECK. Descreva um sintoma, informe um código de erro ou toque em um atalho abaixo." },
   ]);
   const [entrada, setEntrada] = useState("");
+  /* Memória da conversa: um código informado numa mensagem precisa
+     "sobreviver" até a próxima resposta do técnico (ex.: marca), em vez
+     de cada mensagem ser tratada isoladamente. Vive só nesta sessão do
+     chat — não é salva no banco. */
+  const [ctxConversa, setCtxConversa] = useState({ codigoErro: null, marca: null, modelo: null, btu: null, gas: null, tensao: null });
+  const [buscando, setBuscando] = useState(false);
   const [historico, setHistorico] = useState([]);
   const scrollRef = useRef(null);
   const [manuaisAchados, setManuaisAchados] = useState([]);
@@ -13766,49 +13839,145 @@ function AssistenteTecnicoIA() {
     }
   };
 
-  const processarPergunta = (texto) => {
+  const processarPergunta = async (texto) => {
+    if (buscando) return; // impede varias pesquisas simultaneas
     setMensagens((m) => [...m, { autor: "usuario", tipo: "texto", texto }]);
 
-    // código de erro?
-    const pareceCodigo = /\b[EFC][EHR]?\d{1,3}\b/i.test(texto);
-    if (pareceCodigo) {
-      const res = iaBuscarCodigoErro(texto);
-      setTimeout(() => {
-        if (res.encontrado) {
-          const resumo = `Código ${res.codigo} (${res.marca}): ${res.explicacao}`;
+    const codMatch = texto.toUpperCase().match(/\b([EFC][EHR]?\d{1,3})\b/);
+    const codigoNaMensagem = codMatch ? codMatch[1] : null;
+    const marcaNaMensagem = iaDetectarMarca(texto);
+    const entidades = iaExtrairEntidadesTecnicas(texto);
+
+    const novoCtx = {
+      codigoErro: codigoNaMensagem || ctxConversa.codigoErro,
+      marca: marcaNaMensagem || ctxConversa.marca,
+      modelo:
+        !codigoNaMensagem && !marcaNaMensagem && ctxConversa.codigoErro
+          ? [ctxConversa.modelo, texto.trim()].filter(Boolean).join(" ")
+          : ctxConversa.modelo,
+      btu: entidades.btu || ctxConversa.btu,
+      gas: entidades.gas || ctxConversa.gas,
+      tensao: entidades.tensao || ctxConversa.tensao,
+    };
+    setCtxConversa(novoCtx);
+
+    // Helper local: dispara a pesquisa real, mostrando os dois estágios
+    // pedidos ("Pesquisando..." depois "Pesquisa concluída"), bloqueando
+    // novas buscas enquanto esta estiver em andamento.
+    const pesquisar = async (query) => {
+      setBuscando(true);
+      const idTemp = `busca-${Date.now()}`;
+      setMensagens((m) => [...m, { autor: "ia", tipo: "texto", id: idTemp, texto: "🔎 Pesquisando fontes técnicas na internet..." }]);
+      const busca = await iaBuscarWeb(query);
+      setMensagens((m) => m.filter((msg) => msg.id !== idTemp)); // remove o indicador temporário
+      setBuscando(false);
+      return busca;
+    };
+
+    if (novoCtx.codigoErro) {
+      if (!novoCtx.marca) {
+        setTimeout(() => {
+          setMensagens((m) => [
+            ...m,
+            { autor: "ia", tipo: "texto", texto: `Encontrei o código ${novoCtx.codigoErro}. Qual é a marca do equipamento?` },
+          ]);
+        }, 300);
+        return;
+      }
+
+      const marcaLabel = IA_MARCA_LABEL[novoCtx.marca] || novoCtx.marca;
+      const res = iaBuscarCodigoErro(`${novoCtx.codigoErro} ${novoCtx.marca}`);
+      if (res.encontrado) {
+        setTimeout(() => {
+          const resumo = `Código ${res.codigo} (${marcaLabel}): ${res.explicacao}`;
           setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: resumo }]);
-          salvarNoHistorico(`Código ${res.codigo}`, resumo);
-        } else if (res.precisaMarca) {
-          setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: `Encontrei o código ${res.codigo}, mas preciso saber a marca do equipamento (Samsung, LG, Midea/Springer, Gree ou Fujitsu) para dar a explicação correta — cada fabricante usa os códigos de forma diferente.` }]);
-        } else if (res.semRegistro) {
-          setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: `Não tenho o código ${res.codigo} da marca informada na minha base. Consulte o manual do fabricante ou me diga o sintoma observado (não liga, não gela, etc.) que eu ajudo por aí.` }]);
-        } else {
-          setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: "Não consegui identificar um código de erro no texto. Informe o código junto com a marca do equipamento, por exemplo: \"E6 Samsung\"." }]);
-        }
+          salvarNoHistorico(`Código ${res.codigo} (${marcaLabel})`, resumo);
+          setCtxConversa({ codigoErro: null, marca: null, modelo: null, btu: null, gas: null, tensao: null });
+        }, 300);
+        return;
+      }
+
+      // Não está na base interna — pesquisa DE VERDADE, com query cada
+      // vez mais específica conforme o que já se sabe (modelo, BTU, gás).
+      const detalhes = [novoCtx.modelo, novoCtx.btu ? `${novoCtx.btu} BTU` : null, novoCtx.gas].filter(Boolean).join(" ");
+      const query = detalhes
+        ? `${marcaLabel} ${detalhes} ${novoCtx.codigoErro} manual service manual`
+        : `${marcaLabel} ar condicionado ${novoCtx.codigoErro} código de erro`;
+
+      setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: `Não encontrei ${novoCtx.codigoErro} na minha base para ${marcaLabel}. Vou pesquisar: "${query}"` }]);
+      const busca = await pesquisar(query);
+      apresentarResultadoBusca(busca, query, { codigo: novoCtx.codigoErro, marca: marcaLabel, pedirModeloSeVazio: !novoCtx.modelo });
+      return;
+    }
+
+    // sem código em jogo: base de sintomas primeiro (rápida, já confiável
+    // para os casos que ela cobre); só pesquisa na internet quando a base
+    // não tem resposta — evita chamadas externas desnecessárias.
+    const sintoma = iaBuscarSintoma(texto);
+    if (sintoma) {
+      setTimeout(() => {
+        setMensagens((m) => [...m, { autor: "ia", tipo: "sintoma", dados: sintoma }]);
+        salvarNoHistorico(sintoma.titulo, sintoma.causaProvavel);
       }, 300);
       return;
     }
 
-    // sintoma na base?
-    const sintoma = iaBuscarSintoma(texto);
-    setTimeout(() => {
-      if (sintoma) {
-        setMensagens((m) => [...m, { autor: "ia", tipo: "sintoma", dados: sintoma }]);
-        salvarNoHistorico(sintoma.titulo, sintoma.causaProvavel);
-      } else {
-        setMensagens((m) => [
-          ...m,
-          {
-            autor: "ia",
-            tipo: "texto",
-            texto: "Ainda não tenho uma resposta pronta para esse sintoma específico na minha base. Posso ajudar com: não gela, não liga, condensadora não liga, compressor não parte, evaporadora congelando, teste de capacitor, identificação de falta de gás, bitola de cabo ou vácuo. Você também pode usar o Diagnóstico guiado, que faz perguntas objetivas.",
-          },
-        ]);
-      }
-    }, 300);
+    // Pergunta técnica livre (ex.: "qual a pressão de trabalho de um LG
+    // Dual Inverter 12000 BTU R32?") — monta a busca com tudo que já foi
+    // identificado nesta mensagem e nas anteriores.
+    const partesContexto = [
+      novoCtx.marca ? IA_MARCA_LABEL[novoCtx.marca] : "",
+      novoCtx.modelo || "",
+      novoCtx.btu ? `${novoCtx.btu} BTU` : "",
+      novoCtx.gas || "",
+    ].filter((parte) => parte && !texto.toLowerCase().includes(parte.toLowerCase()));
+    const queryLivre = partesContexto.length ? `${partesContexto.join(" ")} ${texto}` : `${texto} ar condicionado`;
+
+    setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: `Não tenho esse sintoma na minha base ainda. Vou pesquisar: "${queryLivre}"` }]);
+    const busca = await pesquisar(queryLivre);
+    apresentarResultadoBusca(busca, queryLivre, { textoOriginal: texto });
+  };
+
+  /* Único ponto que interpreta o retorno de iaBuscarWeb e decide a
+     mensagem a mostrar — usado tanto no fluxo de código quanto no de
+     texto livre, para nunca haver duas redações diferentes do mesmo caso. */
+  const apresentarResultadoBusca = (busca, query, ctx = {}) => {
+    if (!busca.disponivel) {
+      const texto2 = busca.naoConfigurado
+        ? "Pesquisa na internet ainda não está configurada neste servidor."
+        : "A pesquisa na internet não está disponível neste momento.";
+      setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: texto2 }]);
+      return;
+    }
+    if (busca.erro) {
+      const texto2 = busca.falhaConexao
+        ? "Não foi possível concluir a pesquisa online no momento. Tente novamente."
+        : "A fonte de busca retornou um erro. Tente novamente em instantes.";
+      setMensagens((m) => [...m, { autor: "ia", tipo: "texto", texto: texto2 }]);
+      return;
+    }
+    if (busca.vazio) {
+      const pedirModelo = ctx.pedirModeloSeVazio ? " Se você souber o modelo exato do aparelho, me diga que eu refino a busca." : "";
+      setMensagens((m) => [
+        ...m,
+        { autor: "ia", tipo: "texto", texto: `Não encontrei uma fonte técnica confiável para essa informação.${pedirModelo}` },
+      ]);
+      return;
+    }
+    // encontrou de verdade — mostra "concluída" + as fontes reais
+    setMensagens((m) => [
+      ...m,
+      { autor: "ia", tipo: "texto", texto: "✓ Pesquisa concluída" },
+      { autor: "ia", tipo: "buscaWeb", dados: { query, resultados: busca.resultados, codigo: ctx.codigo, marca: ctx.marca } },
+    ]);
+    salvarNoHistorico(
+      ctx.codigo ? `Código ${ctx.codigo} (${ctx.marca}) — pesquisado na internet` : (ctx.textoOriginal || query),
+      busca.resultados.map((r) => r.titulo).join("; ")
+    );
   };
 
   const enviar = () => {
+    if (buscando) return;
     const texto = entrada.trim();
     if (!texto) return;
     setEntrada("");
@@ -13946,6 +14115,50 @@ function AssistenteTecnicoIA() {
               <div key={i} style={{ marginBottom: 12, display: "flex", justifyContent: m.autor === "usuario" ? "flex-end" : "flex-start" }}>
                 {m.tipo === "sintoma" ? (
                   <div style={{ maxWidth: "94%", width: "100%" }}><IaRespostaTecnica s={m.dados} /></div>
+                ) : m.tipo === "buscaWeb" ? (
+                  <div style={{ maxWidth: "94%", width: "100%", background: "#0D0D0E", border: "1px solid rgba(74,222,128,0.25)", borderRadius: 13, padding: 13 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 9 }}>
+                      <Search size={12} color="#4ADE80" />
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#4ADE80", letterSpacing: 1, textTransform: "uppercase" }}>
+                        Fontes consultadas
+                      </span>
+                    </div>
+                    {m.dados.codigo && (
+                      <div style={{ fontSize: 12.5, color: "#C7C9CE", marginBottom: 8 }}>
+                        Código {m.dados.codigo} — {m.dados.marca}. Veja as fontes abaixo (não interpretei o conteúdo por você — confira antes de aplicar):
+                      </div>
+                    )}
+                    {m.dados.resultados.map((r, ri) => (
+                      <a
+                        key={ri}
+                        href={r.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: "block", marginBottom: 9, textDecoration: "none" }}
+                      >
+                        {r.tipoFonte && (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              fontSize: 9,
+                              fontFamily: "'JetBrains Mono',monospace",
+                              padding: "2px 7px",
+                              borderRadius: 20,
+                              marginBottom: 3,
+                              color: r.confiabilidade === "alta" ? "#4ADE80" : r.confiabilidade === "baixa" ? "#8A8A90" : "#E9C878",
+                              background: r.confiabilidade === "alta" ? "rgba(74,222,128,0.10)" : r.confiabilidade === "baixa" ? "rgba(255,255,255,0.05)" : "rgba(233,200,120,0.10)",
+                            }}
+                          >
+                            {r.tipoFonte}
+                          </span>
+                        )}
+                        <div style={{ fontSize: 12.5, color: "#9B8AFB", fontWeight: 600, lineHeight: 1.4 }}>{r.titulo}</div>
+                        {r.trecho && <div style={{ fontSize: 11, color: "#8A8A90", marginTop: 2, lineHeight: 1.45 }}>{r.trecho}</div>}
+                        <div style={{ fontSize: 10, color: "#5A5A5F", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.url}</div>
+                      </a>
+                    ))}
+                    <div style={{ fontSize: 10, color: "#5A5A5F", marginTop: 4 }}>Pesquisa: "{m.dados.query}"</div>
+                  </div>
                 ) : (
                   <div
                     style={{
@@ -13971,14 +14184,16 @@ function AssistenteTecnicoIA() {
               value={entrada}
               onChange={(e) => setEntrada(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && enviar()}
-              placeholder="Descreva o sintoma ou código de erro..."
-              style={{ ...inputStyle, flex: 1 }}
+              placeholder={buscando ? "Pesquisando, aguarde..." : "Descreva o sintoma ou código de erro..."}
+              disabled={buscando}
+              style={{ ...inputStyle, flex: 1, opacity: buscando ? 0.6 : 1 }}
             />
             <button
               onClick={enviar}
-              style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 11, background: "rgba(155,138,251,0.15)", border: "1px solid rgba(155,138,251,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+              disabled={buscando}
+              style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 11, background: "rgba(155,138,251,0.15)", border: "1px solid rgba(155,138,251,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: buscando ? "default" : "pointer", opacity: buscando ? 0.5 : 1 }}
             >
-              <Send size={16} color="#B9ADFC" />
+              {buscando ? <Loader2 size={16} color="#B9ADFC" className="spin" /> : <Send size={16} color="#B9ADFC" />}
             </button>
           </div>
         </>
