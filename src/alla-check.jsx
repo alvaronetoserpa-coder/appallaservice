@@ -782,9 +782,11 @@ function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
         </div>
         {MODULES.map((m) => {
           const Icon = m.icon;
-          return (
-            <ItemMenu key={m.key} modulo={m} onClick={() => m.active && (onNavigate(m.key), onClose())} />
-          );
+          // Sem onClose() no clique de propósito: o Menu (__menu__) continua
+          // guardado por baixo na pilha. É isso que faz o Voltar, ao sair da
+          // tela escolhida, reabrir o Menu em vez de ir direto ao Painel —
+          // exatamente a hierarquia Painel ↔ Menu ↔ Ferramentas.
+          return <ItemMenu key={m.key} modulo={m} onClick={() => m.active && onNavigate(m.key)} />;
         })}
         {/* conta do usuário e saída */}
         <div style={{ marginTop: 22, paddingTop: 16, borderTop: "1px solid #161616" }}>
@@ -14365,20 +14367,37 @@ function ParticulasGeladas() {
 }
 
 function AllaCheckAppInterno({ usuario }) {
-  /* Pilha de navegação: "view" é sempre o topo (a tela atual), então
-     nenhuma das ~30 comparações "view === ..." espalhadas pelo roteador
-     precisa mudar. "navigate" empilha; "goBack" desempilha. Isso corrige
-     o botão Voltar, que antes ia direto para "home" em qualquer tela. */
+  /* Pilha de navegação com o Menu como um NÍVEL DE VERDADE da hierarquia:
+       ["home"]                          → Painel
+       ["home","__menu__"]               → Painel + Menu aberto
+       ["home","__menu__","ferramentas"] → dentro de Ferramentas
+       ["home","__menu__","ferramentas","tool-os"] → dentro de uma ferramenta
+     "goBack" sempre desempilha UM nível, então:
+       tool-os → ferramentas → __menu__ (reabre o Menu) → home (Painel)
+     exatamente a hierarquia pedida: Painel ↔ Menu ↔ Ferramentas ↔ Ferramenta.
+     "__menu__" nunca é uma tela de conteúdo — é só o marcador de que o
+     Menu está sobreposto à última tela real abaixo dele. */
   const [pilha, setPilha] = useState(["home"]);
-  const view = pilha[pilha.length - 1];
+  const view = pilha[pilha.length - 1]; // topo bruto (pode ser "__menu__")
+  const menuOpen = view === "__menu__";
+  // tela real a exibir por trás do Menu (ou a própria tela, se o Menu não
+  // estiver aberto) — é isso que alimenta todo o roteador de telas abaixo,
+  // então abrir/fechar o Menu nunca troca o conteúdo por baixo dele.
+  const telaReal = (() => {
+    for (let i = pilha.length - 1; i >= 0; i--) {
+      if (pilha[i] !== "__menu__") return pilha[i];
+    }
+    return "home";
+  })();
 
   const navigate = useCallback((destino) => {
     setPilha((p) => {
       // não empilha se já estamos exatamente nessa tela (evita duplicar
       // no histórico ao clicar repetido na mesma área — regra 10)
       if (p[p.length - 1] === destino) return p;
-      // navegar para "home" a partir de qualquer ponto reinicia a pilha:
-      // é o "início" da hierarquia, não deveria empilhar sobre si mesma.
+      // navegar para "home" a partir de qualquer ponto reinicia a pilha
+      // inteira — é o único jeito de "zerar" a hierarquia de propósito
+      // (ex.: logo, ou uma ação que precisa mandar direto pro início).
       if (destino === "home") return ["home"];
       return [...p, destino];
     });
@@ -14390,7 +14409,7 @@ function AllaCheckAppInterno({ usuario }) {
 
   // Botão físico Voltar do Android: cada navegação empurra uma entrada no
   // histórico do navegador; voltar aciona popstate, que desempilha uma
-  // tela em vez de sair do app ou pular direto para o Painel.
+  // tela (ou fecha o Menu) em vez de sair do app ou pular direto pro Painel.
   useEffect(() => {
     try { window.history.pushState({ allaDepth: pilha.length }, ""); } catch {}
   }, [pilha.length]);
@@ -14404,14 +14423,13 @@ function AllaCheckAppInterno({ usuario }) {
   }, []);
 
   const setView = navigate; // mantém compatibilidade com o nome antigo
-  const { telaVisivel, saindo } = useTransicaoTela(view);
+  const { telaVisivel, saindo } = useTransicaoTela(telaReal);
   const [reportCount, setReportCount] = useState(0);
   const [orcamentosCount, setOrcamentosCount] = useState(0);
   const [vendasCount, setVendasCount] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [importProgress, setImportProgress] = useState(null);
   const [importDone, setImportDone] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const refreshCount = useCallback(async () => {
     // "Ordens Concluídas" deve contar as OS finalizadas (comuns + OS Frio),
@@ -14549,7 +14567,7 @@ function AllaCheckAppInterno({ usuario }) {
 
       <MenuDrawer
         open={menuOpen}
-        onClose={() => setMenuOpen(false)}
+        onClose={goBack}
         onNavigate={setView}
         usuario={usuario}
         onSair={async () => {
@@ -14563,23 +14581,23 @@ function AllaCheckAppInterno({ usuario }) {
         }}
       />
 
-      {view !== "home" && view !== "gestao-inteligente" && view !== "financeiro" && (
+      {telaReal !== "home" && telaReal !== "gestao-inteligente" && telaReal !== "financeiro" && (
         <Header
-          title={titles[view]}
+          title={titles[telaReal]}
           onBack={goBack}
-          onMenu={() => setMenuOpen(true)}
+          onMenu={() => navigate("__menu__")}
         />
       )}
 
-      <div style={{ flex: view === "home" ? "0 0 auto" : 1 }}>
-        <LimiteDeErro tela={view} onVoltar={goBack}>
+      <div style={{ flex: telaReal === "home" ? "0 0 auto" : 1 }}>
+        <LimiteDeErro tela={telaReal} onVoltar={goBack}>
         {/* key={view}: faz o React remontar ao trocar de tela, disparando
             a animação de entrada a cada navegação (ida e volta). */}
         <div key={telaVisivel}>
         {telaVisivel === "home" && (
           <HomeScreen
             onNavigate={setView}
-            onMenu={() => setMenuOpen(true)}
+            onMenu={() => navigate("__menu__")}
             reportCount={reportCount}
             orcamentosCount={orcamentosCount}
             vendasCount={vendasCount}
