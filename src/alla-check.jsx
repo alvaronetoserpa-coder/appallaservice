@@ -1681,7 +1681,12 @@ function BtuCalculator() {
       }[form.tipoAmbiente] || 1;
     btu *= tipoMult;
 
-    const recomendado = BTU_CAPACITIES.find((cap) => cap >= btu) || BTU_CAPACITIES[BTU_CAPACITIES.length - 1];
+    // Antes: quando o cálculo passava do maior item da lista (60.000), o
+    // .find() não achava nada e caía no "|| BTU_CAPACITIES[último]" — ou
+    // seja, QUALQUER valor acima de 60.000 era silenciosamente travado em
+    // exatos 60.000. Corrigido: acima da lista comercial, usa o valor
+    // calculado de verdade (a mesma fórmula, sem limite superior).
+    const recomendado = BTU_CAPACITIES.find((cap) => cap >= btu) || Math.round(btu);
     const tr = (recomendado / 12000).toFixed(1);
 
     const observacoes = [];
