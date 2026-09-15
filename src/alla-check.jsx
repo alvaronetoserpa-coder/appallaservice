@@ -65,6 +65,7 @@ const FIRESTORE_COLLECTION_MAP = {
   "venda-cotacoes": "venda_cotacoes",
   "agenda-cortes": "agenda_cortes",
   "agenda-cortes-servicos": "agenda_cortes_servicos",
+  "visitas-tecnicas": "visitas_tecnicas",
   manuais: "manuais",
 };
 
@@ -1394,6 +1395,7 @@ const inputStyle = {
 const TOOLS = [
   { key: "alla-venda", label: "ALLA VENDA", desc: "Venda de ar-condicionado: catálogo, cotações e propostas", icon: Snowflake, active: true },
   { key: "agenda-cortes", label: "Agenda de Cortes", desc: "Agenda provisória de sábado — Barbearia Serpas", icon: CalendarClock, active: true },
+  { key: "visita-tecnica", label: "Visita Técnica", desc: "Vistoria completa com relatório em PDF", icon: ClipboardCheck, active: true },
   { key: "assinaturas", label: "Assinaturas", desc: "Contratos recorrentes, vencimentos e cobrança", icon: CalendarClock, active: true },
   { key: "btu", label: "Calculadora de BTU", desc: "Dimensionamento de ar-condicionado por ambiente", icon: Calculator, active: true },
   { key: "conversor", label: "Conversor Técnico", desc: "BTU, pressão, temperatura, potência e medidas", icon: Ruler, active: true },
@@ -1492,7 +1494,7 @@ function ToolCard({ tool, onClick }) {
 /* Agrupamento visual das ferramentas. Nenhuma ferramenta é removida:
    o que não estiver listado aqui cai automaticamente em "Utilidades". */
 const TOOL_CATEGORIAS = [
-  { titulo: "Gestão", chaves: ["alla-venda", "agenda-cortes", "assinaturas", "pmoc-tool"] },
+  { titulo: "Gestão", chaves: ["alla-venda", "agenda-cortes", "visita-tecnica", "assinaturas", "pmoc-tool"] },
   { titulo: "Operação", chaves: ["rastreio-tecnico", "laudo-tecnico"] },
   { titulo: "Equipamentos", chaves: ["historico-equipamento", "manuais"] },
   { titulo: "Financeiro", chaves: ["relatorios-financeiros"] },
@@ -1505,6 +1507,7 @@ const TOOL_CATEGORIAS = [
 const TOOL_CORES = {
   "alla-venda": "#3FBCD1",
   "agenda-cortes": "#E9C878",
+  "visita-tecnica": "#3FBCD1",
   assinaturas: "#C9A24B",
   "pmoc-tool": "#9B8AFB",
   "rastreio-tecnico": "#4681DF",
@@ -2899,8 +2902,9 @@ function orcIaExtrairDados(textoOriginal) {
 /* ---------------- Componente principal ---------------- */
 function OrcamentoIAAssistente({ onRefreshApp }) {
   const [texto, setTexto] = useState("");
-  const [etapa, setEtapa] = useState(0); // 0 = digitando, 1..5 = processando, 6 = revisao
+  const [etapa, setEtapa] = useState(0); // 0 = digitando, 1..4 = processando
   const [dadosExtraidos, setDadosExtraidos] = useState(null);
+  const [orcamentoSalvo, setOrcamentoSalvo] = useState(null); // depois de salvar, mostra o detalhe real
 
   const ETAPAS_PROCESSAMENTO = [
     "Analisando informações...",
@@ -2924,10 +2928,68 @@ function OrcamentoIAAssistente({ onRefreshApp }) {
     setEtapa(0);
   };
 
+  // Mesma lógica de "Transformar em OS" usada no módulo normal de
+  // Orçamentos — replicada aqui porque esta tela funciona por fora do
+  // OrcamentosModule, mas grava exatamente no mesmo formato/coleção.
+  const converterEmOS = async (o) => {
+    try {
+      const idOS = uid();
+      const numeroOS = await proximoNumero("OS", "ordens-servico:");
+      const os = {
+        id: idOS,
+        numero: numeroOS,
+        clienteNome: o.nome,
+        clienteTelefone: o.telefone,
+        clienteEndereco: o.endereco,
+        eqTipo: o.equipamento?.tipo || "",
+        eqMarca: o.equipamento?.marca || "",
+        eqModelo: o.equipamento?.modelo || "",
+        eqBtus: o.equipamento?.btus || "",
+        tipoServico: o.servico?.tipo || "",
+        problemaRelatado: "",
+        diagnostico: "",
+        materiaisUtilizados: (o.itens || []).map((it) => it.descricao).filter(Boolean).join("; "),
+        observacoes: `Origem: Orçamento ${o.numero} (gerado pelo Assistente IA).`,
+        data: new Date().toISOString().slice(0, 10),
+        maoDeObra: String(o.maoDeObra?.valor || 0),
+        deslocamento: String(o.deslocamento?.valor || 0),
+        desconto: String(o.descontoValor || 0),
+        status: "ABERTA",
+        valorTotal: o.valorFinal,
+        createdAt: new Date().toISOString(),
+        origemOrcamentoId: o.id,
+        origemOrcamentoNumero: o.numero,
+      };
+      await window.storage.set(`ordens-servico:${idOS}`, JSON.stringify(os));
+      const orcAtualizado = { ...o, status: "CONVERTIDO EM OS", osVinculadaId: idOS, osVinculadaNumero: numeroOS };
+      await window.storage.set(`orcamentos:${o.id}`, JSON.stringify(orcAtualizado));
+      setOrcamentoSalvo(orcAtualizado);
+      onRefreshApp && onRefreshApp();
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "converter em OS"));
+    }
+  };
+
+  // Depois de salvo: mostra a tela de detalhe REAL do orçamento — mesma
+  // usada em Recibos & Orçamentos — com PDF, WhatsApp, editar e converter
+  // em OS, em vez de simplesmente voltar para o campo de texto em branco.
+  if (orcamentoSalvo) {
+    return (
+      <OrcamentoDetail
+        orcamento={orcamentoSalvo}
+        onBack={() => { setOrcamentoSalvo(null); setDadosExtraidos(null); setTexto(""); }}
+        onChanged={(atualizado) => setOrcamentoSalvo(atualizado)}
+        onEditar={(o) => { setOrcamentoSalvo(null); setDadosExtraidos(o); }}
+        onNovaVersao={(o) => { setOrcamentoSalvo(null); setDadosExtraidos({ ...o, _novaVersaoDe: o.id }); }}
+        onConverterOS={converterEmOS}
+      />
+    );
+  }
+
   if (dadosExtraidos) {
     return (
       <div>
-        {dadosExtraidos._naoDetectados.length > 0 && (
+        {dadosExtraidos._naoDetectados && dadosExtraidos._naoDetectados.length > 0 && (
           <div style={{ margin: 16, marginBottom: 0, background: "rgba(233,200,120,0.08)", border: "1px solid rgba(233,200,120,0.3)", borderRadius: 12, padding: "12px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
               <span style={{ color: "#E9C878", fontSize: 13 }}>⚠</span>
@@ -2941,7 +3003,7 @@ function OrcamentoIAAssistente({ onRefreshApp }) {
         <OrcamentoForm
           editing={dadosExtraidos}
           onCancel={() => setDadosExtraidos(null)}
-          onDone={() => { setDadosExtraidos(null); setTexto(""); onRefreshApp && onRefreshApp(); }}
+          onDone={(obj) => { setDadosExtraidos(null); setOrcamentoSalvo(obj); onRefreshApp && onRefreshApp(); }}
         />
       </div>
     );
@@ -14596,6 +14658,777 @@ function AssistenteTecnicoIA() {
   );
 }
 
+/* ================= Visita Técnica =================
+   Ferramenta isolada — não toca em OS, Orçamentos, Recibos, Financeiro,
+   Manuais ou Assistente IA. Reaproveita componentes já existentes do app
+   (Field, LinhaDupla, OSFotos, compartilhar, proximoNumero,
+   carregarTudoStorage, GARANTIA_CLAUSULA_TEXTO, PDF_ESTILO_PREMIUM). */
+
+const VT_STATUS = ["Conforme", "Atenção", "Não conforme", "N/A"];
+const VT_STATUS_COR = { "Conforme": "#4ADE80", "Atenção": "#E9C878", "Não conforme": "#F0605A", "N/A": "#6E6E73" };
+const VT_STATUS_ICONE = { "Conforme": "✅", "Atenção": "⚠️", "Não conforme": "❌", "N/A": "➖" };
+
+const VT_ITENS_ELETRICA = ["Tensão fase/neutro", "Tensão fase/fase", "Aterramento", "Disjuntor", "Bitola dos cabos", "Estado dos cabos", "Terminais elétricos", "Aperto das conexões", "Sinais de aquecimento", "Oxidação", "Emendas elétricas", "Quadro elétrico"];
+const VT_ITENS_DRENO = ["Dreno desobstruído", "Inclinação adequada", "Vazamento", "Bandeja de condensado", "Mangueira/tubulação", "Bomba de dreno", "Funcionamento da bomba", "Teste de escoamento", "Sinais de lodo ou sujeira"];
+const VT_ITENS_INSTALACAO = ["Fixação da evaporadora", "Nivelamento", "Fixação da condensadora", "Espaçamento da condensadora", "Ventilação adequada", "Tubulação frigorífica", "Isolamento térmico", "Dreno", "Cabos elétricos", "Disjuntor", "Aterramento", "Comprimento da linha", "Desnível", "Organização da instalação", "Estado geral da infraestrutura"];
+const VT_ITENS_VISUAL = ["Equipamento íntegro", "Carenagem", "Filtros", "Serpentina", "Turbina", "Ventilador", "Hélice", "Condensadora", "Isolamento", "Tubulações", "Conexões", "Dreno", "Instalação elétrica", "Fixações"];
+
+const VT_TIPOS_EQUIPAMENTO = ["Split Hi Wall", "Split Piso-Teto", "Cassete", "Dutado", "Multi Split", "VRF", "Outro"];
+const VT_GASES = ["R32", "R410A", "R22", "Outro"];
+const VT_CONDICAO_GERAL = ["Normal", "Requer atenção", "Necessita manutenção", "Necessita reparo", "Equipamento fora de operação"];
+const VT_PRIORIDADE = ["Baixa", "Média", "Alta", "Crítica"];
+const VT_CATEGORIAS_FOTO = ["Equipamento", "Etiqueta", "Evaporadora", "Condensadora", "Pressão/manômetro", "Medição elétrica", "Dreno", "Tubulação", "Terminais elétricos", "Problema encontrado", "Instalação", "Outras"];
+
+/* Checklist reutilizável: uma lista de itens, cada um com 4 estados
+   possíveis + observação livre. Usado nas seções Elétrica, Dreno,
+   Instalação e Inspeção Visual. */
+function VtChecklist({ titulo, itens, respostas, setRespostas, obs, setObs }) {
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14, color: "#F3F3F1", marginBottom: 10 }}>{titulo}</div>
+      {itens.map((item) => (
+        <div key={item} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          <div style={{ fontSize: 12.5, color: "#D5D5D8", marginBottom: 6 }}>{item}</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {VT_STATUS.map((st) => {
+              const ativo = respostas[item] === st;
+              return (
+                <button
+                  key={st}
+                  onClick={() => setRespostas((r) => ({ ...r, [item]: st }))}
+                  style={{
+                    fontSize: 11,
+                    padding: "5px 10px",
+                    borderRadius: 20,
+                    border: `1px solid ${ativo ? VT_STATUS_COR[st] : "rgba(255,255,255,0.1)"}`,
+                    background: ativo ? `${VT_STATUS_COR[st]}22` : "transparent",
+                    color: ativo ? VT_STATUS_COR[st] : "#8A8A90",
+                    cursor: "pointer",
+                    fontFamily: "'Roboto',sans-serif",
+                  }}
+                >
+                  {VT_STATUS_ICONE[st]} {st}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <Field label="Observações">
+        <textarea value={obs} onChange={(e) => setObs(e.target.value)} style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} />
+      </Field>
+    </div>
+  );
+}
+
+/* Conta quantos itens de UM checklist caíram em cada status — usado no
+   resumo automático (regra 12). */
+function vtContarStatus(respostas) {
+  const c = { "Conforme": 0, "Atenção": 0, "Não conforme": 0, "N/A": 0 };
+  Object.values(respostas).forEach((v) => { if (c[v] !== undefined) c[v]++; });
+  return c;
+}
+function vtSomarContagens(...listas) {
+  const total = { "Conforme": 0, "Atenção": 0, "Não conforme": 0, "N/A": 0 };
+  listas.forEach((l) => { Object.keys(total).forEach((k) => { total[k] += l[k] || 0; }); });
+  return total;
+}
+
+/* ---------------- Formulário completo da visita ---------------- */
+function VisitaTecnicaForm({ editing, onCancel, onDone }) {
+  const [aba, setAba] = useState("cliente"); // navegação por seções, tudo num só salvamento
+
+  const [nome, setNome] = useState(editing?.clienteNome || "");
+  const [telefone, setTelefone] = useState(editing?.clienteTelefone || "");
+  const [email, setEmail] = useState(editing?.clienteEmail || "");
+  const [endereco, setEndereco] = useState(editing?.endereco || "");
+  const [numero, setNumeroEnd] = useState(editing?.enderecoNumero || "");
+  const [complemento, setComplemento] = useState(editing?.complemento || "");
+  const [cidade, setCidade] = useState(editing?.cidade || "");
+  const [obsCliente, setObsCliente] = useState(editing?.observacoesCliente || "");
+
+  const [tipoEquipamento, setTipoEquipamento] = useState(editing?.tipoEquipamento || "Split Hi Wall");
+  const [marca, setMarca] = useState(editing?.marca || "");
+  const [modelo, setModelo] = useState(editing?.modelo || "");
+  const [numeroSerie, setNumeroSerie] = useState(editing?.numeroSerie || "");
+  const [capacidade, setCapacidade] = useState(editing?.capacidade || "");
+  const [btu, setBtu] = useState(editing?.btu || "");
+  const [gas, setGas] = useState(editing?.gas || "R32");
+  const [tensaoNominal, setTensaoNominal] = useState(editing?.tensaoNominal || "");
+  const [anoEquipamento, setAnoEquipamento] = useState(editing?.anoEquipamento || "");
+  const [ambiente, setAmbiente] = useState(editing?.ambiente || "");
+
+  // elétrica
+  const [tensaoMedida, setTensaoMedida] = useState(editing?.inspecaoEletrica?.tensaoMedida || "");
+  const [correnteMedida, setCorrenteMedida] = useState(editing?.inspecaoEletrica?.correnteMedida || "");
+  const [respEletrica, setRespEletrica] = useState(editing?.inspecaoEletrica?.itens || {});
+  const [obsEletrica, setObsEletrica] = useState(editing?.inspecaoEletrica?.observacoes || "");
+
+  // sistema frigorífico
+  const [pressaoSuccao, setPressaoSuccao] = useState(editing?.sistemaFrigorifico?.pressaoSuccao || "");
+  const [pressaoDescarga, setPressaoDescarga] = useState(editing?.sistemaFrigorifico?.pressaoDescarga || "");
+  const [unidadePressao, setUnidadePressao] = useState(editing?.sistemaFrigorifico?.unidadePressao || "PSI");
+  const [tempSuccao, setTempSuccao] = useState(editing?.sistemaFrigorifico?.tempSuccao || "");
+  const [tempLinhaLiquida, setTempLinhaLiquida] = useState(editing?.sistemaFrigorifico?.tempLinhaLiquida || "");
+  const [superaquecimento, setSuperaquecimento] = useState(editing?.sistemaFrigorifico?.superaquecimento || "");
+  const [subResfriamento, setSubResfriamento] = useState(editing?.sistemaFrigorifico?.subResfriamento || "");
+  const [indicioVazamento, setIndicioVazamento] = useState(editing?.sistemaFrigorifico?.indicioVazamento || "Não");
+  const [comprimentoLinha, setComprimentoLinha] = useState(editing?.sistemaFrigorifico?.comprimentoLinha || "");
+  const [desnivel, setDesnivel] = useState(editing?.sistemaFrigorifico?.desnivel || "");
+  const [obsFrigorifico, setObsFrigorifico] = useState(editing?.sistemaFrigorifico?.observacoes || "");
+
+  // dreno
+  const [respDreno, setRespDreno] = useState(editing?.dreno?.itens || {});
+  const [obsDreno, setObsDreno] = useState(editing?.dreno?.observacoes || "");
+
+  // troca térmica (ΔT automático)
+  const [tempRetorno, setTempRetorno] = useState(editing?.trocaTermica?.tempRetorno || "");
+  const [tempInsuflamento, setTempInsuflamento] = useState(editing?.trocaTermica?.tempInsuflamento || "");
+  const [estadoFiltro, setEstadoFiltro] = useState(editing?.trocaTermica?.estadoFiltro || "");
+  const [estadoEvaporadora, setEstadoEvaporadora] = useState(editing?.trocaTermica?.estadoEvaporadora || "");
+  const [estadoCondensadora, setEstadoCondensadora] = useState(editing?.trocaTermica?.estadoCondensadora || "");
+  const deltaT = useMemo(() => {
+    const r = parseFloat(tempRetorno), i = parseFloat(tempInsuflamento);
+    return isFinite(r) && isFinite(i) ? (r - i).toFixed(1) : null;
+  }, [tempRetorno, tempInsuflamento]);
+
+  // instalação e inspeção visual (checklists)
+  const [respInstalacao, setRespInstalacao] = useState(editing?.parametrosInstalacao?.itens || {});
+  const [obsInstalacao, setObsInstalacao] = useState(editing?.parametrosInstalacao?.observacoes || "");
+  const [respVisual, setRespVisual] = useState(editing?.inspecaoVisual?.itens || {});
+  const [obsVisual, setObsVisual] = useState(editing?.inspecaoVisual?.observacoes || "");
+
+  // fotos — uma lista só, cada foto guarda sua categoria e descrição
+  const [fotos, setFotos] = useState(editing?.fotos || []);
+  const [categoriaFotoAtual, setCategoriaFotoAtual] = useState("Equipamento");
+
+  // diagnóstico
+  const [condicaoGeral, setCondicaoGeral] = useState(editing?.diagnostico?.condicaoGeral || "Normal");
+  const [problemasEncontrados, setProblemasEncontrados] = useState(editing?.diagnostico?.problemasEncontrados || "");
+  const [possiveisCausas, setPossiveisCausas] = useState(editing?.diagnostico?.possiveisCausas || "");
+  const [recomendacoes, setRecomendacoes] = useState(editing?.diagnostico?.recomendacoes || "");
+  const [servicosRecomendados, setServicosRecomendados] = useState(editing?.servicosRecomendados || "");
+  const [materiaisNecessarios, setMateriaisNecessarios] = useState(editing?.materiais || "");
+  const [prioridade, setPrioridade] = useState(editing?.prioridade || "Média");
+
+  const [saving, setSaving] = useState(false);
+
+  const resumo = useMemo(
+    () => vtSomarContagens(vtContarStatus(respEletrica), vtContarStatus(respDreno), vtContarStatus(respInstalacao), vtContarStatus(respVisual)),
+    [respEletrica, respDreno, respInstalacao, respVisual]
+  );
+
+  const montarObjeto = async () => {
+    const numeroVisita = editing?.numero || (await proximoNumero("VT", "visitas-tecnicas:"));
+    return {
+      id: editing?.id || uid(),
+      numero: numeroVisita,
+      clienteNome: nome,
+      clienteTelefone: telefone,
+      clienteEmail: email,
+      endereco, enderecoNumero: numero, complemento, cidade,
+      observacoesCliente: obsCliente,
+      tipoEquipamento, marca, modelo, numeroSerie, capacidade, btu, gas, tensaoNominal, anoEquipamento, ambiente,
+      inspecaoEletrica: { tensaoMedida, correnteMedida, itens: respEletrica, observacoes: obsEletrica },
+      sistemaFrigorifico: { pressaoSuccao, pressaoDescarga, unidadePressao, tempSuccao, tempLinhaLiquida, superaquecimento, subResfriamento, indicioVazamento, comprimentoLinha, desnivel, observacoes: obsFrigorifico },
+      dreno: { itens: respDreno, observacoes: obsDreno },
+      trocaTermica: { tempRetorno, tempInsuflamento, deltaT, estadoFiltro, estadoEvaporadora, estadoCondensadora },
+      parametrosInstalacao: { itens: respInstalacao, observacoes: obsInstalacao },
+      inspecaoVisual: { itens: respVisual, observacoes: obsVisual },
+      fotos,
+      diagnostico: { condicaoGeral, problemasEncontrados, possiveisCausas, recomendacoes },
+      servicosRecomendados,
+      materiais: materiaisNecessarios,
+      prioridade,
+      resumo,
+      status: "Concluída",
+      orcamentoId: editing?.orcamentoId || null,
+      tecnicoNome: editing?.tecnicoNome || "",
+      createdAt: editing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  };
+
+  const salvar = async () => {
+    if (!nome.trim()) return notificarErroBanco("Informe o nome do cliente antes de salvar.");
+    setSaving(true);
+    try {
+      const obj = await montarObjeto();
+      await window.storage.set(`visitas-tecnicas:${obj.id}`, JSON.stringify(obj));
+      onDone(obj);
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar visita técnica"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const ABAS = [
+    ["cliente", "Cliente"],
+    ["equipamento", "Equipamento"],
+    ["eletrica", "Elétrica"],
+    ["frigorifico", "Frigorífico"],
+    ["dreno", "Dreno"],
+    ["termica", "Troca térmica"],
+    ["instalacao", "Instalação"],
+    ["visual", "Visual"],
+    ["fotos", "Fotos"],
+    ["diagnostico", "Diagnóstico"],
+  ];
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+
+      <div style={{ display: "flex", gap: 14, overflowX: "auto", marginBottom: 16, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
+        {ABAS.map(([id, nomeAba]) => (
+          <button
+            key={id}
+            onClick={() => setAba(id)}
+            style={{
+              flexShrink: 0,
+              background: "none",
+              border: "none",
+              borderBottom: `2px solid ${aba === id ? "#C9A24B" : "transparent"}`,
+              color: aba === id ? "#E9C878" : "#6E6E73",
+              fontFamily: "'Roboto',sans-serif",
+              fontWeight: aba === id ? 600 : 400,
+              fontSize: 11.5,
+              padding: "0 0 8px",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {nomeAba}
+          </button>
+        ))}
+      </div>
+
+      {aba === "cliente" && (
+        <div>
+          <Field label="Nome do cliente"><input style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
+          <LinhaDupla>
+            <Field label="Telefone"><input style={inputStyle} value={telefone} onChange={(e) => setTelefone(e.target.value)} inputMode="numeric" /></Field>
+            <Field label="E-mail"><input style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          </LinhaDupla>
+          <Field label="Endereço"><input style={inputStyle} value={endereco} onChange={(e) => setEndereco(e.target.value)} /></Field>
+          <LinhaDupla>
+            <Field label="Número"><input style={inputStyle} value={numero} onChange={(e) => setNumeroEnd(e.target.value)} /></Field>
+            <Field label="Complemento"><input style={inputStyle} value={complemento} onChange={(e) => setComplemento(e.target.value)} /></Field>
+          </LinhaDupla>
+          <Field label="Cidade"><input style={inputStyle} value={cidade} onChange={(e) => setCidade(e.target.value)} /></Field>
+          <Field label="Observações"><textarea style={{ ...inputStyle, minHeight: 60 }} value={obsCliente} onChange={(e) => setObsCliente(e.target.value)} /></Field>
+        </div>
+      )}
+
+      {aba === "equipamento" && (
+        <div>
+          <Field label="Tipo de equipamento">
+            <select style={{ ...inputStyle, appearance: "none" }} value={tipoEquipamento} onChange={(e) => setTipoEquipamento(e.target.value)}>
+              {VT_TIPOS_EQUIPAMENTO.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <LinhaDupla>
+            <Field label="Marca"><input style={inputStyle} value={marca} onChange={(e) => setMarca(e.target.value)} /></Field>
+            <Field label="Modelo"><input style={inputStyle} value={modelo} onChange={(e) => setModelo(e.target.value)} /></Field>
+          </LinhaDupla>
+          <Field label="Número de série"><input style={inputStyle} value={numeroSerie} onChange={(e) => setNumeroSerie(e.target.value)} /></Field>
+          <LinhaDupla>
+            <Field label="Capacidade"><input style={inputStyle} value={capacidade} onChange={(e) => setCapacidade(e.target.value)} /></Field>
+            <Field label="BTU"><input style={inputStyle} value={btu} onChange={(e) => setBtu(e.target.value)} inputMode="numeric" /></Field>
+          </LinhaDupla>
+          <LinhaDupla>
+            <Field label="Gás">
+              <select style={{ ...inputStyle, appearance: "none" }} value={gas} onChange={(e) => setGas(e.target.value)}>
+                {VT_GASES.map((g) => <option key={g}>{g}</option>)}
+              </select>
+            </Field>
+            <Field label="Tensão nominal"><input style={inputStyle} value={tensaoNominal} onChange={(e) => setTensaoNominal(e.target.value)} placeholder="220V" /></Field>
+          </LinhaDupla>
+          <LinhaDupla>
+            <Field label="Ano do equipamento"><input style={inputStyle} value={anoEquipamento} onChange={(e) => setAnoEquipamento(e.target.value)} inputMode="numeric" /></Field>
+            <Field label="Ambiente instalado"><input style={inputStyle} value={ambiente} onChange={(e) => setAmbiente(e.target.value)} placeholder="Quarto, sala..." /></Field>
+          </LinhaDupla>
+        </div>
+      )}
+
+      {aba === "eletrica" && (
+        <div>
+          <LinhaDupla>
+            <Field label="Tensão medida (V)"><input style={inputStyle} value={tensaoMedida} onChange={(e) => setTensaoMedida(e.target.value)} inputMode="decimal" /></Field>
+            <Field label="Corrente medida (A)"><input style={inputStyle} value={correnteMedida} onChange={(e) => setCorrenteMedida(e.target.value)} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          <VtChecklist titulo="Itens elétricos" itens={VT_ITENS_ELETRICA} respostas={respEletrica} setRespostas={setRespEletrica} obs={obsEletrica} setObs={setObsEletrica} />
+        </div>
+      )}
+
+      {aba === "frigorifico" && (
+        <div>
+          <LinhaDupla>
+            <Field label="Pressão de sucção"><input style={inputStyle} value={pressaoSuccao} onChange={(e) => setPressaoSuccao(e.target.value)} inputMode="decimal" /></Field>
+            <Field label="Pressão de descarga"><input style={inputStyle} value={pressaoDescarga} onChange={(e) => setPressaoDescarga(e.target.value)} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          <Field label="Unidade da pressão">
+            <select style={{ ...inputStyle, appearance: "none" }} value={unidadePressao} onChange={(e) => setUnidadePressao(e.target.value)}>
+              {["PSI", "Bar", "kPa"].map((u) => <option key={u}>{u}</option>)}
+            </select>
+          </Field>
+          <LinhaDupla>
+            <Field label="Temp. de sucção (°C)"><input style={inputStyle} value={tempSuccao} onChange={(e) => setTempSuccao(e.target.value)} inputMode="decimal" /></Field>
+            <Field label="Temp. linha líquida (°C)"><input style={inputStyle} value={tempLinhaLiquida} onChange={(e) => setTempLinhaLiquida(e.target.value)} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          <LinhaDupla>
+            <Field label="Superaquecimento"><input style={inputStyle} value={superaquecimento} onChange={(e) => setSuperaquecimento(e.target.value)} inputMode="decimal" /></Field>
+            <Field label="Sub-resfriamento"><input style={inputStyle} value={subResfriamento} onChange={(e) => setSubResfriamento(e.target.value)} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          <Field label="Indício de vazamento">
+            <select style={{ ...inputStyle, appearance: "none" }} value={indicioVazamento} onChange={(e) => setIndicioVazamento(e.target.value)}>
+              {["Não", "Sim"].map((v) => <option key={v}>{v}</option>)}
+            </select>
+          </Field>
+          <LinhaDupla>
+            <Field label="Comprimento aprox. da linha (m)"><input style={inputStyle} value={comprimentoLinha} onChange={(e) => setComprimentoLinha(e.target.value)} inputMode="decimal" /></Field>
+            <Field label="Desnível aprox. (m)"><input style={inputStyle} value={desnivel} onChange={(e) => setDesnivel(e.target.value)} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          <Field label="Observações"><textarea style={{ ...inputStyle, minHeight: 60 }} value={obsFrigorifico} onChange={(e) => setObsFrigorifico(e.target.value)} /></Field>
+        </div>
+      )}
+
+      {aba === "dreno" && (
+        <VtChecklist titulo="Dreno / Condensado" itens={VT_ITENS_DRENO} respostas={respDreno} setRespostas={setRespDreno} obs={obsDreno} setObs={setObsDreno} />
+      )}
+
+      {aba === "termica" && (
+        <div>
+          <LinhaDupla>
+            <Field label="Temp. de retorno (°C)"><input style={inputStyle} value={tempRetorno} onChange={(e) => setTempRetorno(e.target.value)} inputMode="decimal" /></Field>
+            <Field label="Temp. de insuflamento (°C)"><input style={inputStyle} value={tempInsuflamento} onChange={(e) => setTempInsuflamento(e.target.value)} inputMode="decimal" /></Field>
+          </LinhaDupla>
+          {deltaT !== null && (
+            <div style={{ background: "#0D0D0E", border: "1px solid rgba(201,162,75,0.3)", borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#8A8A90" }}>ΔT (retorno − insuflamento)</span>
+              <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 20, color: "#E9C878" }}>{deltaT} °C</div>
+            </div>
+          )}
+          <Field label="Estado do filtro"><input style={inputStyle} value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)} /></Field>
+          <Field label="Estado da evaporadora/serpentina"><input style={inputStyle} value={estadoEvaporadora} onChange={(e) => setEstadoEvaporadora(e.target.value)} /></Field>
+          <Field label="Estado da condensadora/serpentina"><input style={inputStyle} value={estadoCondensadora} onChange={(e) => setEstadoCondensadora(e.target.value)} /></Field>
+        </div>
+      )}
+
+      {aba === "instalacao" && (
+        <VtChecklist titulo="Parâmetros da instalação" itens={VT_ITENS_INSTALACAO} respostas={respInstalacao} setRespostas={setRespInstalacao} obs={obsInstalacao} setObs={setObsInstalacao} />
+      )}
+
+      {aba === "visual" && (
+        <VtChecklist titulo="Inspeção visual" itens={VT_ITENS_VISUAL} respostas={respVisual} setRespostas={setRespVisual} obs={obsVisual} setObs={setObsVisual} />
+      )}
+
+      {aba === "fotos" && (
+        <div>
+          <Field label="Categoria da próxima foto">
+            <select style={{ ...inputStyle, appearance: "none" }} value={categoriaFotoAtual} onChange={(e) => setCategoriaFotoAtual(e.target.value)}>
+              {VT_CATEGORIAS_FOTO.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <OSFotos
+            fotos={fotos}
+            setFotos={(atualizador) => {
+              setFotos((antigas) => {
+                const novas = typeof atualizador === "function" ? atualizador(antigas) : atualizador;
+                // rotula qualquer foto nova com a categoria escolhida acima
+                return novas.map((f) => (f.categoria ? f : { ...f, categoria: categoriaFotoAtual }));
+              });
+            }}
+            label="Fotos da visita"
+          />
+          {fotos.length > 0 && (
+            <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {fotos.map((f) => (
+                <span key={f.id} style={{ fontSize: 9.5, padding: "3px 8px", borderRadius: 20, background: "rgba(155,138,251,0.10)", color: "#B9ADFC" }}>{f.categoria}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {aba === "diagnostico" && (
+        <div>
+          <Field label="Condição geral do equipamento">
+            <select style={{ ...inputStyle, appearance: "none" }} value={condicaoGeral} onChange={(e) => setCondicaoGeral(e.target.value)}>
+              {VT_CONDICAO_GERAL.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Problemas encontrados"><textarea style={{ ...inputStyle, minHeight: 70 }} value={problemasEncontrados} onChange={(e) => setProblemasEncontrados(e.target.value)} /></Field>
+          <Field label="Possíveis causas"><textarea style={{ ...inputStyle, minHeight: 60 }} value={possiveisCausas} onChange={(e) => setPossiveisCausas(e.target.value)} /></Field>
+          <Field label="Recomendações técnicas"><textarea style={{ ...inputStyle, minHeight: 60 }} value={recomendacoes} onChange={(e) => setRecomendacoes(e.target.value)} /></Field>
+          <Field label="Serviços recomendados"><textarea style={{ ...inputStyle, minHeight: 50 }} value={servicosRecomendados} onChange={(e) => setServicosRecomendados(e.target.value)} /></Field>
+          <Field label="Materiais/peças necessários"><textarea style={{ ...inputStyle, minHeight: 50 }} value={materiaisNecessarios} onChange={(e) => setMateriaisNecessarios(e.target.value)} /></Field>
+          <Field label="Prioridade">
+            <select style={{ ...inputStyle, appearance: "none" }} value={prioridade} onChange={(e) => setPrioridade(e.target.value)}>
+              {VT_PRIORIDADE.map((p) => <option key={p}>{p}</option>)}
+            </select>
+          </Field>
+
+          {/* Resumo automático — regra 12 */}
+          <div style={{ marginTop: 6, marginBottom: 16 }}>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Resultado da visita</div>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12.5, color: "#4ADE80" }}>🟢 {resumo["Conforme"]} Conforme</span>
+              <span style={{ fontSize: 12.5, color: "#E9C878" }}>🟡 {resumo["Atenção"]} Atenção</span>
+              <span style={{ fontSize: 12.5, color: "#F0605A" }}>🔴 {resumo["Não conforme"]} Não conforme</span>
+              <span style={{ fontSize: 12.5, color: "#6E6E73" }}>➖ {resumo["N/A"]} N/A</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <button onClick={salvar} disabled={saving} style={{ ...btnPrincipal, width: "100%", marginTop: 10, opacity: saving ? 0.6 : 1 }}>
+        {saving ? "Salvando..." : "Finalizar e gerar relatório"}
+      </button>
+    </div>
+  );
+}
+
+/* ---------------- PDF — Relatório de Visita Técnica ---------------- */
+function vtLinhaChecklist(itens, respostas) {
+  return itens
+    .map((item) => {
+      const st = respostas[item] || "N/A";
+      const cor = { "Conforme": "#2E7D32", "Atenção": "#B8860B", "Não conforme": "#C62828", "N/A": "#888" }[st];
+      return `<tr><td>${item}</td><td style="color:${cor};font-weight:600;">${st}</td></tr>`;
+    })
+    .join("");
+}
+
+function visitaTecnicaPDF(v) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const { header, footer } = pdfCabecalhoRodape(LOGO_DATA_URI);
+  const dataFmt = new Date(v.createdAt).toLocaleDateString("pt-BR");
+
+  const fotosPorCategoria = {};
+  (v.fotos || []).forEach((f) => {
+    const c = f.categoria || "Outras";
+    (fotosPorCategoria[c] = fotosPorCategoria[c] || []).push(f);
+  });
+
+  win.document.write(`
+    <html><head><title>Relatório de Visita Técnica ${v.numero} — ALLA SERVICE</title>
+    <style>
+      body{font-family:Arial,sans-serif;color:#1A1A1A;margin:0;}
+      .pdf-page{padding:32px;max-width:760px;margin:0 auto;}
+      h1{font-size:19px;color:#0A0A0B;border-bottom:3px solid #C9A24B;padding-bottom:8px;}
+      h2{font-size:14px;color:#0A0A0B;margin-top:26px;margin-bottom:8px;border-left:4px solid #C9A24B;padding-left:8px;}
+      .pdf-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+      .pdf-logo{width:46px;height:46px;object-fit:contain;}
+      .pdf-brand{font-size:15px;font-weight:700;letter-spacing:1px;}
+      .pdf-tagline{font-size:10px;color:#666;}
+      .pdf-card{background:#F8F7F3;border:1px solid #E3DFD3;border-radius:8px;padding:12px 14px;margin-bottom:10px;}
+      .pdf-table{width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:6px;}
+      .pdf-table td{padding:6px 4px;border-bottom:1px solid #EEE;}
+      .pdf-resumo{display:flex;gap:18px;font-size:13px;margin:12px 0;flex-wrap:wrap;}
+      .pdf-footer{margin-top:30px;border-top:1px solid #DDD;padding-top:10px;font-size:10px;color:#777;text-align:center;}
+      .pdf-fotos{display:flex;flex-wrap:wrap;gap:8px;}
+      .pdf-foto-box{width:140px;}
+      .pdf-foto-box img{width:140px;height:105px;object-fit:cover;border-radius:6px;border:1px solid #DDD;}
+      .pdf-foto-legenda{font-size:9.5px;color:#666;margin-top:2px;}
+      .pdf-sig-row{display:flex;gap:32px;margin-top:46px;}
+      .pdf-sig{flex:1;border-top:1px solid #999;padding-top:6px;font-size:11px;color:#555;}
+      ${PDF_ESTILO_PREMIUM}
+      @media print { .quebra-pagina { page-break-before: always; } }
+    </style></head>
+    <body>
+      <div class="pdf-page">
+        ${header}
+        <h1>RELATÓRIO DE VISITA TÉCNICA</h1>
+        <div class="pdf-card">
+          <div><b>Nº da visita:</b> ${v.numero} &nbsp;&nbsp; <b>Data:</b> ${dataFmt} &nbsp;&nbsp; <b>Técnico:</b> ${v.tecnicoNome || "-"}</div>
+          <div style="margin-top:6px;"><b>Cliente:</b> ${v.clienteNome || "-"} &nbsp;&nbsp; <b>Tel:</b> ${v.clienteTelefone || "-"}</div>
+          <div><b>Endereço:</b> ${[v.endereco, v.enderecoNumero, v.complemento, v.cidade].filter(Boolean).join(", ") || "-"}</div>
+          <div style="margin-top:6px;"><b>Equipamento:</b> ${v.tipoEquipamento || "-"} · ${v.marca || "-"} ${v.modelo || ""} · ${v.btu || "-"} BTU · ${v.gas || "-"}</div>
+        </div>
+
+        <h2>Resultado da vistoria</h2>
+        <div class="pdf-resumo">
+          <span style="color:#2E7D32;">🟢 ${v.resumo?.["Conforme"] || 0} Conforme</span>
+          <span style="color:#B8860B;">🟡 ${v.resumo?.["Atenção"] || 0} Atenção</span>
+          <span style="color:#C62828;">🔴 ${v.resumo?.["Não conforme"] || 0} Não conforme</span>
+        </div>
+
+        <div class="quebra-pagina"></div>
+        <h2>⚡ Inspeção elétrica</h2>
+        <div class="pdf-card">Tensão medida: ${v.inspecaoEletrica?.tensaoMedida || "-"} V &nbsp;&nbsp; Corrente medida: ${v.inspecaoEletrica?.correnteMedida || "-"} A</div>
+        <table class="pdf-table"><tbody>${vtLinhaChecklist(VT_ITENS_ELETRICA, v.inspecaoEletrica?.itens || {})}</tbody></table>
+        ${v.inspecaoEletrica?.observacoes ? `<div class="pdf-card">${v.inspecaoEletrica.observacoes}</div>` : ""}
+
+        <div class="quebra-pagina"></div>
+        <h2>❄️ Sistema frigorífico</h2>
+        <table class="pdf-table"><tbody>
+          <tr><td>Pressão de sucção</td><td>${v.sistemaFrigorifico?.pressaoSuccao || "-"} ${v.sistemaFrigorifico?.unidadePressao || ""}</td></tr>
+          <tr><td>Pressão de descarga</td><td>${v.sistemaFrigorifico?.pressaoDescarga || "-"} ${v.sistemaFrigorifico?.unidadePressao || ""}</td></tr>
+          <tr><td>Temp. de sucção</td><td>${v.sistemaFrigorifico?.tempSuccao || "-"} °C</td></tr>
+          <tr><td>Temp. linha líquida</td><td>${v.sistemaFrigorifico?.tempLinhaLiquida || "-"} °C</td></tr>
+          <tr><td>Superaquecimento</td><td>${v.sistemaFrigorifico?.superaquecimento || "-"}</td></tr>
+          <tr><td>Sub-resfriamento</td><td>${v.sistemaFrigorifico?.subResfriamento || "-"}</td></tr>
+          <tr><td>Indício de vazamento</td><td>${v.sistemaFrigorifico?.indicioVazamento || "-"}</td></tr>
+        </tbody></table>
+        ${v.sistemaFrigorifico?.observacoes ? `<div class="pdf-card">${v.sistemaFrigorifico.observacoes}</div>` : ""}
+
+        <h2>💧 Dreno / Troca térmica</h2>
+        <table class="pdf-table"><tbody>${vtLinhaChecklist(VT_ITENS_DRENO, v.dreno?.itens || {})}</tbody></table>
+        <div class="pdf-card">
+          ΔT (retorno − insuflamento): <b>${v.trocaTermica?.deltaT ?? "-"} °C</b><br/>
+          Filtro: ${v.trocaTermica?.estadoFiltro || "-"} · Evaporadora: ${v.trocaTermica?.estadoEvaporadora || "-"} · Condensadora: ${v.trocaTermica?.estadoCondensadora || "-"}
+        </div>
+
+        <div class="quebra-pagina"></div>
+        <h2>🛠️ Parâmetros da instalação</h2>
+        <table class="pdf-table"><tbody>${vtLinhaChecklist(VT_ITENS_INSTALACAO, v.parametrosInstalacao?.itens || {})}</tbody></table>
+
+        <h2>Inspeção visual</h2>
+        <table class="pdf-table"><tbody>${vtLinhaChecklist(VT_ITENS_VISUAL, v.inspecaoVisual?.itens || {})}</tbody></table>
+
+        ${(v.fotos || []).length > 0 ? `
+        <div class="quebra-pagina"></div>
+        <h2>Fotos da vistoria</h2>
+        <div class="pdf-fotos">
+          ${(v.fotos || []).map((f, i) => `<div class="pdf-foto-box"><img src="${f.src}"/><div class="pdf-foto-legenda">Foto ${i + 1} — ${f.categoria || "Outras"}</div></div>`).join("")}
+        </div>` : ""}
+
+        <div class="quebra-pagina"></div>
+        <h2>🔎 Diagnóstico técnico</h2>
+        <div class="pdf-card">
+          <div><b>Condição geral:</b> ${v.diagnostico?.condicaoGeral || "-"}</div>
+          <div style="margin-top:6px;"><b>Problemas encontrados:</b><br/>${(v.diagnostico?.problemasEncontrados || "-").replace(/\n/g, "<br/>")}</div>
+          <div style="margin-top:6px;"><b>Possíveis causas:</b><br/>${(v.diagnostico?.possiveisCausas || "-").replace(/\n/g, "<br/>")}</div>
+          <div style="margin-top:6px;"><b>Recomendações:</b><br/>${(v.diagnostico?.recomendacoes || "-").replace(/\n/g, "<br/>")}</div>
+          <div style="margin-top:6px;"><b>Serviços recomendados:</b><br/>${(v.servicosRecomendados || "-").replace(/\n/g, "<br/>")}</div>
+          <div style="margin-top:6px;"><b>Materiais/peças necessários:</b><br/>${(v.materiais || "-").replace(/\n/g, "<br/>")}</div>
+          <div style="margin-top:6px;"><b>Prioridade:</b> ${v.prioridade || "-"}</div>
+        </div>
+
+        <div class="pdf-card" style="border:1px solid #C9A24B55;">
+          <b>Garantia</b><br/><span style="font-size:11px;line-height:1.5;">${GARANTIA_CLAUSULA_TEXTO}</span>
+        </div>
+
+        <div class="pdf-sig-row">
+          <div class="pdf-sig">Assinatura do cliente<br/>${v.clienteNome || ""}<br/>Data: ___/___/______</div>
+          <div class="pdf-sig">Responsável — ALLA SERVICE<br/>${v.tecnicoNome || ""}<br/>Data: ___/___/______</div>
+        </div>
+
+        ${footer}
+      </div>
+    </body></html>
+  `);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+/* Mensagem de WhatsApp — sempre com base só no que foi realmente
+   registrado na visita, sem inventar informações. */
+function visitaTecnicaWhatsappMsg(v) {
+  return [
+    `Olá, ${v.clienteNome || "cliente"}!`,
+    "",
+    `Segue o relatório da visita técnica nº ${v.numero}, realizada em ${new Date(v.createdAt).toLocaleDateString("pt-BR")}.`,
+    "",
+    `Condição geral do equipamento: ${v.diagnostico?.condicaoGeral || "-"}`,
+    "",
+    "O relatório completo em PDF está sendo enviado para sua avaliação.",
+    "",
+    "ALLA SERVICE",
+    "Climatização • Elétrica • Manutenção",
+  ].join("\n");
+}
+
+/* ---------------- Detalhe da visita: PDF, WhatsApp, Converter em Orçamento ---------------- */
+function VisitaTecnicaDetail({ visita, onBack, onEditar, onConverterOrcamento }) {
+  const v = visita;
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#C9A24B" }}>{v.numero}</div>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 600, color: "#F3F3F1", marginBottom: 4 }}>{v.clienteNome}</div>
+      <div style={{ fontSize: 12, color: "#8A8A90", marginBottom: 16 }}>{v.tipoEquipamento} · {v.marca} {v.modelo} · {new Date(v.createdAt).toLocaleDateString("pt-BR")}</div>
+
+      <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12.5, color: "#4ADE80" }}>🟢 {v.resumo?.["Conforme"] || 0}</span>
+        <span style={{ fontSize: 12.5, color: "#E9C878" }}>🟡 {v.resumo?.["Atenção"] || 0}</span>
+        <span style={{ fontSize: 12.5, color: "#F0605A" }}>🔴 {v.resumo?.["Não conforme"] || 0}</span>
+      </div>
+
+      <div style={{ background: "#0D0D0E", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: 14, marginBottom: 16 }}>
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Diagnóstico</div>
+        <div style={{ fontSize: 12.5, color: "#D5D5D8", lineHeight: 1.5 }}>{v.diagnostico?.condicaoGeral} — {v.diagnostico?.problemasEncontrados || "sem problemas registrados"}</div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <button onClick={() => visitaTecnicaPDF(v)} style={{ ...btnPrincipal, width: "100%" }}>Gerar PDF</button>
+        <button
+          onClick={() => compartilhar({ titulo: `Visita ${v.numero}`, texto: visitaTecnicaWhatsappMsg(v), telefone: v.clienteTelefone })}
+          style={{ ...btnSecundario, width: "100%" }}
+        >
+          Enviar pelo WhatsApp
+        </button>
+        <button onClick={() => onEditar(v)} style={{ ...btnSecundario, width: "100%" }}>Editar</button>
+        {!v.orcamentoId && (
+          <button onClick={() => onConverterOrcamento(v)} style={{ ...btnGhost, borderColor: "#3FBCD1", color: "#3FBCD1", width: "100%" }}>
+            Converter em orçamento
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Módulo principal: lista/histórico ---------------- */
+function VisitaTecnicaModule() {
+  const [mode, setMode] = useState("lista"); // lista | novo | detalhe
+  const [visitas, setVisitas] = useState(null);
+  const [selecionada, setSelecionada] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [rascunhoOrcamento, setRascunhoOrcamento] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const l = await carregarTudoStorage("visitas-tecnicas:");
+      l.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      setVisitas(l);
+    } catch {
+      setVisitas([]);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtradas = useMemo(() => {
+    if (!busca.trim()) return visitas || [];
+    const q = busca.toLowerCase();
+    return (visitas || []).filter((v) => (v.clienteNome || "").toLowerCase().includes(q) || (v.marca || "").toLowerCase().includes(q) || (v.numero || "").toLowerCase().includes(q));
+  }, [visitas, busca]);
+
+  // Mesma lógica de conversão usada no Assistente de Orçamento IA — cria
+  // um NOVO orçamento (nunca sobrescreve um existente) com os dados da
+  // visita, e o técnico confere/edita antes de salvar de verdade.
+  const converterEmOrcamento = (v) => {
+    setRascunhoOrcamento({
+      _rascunhoIA: true,
+      nome: v.clienteNome,
+      telefone: v.clienteTelefone,
+      email: v.clienteEmail,
+      endereco: v.endereco,
+      equipamento: { tipo: v.tipoEquipamento, marca: v.marca, modelo: v.modelo, btus: v.btu, gas: v.gas },
+      servico: { tipo: "Manutenção Corretiva", descricaoPersonalizada: v.diagnostico?.recomendacoes || "" },
+      itens: [],
+      maoDeObra: { tipo: "Manutenção", valor: "0" },
+      deslocamento: { modo: "Sem cobrança", valor: "0" },
+      desconto: { tipo: "R$", valor: "0" },
+      pagamento: { forma: "PIX", condicao: "À vista", detalhes: "" },
+      observacoesCliente: `Origem: Visita Técnica ${v.numero}. ${v.diagnostico?.problemasEncontrados || ""}`.trim(),
+      _naoDetectados: [],
+      _origemVisitaId: v.id,
+      _origemVisitaNumero: v.numero,
+    });
+  };
+
+  if (rascunhoOrcamento) {
+    return (
+      <OrcamentoForm
+        editing={rascunhoOrcamento}
+        onCancel={() => setRascunhoOrcamento(null)}
+        onDone={async (obj) => {
+          // marca a visita como convertida, sem tocar em mais nada
+          const origemId = rascunhoOrcamento._origemVisitaId;
+          if (origemId) {
+            const atual = visitas.find((v) => v.id === origemId);
+            if (atual) {
+              const atualizada = { ...atual, orcamentoId: obj.id, orcamentoNumero: obj.numero };
+              await window.storage.set(`visitas-tecnicas:${origemId}`, JSON.stringify(atualizada));
+            }
+          }
+          setRascunhoOrcamento(null);
+          setMode("lista");
+          load();
+        }}
+      />
+    );
+  }
+
+  if (mode === "novo") {
+    return (
+      <VisitaTecnicaForm
+        editing={selecionada}
+        onCancel={() => { setSelecionada(null); setMode("lista"); }}
+        onDone={(obj) => { setSelecionada(obj); setMode("detalhe"); load(); }}
+      />
+    );
+  }
+
+  if (mode === "detalhe" && selecionada) {
+    return (
+      <VisitaTecnicaDetail
+        visita={selecionada}
+        onBack={() => { setSelecionada(null); setMode("lista"); }}
+        onEditar={(v) => { setSelecionada(v); setMode("novo"); }}
+        onConverterOrcamento={converterEmOrcamento}
+      />
+    );
+  }
+
+  return (
+    <div style={{ padding: "14px 16px 40px" }}>
+      <BotaoPremium onClick={() => { setSelecionada(null); setMode("novo"); }} texto="Nova visita" icone={Wrench} />
+
+      <div style={{ position: "relative", marginBottom: 14 }}>
+        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por cliente, marca ou número..."
+          style={{ width: "100%", boxSizing: "border-box", background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "10px 12px 10px 34px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 13, outline: "none" }}
+        />
+      </div>
+
+      {visitas === null ? (
+        <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
+      ) : filtradas.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "50px 20px", color: "#6E6E73" }}>
+          <Wrench size={26} style={{ marginBottom: 10, opacity: 0.5 }} />
+          <div style={{ fontSize: 13 }}>{(visitas || []).length === 0 ? "Nenhuma visita técnica registrada ainda." : "Nenhuma visita encontrada para essa busca."}</div>
+        </div>
+      ) : (
+        <div>
+          {filtradas.map((v, i) => (
+            <button
+              key={v.id}
+              onClick={() => { setSelecionada(v); setMode("detalhe"); }}
+              style={{ width: "100%", textAlign: "left", background: "none", border: "none", borderTop: i === 0 ? "1px solid rgba(255,255,255,0.06)" : "none", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "10px 2px", cursor: "pointer" }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#7A7A7A" }}>{v.numero}</span>
+                <span style={{ fontSize: 10, color: "#5A5A5F" }}>{new Date(v.createdAt).toLocaleDateString("pt-BR")}</span>
+              </div>
+              <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14, color: "#F3F3F1", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.clienteNome}</div>
+              <div style={{ fontSize: 11, color: "#7A7A7A", marginTop: 1 }}>{v.tipoEquipamento} {v.marca}</div>
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <span style={{ fontSize: 10.5, color: "#4ADE80" }}>🟢 {v.resumo?.["Conforme"] || 0}</span>
+                <span style={{ fontSize: 10.5, color: "#E9C878" }}>🟡 {v.resumo?.["Atenção"] || 0}</span>
+                <span style={{ fontSize: 10.5, color: "#F0605A" }}>🔴 {v.resumo?.["Não conforme"] || 0}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ================= Agenda de Cortes (Barbearia Serpas) =================
    Ferramenta provisória, simples, só para organizar os sábados.
    Segue o MESMO padrão visual de Ordens de Serviço (resumo numérico,
@@ -14729,7 +15562,7 @@ function AgendaCortesModule() {
   const [servicos, setServicos] = useState(AGD_SERVICOS_PADRAO);
   const [mode, setMode] = useState("lista"); // lista | novo
   const [selected, setSelected] = useState(null);
-  const [filtro, setFiltro] = useState("Todos");
+  const [filtro, setFiltro] = useState("Agendado");
   const [menuAcoesId, setMenuAcoesId] = useState(null);
 
   const load = useCallback(async () => {
@@ -15327,6 +16160,7 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "tool-laudo-tecnico" && <LaudoTecnico />}
         {telaVisivel === "tool-alla-venda" && <AllaVendaModule />}
         {telaVisivel === "tool-agenda-cortes" && <AgendaCortesModule />}
+        {telaVisivel === "tool-visita-tecnica" && <VisitaTecnicaModule />}
         {telaVisivel === "tool-assinaturas" && <AssinaturasModule />}
         {telaVisivel === "tool-rastreio-tecnico" && <RastreioTecnico />}
         {telaVisivel === "tool-historico-equipamento" && <HistoricoEquipamento />}
