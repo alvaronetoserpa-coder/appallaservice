@@ -2788,8 +2788,206 @@ function OrcItensEditor({ itens, setItens }) {
   );
 }
 
+/* ================= Assistente Técnico IA — Orçamento =================
+   Interpreta texto livre e extrai dados estruturados por PADRÕES/REGRAS
+   (nomes, telefone, marca, BTU, valores citados) — não é um modelo de
+   linguagem natural real (não há LLM/API configurada neste ambiente).
+   Por isso NUNCA inventa um dado que não esteja explicitamente escrito
+   no texto: quando não encontra, deixa em branco e avisa o técnico. */
+
+const ORC_IA_MARCAS = ["LG", "Samsung", "Midea", "Springer", "Gree", "Fujitsu", "Daikin", "Carrier", "Electrolux", "Hisense", "TCL", "Elgin", "Philco", "Consul", "Agratto"];
+
+function orcIaExtrairDados(textoOriginal) {
+  const texto = textoOriginal || "";
+  const naoDetectados = [];
+
+  // --- contato/cliente ---
+  const telMatch = texto.match(/(\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4})/);
+  const telefone = telMatch ? telMatch[1].replace(/[^\d]/g, "") : "";
+  if (!telefone) naoDetectados.push("telefone");
+
+  const emailMatch = texto.match(/[\w.+-]+@[\w-]+\.[a-z.]+/i);
+  const email = emailMatch ? emailMatch[0] : "";
+
+  const nomeMatch = texto.match(/\bcliente\s+([A-ZÀ-Ú][a-zà-ú]+(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][a-zà-ú]+){0,4})/i);
+  const nome = nomeMatch ? nomeMatch[1].trim() : "";
+  if (!nome) naoDetectados.push("nome do cliente");
+
+  // --- equipamento ---
+  let marca = "";
+  for (const m of ORC_IA_MARCAS) {
+    if (new RegExp(`\\b${m}\\b`, "i").test(texto)) { marca = m; break; }
+  }
+  if (!marca) naoDetectados.push("marca do equipamento");
+
+  const btuMatch = texto.match(/(\d[\d.,]*)\s*btu/i);
+  const btus = btuMatch ? btuMatch[1].replace(/\./g, "") : "";
+
+  const gasMatch = texto.match(/\bR[\s-]?(32|410a?|22)\b/i);
+  const gas = gasMatch ? `R${gasMatch[1].toUpperCase()}` : "";
+
+  // modelo: palavra(s) entre a marca e "BTU" (ex.: "LG Dual Inverter 12000 BTU")
+  let modelo = "";
+  if (marca) {
+    const re = new RegExp(`${marca}\\s+([A-Za-zÀ-ú\\s]{2,30}?)\\s*\\d`, "i");
+    const mm = texto.match(re);
+    if (mm) modelo = mm[1].trim();
+  }
+
+  // --- tipo de serviço (só assume o que está escrito) ---
+  let servicoTipo = "";
+  if (/instala(ç|c)[aã]o|instalar/i.test(texto)) servicoTipo = "Instalação";
+  else if (/manuten(ç|c)[aã]o preventiva/i.test(texto)) servicoTipo = "Manutenção Preventiva";
+  else if (/manuten(ç|c)[aã]o corretiva|conserto|reparo/i.test(texto)) servicoTipo = "Manutenção Corretiva";
+  if (!servicoTipo) naoDetectados.push("tipo de serviço");
+
+  // --- materiais citados por palavra-chave (sem inventar preço unitário) ---
+  const itens = [];
+  const metrosCobre = texto.match(/(\d+)\s*metros?\s+de\s+(?:tubula[cç][aã]o\s+de\s+)?cobre/i);
+  if (metrosCobre) itens.push({ id: uid(), descricao: "Tubulação de cobre", categoria: "Material", qtd: Number(metrosCobre[1]), unidade: "m", valorUnit: 0 });
+  if (/canaleta/i.test(texto)) itens.push({ id: uid(), descricao: "Canaleta", categoria: "Material", qtd: 1, unidade: "un", valorUnit: 0 });
+  if (/suporte (para )?condensadora/i.test(texto)) itens.push({ id: uid(), descricao: "Suporte para condensadora", categoria: "Material", qtd: 1, unidade: "un", valorUnit: 0 });
+  if (/\bdreno\b/i.test(texto)) itens.push({ id: uid(), descricao: "Dreno", categoria: "Material", qtd: 1, unidade: "un", valorUnit: 0 });
+
+  // valor total de materiais (citado como uma cifra só, sem detalhar item a item)
+  const materiaisValorMatch = texto.match(/materiais?\D{0,15}(\d+[.,]?\d*)/i);
+  if (materiaisValorMatch) {
+    // Nunca reparte esse valor entre os itens citados (isso inventaria um
+    // preço unitário que o técnico não informou). Os itens ficam como
+    // descrição do que será usado (valor zero) e o dinheiro entra numa
+    // linha própria, com o valor exato que foi escrito.
+    itens.push({ id: uid(), descricao: "Materiais (valor total informado pelo técnico)", categoria: "Material", qtd: 1, unidade: "un", valorUnit: Number(materiaisValorMatch[1].replace(",", ".")) });
+  }
+
+  // --- valores ---
+  const maoDeObraMatch = texto.match(/m[ãa]o[\s-]?de[\s-]?obra\D{0,15}(\d+[.,]?\d*)/i);
+  const maoDeObraValor = maoDeObraMatch ? maoDeObraMatch[1].replace(",", ".") : "";
+  if (!maoDeObraValor) naoDetectados.push("valor da mão de obra");
+
+  const descontoMatch = texto.match(/desconto\D{0,15}(\d+[.,]?\d*)/i);
+  const descontoValor = descontoMatch ? descontoMatch[1].replace(",", ".") : "0";
+
+  const deslocMatch = texto.match(/desloc\w*\D{0,15}(\d+[.,]?\d*)/i);
+  const deslocValor = deslocMatch ? deslocMatch[1].replace(",", ".") : "0";
+
+  // --- pagamento ---
+  let pagamentoForma = "";
+  if (/\bpix\b/i.test(texto)) pagamentoForma = "PIX";
+  else if (/cart[aã]o/i.test(texto)) pagamentoForma = "Cartão";
+  else if (/dinheiro/i.test(texto)) pagamentoForma = "Dinheiro";
+  else if (/boleto/i.test(texto)) pagamentoForma = "Boleto";
+  if (!pagamentoForma) naoDetectados.push("forma de pagamento");
+
+  return {
+    _rascunhoIA: true,
+    nome,
+    telefone,
+    email,
+    equipamento: { tipo: "Split", marca, modelo, btus, gas },
+    servico: { tipo: servicoTipo || "Instalação", descricaoPersonalizada: "" },
+    itens,
+    maoDeObra: { tipo: "Instalação", valor: maoDeObraValor || "0" },
+    deslocamento: { modo: deslocValor !== "0" ? "Valor fixo" : "Sem cobrança", valor: deslocValor },
+    desconto: { tipo: "R$", valor: descontoValor },
+    pagamento: { forma: pagamentoForma || "PIX", condicao: "À vista", detalhes: "" },
+    observacoesCliente: "",
+    _naoDetectados: naoDetectados,
+    _textoOriginal: texto,
+  };
+}
+
+/* ---------------- Componente principal ---------------- */
+function OrcamentoIAAssistente({ onRefreshApp }) {
+  const [texto, setTexto] = useState("");
+  const [etapa, setEtapa] = useState(0); // 0 = digitando, 1..5 = processando, 6 = revisao
+  const [dadosExtraidos, setDadosExtraidos] = useState(null);
+
+  const ETAPAS_PROCESSAMENTO = [
+    "Analisando informações...",
+    "Organizando serviços e materiais...",
+    "Calculando valores...",
+    "Preparando documento...",
+  ];
+
+  const gerar = async () => {
+    if (!texto.trim() || texto.trim().length < 15) {
+      notificarErroBanco("Descreva o serviço com um pouco mais de detalhe para eu conseguir organizar as informações.");
+      return;
+    }
+    setEtapa(1);
+    for (let i = 0; i < ETAPAS_PROCESSAMENTO.length; i++) {
+      setEtapa(i + 1);
+      await new Promise((r) => setTimeout(r, 420));
+    }
+    const dados = orcIaExtrairDados(texto);
+    setDadosExtraidos(dados);
+    setEtapa(0);
+  };
+
+  if (dadosExtraidos) {
+    return (
+      <div>
+        {dadosExtraidos._naoDetectados.length > 0 && (
+          <div style={{ margin: 16, marginBottom: 0, background: "rgba(233,200,120,0.08)", border: "1px solid rgba(233,200,120,0.3)", borderRadius: 12, padding: "12px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <span style={{ color: "#E9C878", fontSize: 13 }}>⚠</span>
+              <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12.5, color: "#E9C878" }}>Confira antes de gerar o PDF</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: "#C7C9CE", lineHeight: 1.5 }}>
+              Não encontrei no texto: {dadosExtraidos._naoDetectados.join(", ")}. Preencha manualmente abaixo — nada foi estimado ou inventado.
+            </div>
+          </div>
+        )}
+        <OrcamentoForm
+          editing={dadosExtraidos}
+          onCancel={() => setDadosExtraidos(null)}
+          onDone={() => { setDadosExtraidos(null); setTexto(""); onRefreshApp && onRefreshApp(); }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 700, color: "#F3F3F1" }}>
+        Assistente Técnico IA
+      </div>
+      <div style={{ fontSize: 12.5, color: "#8A8A90", marginTop: 3, marginBottom: 16 }}>
+        Transforme suas informações em um orçamento profissional.
+      </div>
+
+      <Field label="Descreva o serviço e as informações do cliente...">
+        <textarea
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          disabled={etapa > 0}
+          placeholder='Ex: Cliente João da Silva, telefone 15 99999-9999, instalação de um LG Dual Inverter 12000 BTU no quarto, 3 metros de cobre, canaleta, suporte para condensadora, dreno, mão de obra 450 reais e materiais 380 reais.'
+          style={{ ...inputStyle, minHeight: 160, resize: "vertical", opacity: etapa > 0 ? 0.6 : 1 }}
+        />
+      </Field>
+
+      <button
+        onClick={gerar}
+        disabled={etapa > 0}
+        style={{ ...btnPrincipal, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: etapa > 0 ? 0.7 : 1 }}
+      >
+        {etapa > 0 ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+        {etapa > 0 ? ETAPAS_PROCESSAMENTO[etapa - 1] : "Gerar orçamento com IA"}
+      </button>
+
+      <div style={{ marginTop: 16, fontSize: 11, color: "#6E6E73", lineHeight: 1.6 }}>
+        A extração é feita por reconhecimento de padrões no texto (nomes, telefones, marcas, valores citados) — nunca inventa BTU, modelo, gás, materiais ou preços que você não escreveu. Você confere e edita tudo antes de gerar o PDF.
+      </div>
+    </div>
+  );
+}
+
 function OrcamentoForm({ editing, onDone, onCancel }) {
-  const isVersaoNova = editing && editing._novaVersaoDe;
+  // Um rascunho vindo do Assistente Técnico IA — Orçamento (texto livre)
+  // ainda não tem id/numero de verdade — precisa gerar um novo, igual a
+  // uma "nova versão", mas sem herdar versionamento nenhum.
+  const isRascunhoIA = editing && editing._rascunhoIA;
+  const isVersaoNova = (editing && editing._novaVersaoDe) || isRascunhoIA;
   const [clientesExistentes, setClientesExistentes] = useState(null);
   const [nome, setNome] = useState(editing?.nome || "");
   const [documento, setDocumento] = useState(editing?.documento || "");
@@ -2874,8 +3072,8 @@ function OrcamentoForm({ editing, onDone, onCancel }) {
     let base = {
       id,
       numero,
-      versao: isVersaoNova ? (editing.versao || 1) + 1 : editing?.versao || 1,
-      origemOrcamentoId: isVersaoNova ? editing.id : editing?.origemOrcamentoId || null,
+      versao: isRascunhoIA ? 1 : isVersaoNova ? (editing.versao || 1) + 1 : editing?.versao || 1,
+      origemOrcamentoId: isRascunhoIA ? null : isVersaoNova ? editing.id : editing?.origemOrcamentoId || null,
       nome,
       documento,
       telefone,
@@ -3553,11 +3751,22 @@ const ORC_FILTRO_STATUS_MAP = {
   Expirados: "EXPIRADO",
 };
 
+/* Ponte de rascunho: o Assistente Técnico IA — Orçamento monta um objeto
+   parcial a partir do texto livre e grava aqui antes de navegar para o
+   hub de documentos; o OrcamentosModule lê e consome ao montar, abrindo
+   direto no formulário de edição já preenchido — mesmo padrão usado para
+   levar dados de uma OS ao Assistente Técnico IA. */
+let orcRascunhoPendente = null;
+
 function OrcamentosModule({ onRefreshApp }) {
-  const [modo, setModo] = useState("lista"); // lista | novo | detalhe
+  const [modo, setModo] = useState(() => (orcRascunhoPendente ? "novo" : "lista")); // lista | novo | detalhe
   const [orcamentos, setOrcamentos] = useState(null);
   const [selecionado, setSelecionado] = useState(null);
-  const [editando, setEditando] = useState(null);
+  const [editando, setEditando] = useState(() => {
+    const r = orcRascunhoPendente;
+    orcRascunhoPendente = null;
+    return r;
+  });
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [filtroPeriodo, setFiltroPeriodo] = useState("Este mês");
   const [busca, setBusca] = useState("");
@@ -15112,7 +15321,7 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "tool-btu" && <BtuCalculator />}
         {telaVisivel === "tool-conversor" && <TechConverter onNavigate={setView} />}
         {telaVisivel === "tool-orcamento-ia" && (
-          <OrcamentosModule onRefreshApp={() => setRefreshKey((k) => k + 1)} />
+          <OrcamentoIAAssistente onRefreshApp={() => setRefreshKey((k) => k + 1)} />
         )}
         {telaVisivel === "tool-pecas-ia" && <PartsAssistant />}
         {telaVisivel === "tool-laudo-tecnico" && <LaudoTecnico />}
