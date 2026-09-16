@@ -848,13 +848,12 @@ function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
 
 /* ---------------- Stat card (2x2 grid) ---------------- */
 /* ---------------- Stat card (fixed-canvas, absolutely positioned) ---------------- */
-function IconeChaveDeFenda({ size = 24, color = "currentColor", strokeWidth = 2 }) {
+function IconeCaneta({ size = 24, color = "currentColor", strokeWidth = 2 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth * 0.85} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="14.2" y="1.6" width="5" height="9" rx="2.4" transform="rotate(45 16.7 6.1)" />
-      <line x1="13.2" y1="8.1" x2="5.6" y2="15.7" />
-      <path d="M4 21.5 6 19.5 8.5 22 4 22Z" />
-      <line x1="5.6" y1="15.7" x2="6" y2="19.5" />
+      <rect x="13.5" y="1.8" width="4.2" height="15" rx="2" transform="rotate(45 15.6 9.3)" />
+      <path d="M4.5 19.5 3 22.5l3-1.5z" />
+      <line x1="6.6" y1="17.4" x2="8.4" y2="19.2" />
     </svg>
   );
 }
@@ -1159,7 +1158,7 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
 
         {/* cards — exact coordinates */}
         <StatCard
-          icon={IconeChaveDeFenda}
+          icon={IconeCaneta}
           glow="#4681DF"
           value={reportCount}
           label="Ordens Concluídas"
