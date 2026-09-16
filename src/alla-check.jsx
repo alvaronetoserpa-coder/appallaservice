@@ -5,7 +5,7 @@ import {
   Trash2, Snowflake, Zap, Receipt, BarChart3, Eraser, Loader2, RefreshCw, Menu,
   CheckCircle2, Beer, TrendingUp, TrendingDown, Search, Calculator, Sparkles, PackageSearch,
   ClipboardCheck, History, BookOpen, Navigation, LineChart, FileCheck2,
-  CalendarClock, Ruler, MessageSquareText, Bot
+  CalendarClock, Ruler, MessageSquareText, Bot, Screwdriver
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import {
@@ -1148,7 +1148,7 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
 
         {/* cards — exact coordinates */}
         <StatCard
-          icon={CheckCircle2}
+          icon={Screwdriver}
           glow="#4681DF"
           value={reportCount}
           label="Ordens Concluídas"
