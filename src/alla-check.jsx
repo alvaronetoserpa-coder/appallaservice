@@ -5,7 +5,7 @@ import {
   Trash2, Snowflake, Zap, Receipt, BarChart3, Eraser, Loader2, RefreshCw, Menu,
   CheckCircle2, Beer, TrendingUp, TrendingDown, Search, Calculator, Sparkles, PackageSearch,
   ClipboardCheck, History, BookOpen, Navigation, LineChart, FileCheck2,
-  CalendarClock, Ruler, MessageSquareText, Bot, Screwdriver
+  CalendarClock, Ruler, MessageSquareText, Bot
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import {
@@ -848,6 +848,17 @@ function MenuDrawer({ open, onClose, onNavigate, usuario, onSair }) {
 
 /* ---------------- Stat card (2x2 grid) ---------------- */
 /* ---------------- Stat card (fixed-canvas, absolutely positioned) ---------------- */
+function IconeChaveDeFenda({ size = 24, color = "currentColor", strokeWidth = 2 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth * 0.85} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="14.2" y="1.6" width="5" height="9" rx="2.4" transform="rotate(45 16.7 6.1)" />
+      <line x1="13.2" y1="8.1" x2="5.6" y2="15.7" />
+      <path d="M4 21.5 6 19.5 8.5 22 4 22Z" />
+      <line x1="5.6" y1="15.7" x2="6" y2="19.5" />
+    </svg>
+  );
+}
+
 function StatCard({ icon: Icon, glow, value, label, arrow, onClick, left, top, width = 286, height = 365 }) {
   const { pressed, handlers } = useCardFX();
   return (
@@ -1148,7 +1159,7 @@ function HomeScreen({ onNavigate, onMenu, reportCount, orcamentosCount, vendasCo
 
         {/* cards — exact coordinates */}
         <StatCard
-          icon={Screwdriver}
+          icon={IconeChaveDeFenda}
           glow="#4681DF"
           value={reportCount}
           label="Ordens Concluídas"
