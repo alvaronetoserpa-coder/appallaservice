@@ -3447,6 +3447,70 @@ const GARANTIA_CLAUSULA_HTML = `
     <div style="font-size:11px;line-height:1.5;">${GARANTIA_CLAUSULA_TEXTO}</div>
   </div>`;
 
+/* ================= PDF corporativo claro — só Orçamento e OS =================
+   Estilo separado do PDF_ESTILO_PREMIUM (escuro), que continua intacto e
+   em uso no Recibo e na Proposta ALLA VENDA — nada muda nesses dois.
+   Mesmos nomes de classe do HTML já existente, só troca a aparência. */
+const PDF_ESTILO_CORPORATIVO = `
+  .pdf-card { break-inside: avoid; page-break-inside: avoid; }
+  .pdf-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .pdf-table thead { display: table-header-group; }
+  .pdf-sig { break-inside: avoid; page-break-inside: avoid; }
+  .pdf-sig-row { display: flex; gap: 32px; margin-top: 46px; break-inside: avoid; page-break-inside: avoid; }
+  .pdf-sig-row .pdf-sig { flex: 1; margin-top: 0; }
+  h4 { break-after: avoid; page-break-after: avoid; }
+
+  @media print {
+    @page { margin: 16mm 14mm; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+  * { box-sizing: border-box; }
+  body{ font-family:'Segoe UI',Arial,sans-serif; background:#FFFFFF; color:#2B2B2B; margin:0; padding:0; }
+  .pdf-page{ max-width:760px; margin:0 auto; background:#FFFFFF; }
+  .pdf-header{ display:flex; align-items:center; gap:18px; padding:26px 34px 18px; border-bottom:2px solid #C9A24B; }
+  .pdf-logo{ width:64px; height:auto; object-fit:contain; flex-shrink:0; }
+  .pdf-brand{ font-size:20px; font-weight:800; letter-spacing:0.5px; color:#1A1A1A; }
+  .pdf-tagline{ font-size:10px; letter-spacing:1.8px; color:#A9822F; margin-top:2px; text-transform:uppercase; }
+  .pdf-meta{ display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px 16px; padding:14px 34px 0; font-size:11px; color:#6B6B6B; }
+  .pdf-meta b{ color:#1A1A1A; }
+  .pdf-doctitle{ padding:16px 34px 0; font-size:17px; font-weight:700; color:#1A1A1A; letter-spacing:0.5px; text-transform:uppercase; border-bottom:1px solid #EDE3C8; padding-bottom:10px; margin:0 34px; }
+  .pdf-body{ padding:6px 34px 4px; }
+  .pdf-card{ background:#FAFAF8; border:1px solid #E7E4DC; border-left:3px solid #C9A24B; border-radius:8px; padding:14px 17px; margin-top:14px; }
+  .pdf-card h4{ margin:0 0 7px; font-size:10px; letter-spacing:1.3px; text-transform:uppercase; color:#A9822F; font-weight:700; }
+  .pdf-card p, .pdf-card div{ margin:0; font-size:12.5px; line-height:1.65; color:#333; }
+  table.pdf-table{ width:100%; border-collapse:collapse; margin-top:6px; }
+  table.pdf-table th{ background:#F3EFE4; color:#7A5C1E; font-size:10px; letter-spacing:0.4px; text-transform:uppercase; text-align:left; padding:8px; border-bottom:1px solid #E0D6B8; }
+  table.pdf-table td{ padding:8px; font-size:12px; color:#333; border-bottom:1px solid #EEEEEE; }
+  .pdf-total-box, .pdf-total{ margin:20px 34px 0; background:#FBF6E7; border:1px solid #C9A24B; border-radius:10px; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; }
+  .pdf-total-label, .pdf-total span{ font-size:10.5px; letter-spacing:1.3px; text-transform:uppercase; color:#8A6A22; }
+  .pdf-total-value, .pdf-total b{ font-size:24px; font-weight:800; color:#1A1A1A; }
+  .pdf-valor-recebido{ margin:20px 34px 0; background:#FBF6E7; border:1px solid #C9A24B; border-radius:10px; padding:22px; text-align:center; }
+  .pdf-valor-recebido .lbl{ font-size:10.5px; letter-spacing:1.3px; text-transform:uppercase; color:#8A6A22; margin-bottom:6px; }
+  .pdf-valor-recebido .val{ font-size:28px; font-weight:800; color:#1A1A1A; }
+  .pdf-frase{ padding:16px 34px 0; font-size:12.5px; line-height:1.65; color:#333; font-style:italic; }
+  .pdf-sig{ margin:44px 34px 0; border-top:1px solid #C9C9C9; width:280px; text-align:center; padding-top:8px; font-size:11px; color:#6B6B6B; }
+  .pdf-footer{ margin-top:34px; padding:16px 34px 24px; border-top:1px solid #E0D6B8; text-align:center; }
+  .pdf-footer-brand{ font-size:12px; font-weight:700; letter-spacing:0.5px; color:#8A6A22; }
+  .pdf-footer-line{ font-size:10px; color:#6B6B6B; margin-top:3px; }
+  .pdf-footer-motto{ font-size:9.5px; color:#999; margin-top:6px; font-style:italic; }
+`;
+
+/* Seção de garantia dos serviços — reaproveita o campo já existente
+   (o.garantia.servico) quando cadastrado; nunca inventa um prazo. Quando
+   não há valor cadastrado, usa o texto padrão de condições gerais. Isso
+   é ALÉM da cláusula fixa de 90 dias (GARANTIA_CLAUSULA_HTML), que
+   continua aparecendo sem nenhuma alteração — esta seção só complementa. */
+const GARANTIA_CONDICOES_PADRAO =
+  "A garantia aplica-se exclusivamente aos serviços descritos neste documento e está condicionada à utilização adequada do equipamento e às condições previstas pela ALLA SERVICE. A garantia não cobre danos decorrentes de mau uso, alterações ou intervenções realizadas por terceiros, problemas na rede elétrica, danos externos, falta de manutenção preventiva ou defeitos próprios do equipamento. Peças e componentes possuem garantia conforme as condições do fabricante ou fornecedor, quando aplicável.";
+
+function pdfSecaoGarantiaServico(prazoRegistrado) {
+  return `<div class="pdf-card">
+    <h4>Garantia dos serviços</h4>
+    ${prazoRegistrado ? `<div style="font-weight:700;margin-bottom:6px;">GARANTIA DO SERVIÇO: ${String(prazoRegistrado).toUpperCase()}</div>` : ""}
+    <div>${GARANTIA_CONDICOES_PADRAO}</div>
+  </div>`;
+}
+
 function pdfCabecalhoRodape(logoSrc) {
   const header = `
     <div class="pdf-header">
@@ -3512,16 +3576,22 @@ const PDF_ESTILO_PREMIUM = `
    Usa o menu nativo de compartilhamento do aparelho (WhatsApp, e-mail, etc.).
    Onde não houver suporte, cai no WhatsApp. */
 async function compartilhar({ titulo, texto, telefone }) {
-  try {
-    if (navigator.share) {
-      await navigator.share({ title: titulo, text: texto });
-      return true;
-    }
-  } catch (e) {
-    if (e && e.name === "AbortError") return false; // usuário cancelou
-    console.error("Falha ao compartilhar", e);
-  }
+  // Quando há um telefone específico, a intenção é sempre "mandar direto
+  // pra essa pessoa no WhatsApp" — por isso pula a caixa de compartilhar
+  // genérica do celular (que deixa escolher qualquer app/contato) e vai
+  // direto pro link do WhatsApp com o número já preenchido.
   const tel = (telefone || "").replace(/\D/g, "");
+  if (!tel) {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: titulo, text: texto });
+        return true;
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") return false; // usuário cancelou
+      console.error("Falha ao compartilhar", e);
+    }
+  }
   const msg = encodeURIComponent(texto);
   window.open(tel ? `https://wa.me/55${tel}?text=${msg}` : `https://wa.me/?text=${msg}`, "_blank");
   return true;
@@ -3536,7 +3606,7 @@ function orcPDF(o) {
   const { header, footer } = pdfCabecalhoRodape(LOGO_DATA_URI);
   win.document.write(`
     <html><head><title>Orçamento ${o.numero} — ALLA SERVICE</title>
-    <style>${PDF_ESTILO_PREMIUM}</style></head><body>
+    <style>${PDF_ESTILO_CORPORATIVO}</style></head><body>
       <div class="pdf-page">
         ${header}
         <div class="pdf-meta">
@@ -3572,19 +3642,21 @@ function orcPDF(o) {
             ${o.acrescimoValor > 0 ? `<div>Acréscimo: + R$ ${o.acrescimoValor.toFixed(2)}${o.acrescimo?.motivo ? ` (${o.acrescimo.motivo})` : ""}</div>` : ""}
           </div>
           <div class="pdf-card">
-            <h4>Condições comerciais</h4>
+            <h4>Condições de pagamento</h4>
             <div>Pagamento: ${o.pagamento?.forma || "-"} · ${o.pagamento?.condicao || "-"}${o.pagamento?.detalhes ? ` (${o.pagamento.detalhes})` : ""}</div>
-            ${o.garantia?.servico ? `<div>Garantia do serviço: ${o.garantia.servico}</div>` : ""}
-            ${o.garantia?.pecas ? `<div>Garantia das peças: ${o.garantia.pecas}</div>` : ""}
           </div>
           ${o.naoIncluso ? `<div class="pdf-card"><h4>Não incluso</h4><div>${o.naoIncluso.replace(/\n/g, "<br/>")}</div></div>` : ""}
-          ${o.observacoesCliente ? `<div class="pdf-card"><h4>Observações técnicas</h4><div>${o.observacoesCliente.replace(/\n/g, "<br/>")}</div></div>` : ""}
+          ${o.observacoesCliente ? `<div class="pdf-card"><h4>Termos e observações</h4><div>${o.observacoesCliente.replace(/\n/g, "<br/>")}</div></div>` : ""}
         </div>
         <div class="pdf-total-box">
           <span class="pdf-total-label">Valor total</span>
           <span class="pdf-total-value">R$ ${o.valorFinal.toFixed(2)}</span>
         </div>
-        ${GARANTIA_CLAUSULA_HTML}
+        <div class="pdf-body" style="padding-top:0;">
+          ${pdfSecaoGarantiaServico(o.garantia?.servico)}
+          ${o.garantia?.pecas ? `<div class="pdf-card"><h4>Garantia das peças</h4><div>${o.garantia.pecas}</div></div>` : ""}
+          ${GARANTIA_CLAUSULA_HTML}
+        </div>
         <div class="pdf-sig">Assinatura / aceite do cliente</div>
         ${footer}
       </div>
@@ -3596,19 +3668,62 @@ function orcPDF(o) {
 }
 
 function orcWhatsappMsg(o) {
+  const sep = "━━━━━━━━━━━━━━━━━━";
+  const descricaoServico = [o.servico?.tipo, o.servico?.descricaoPersonalizada].filter(Boolean).join(" — ") || o.escopoServico || "-";
+  const materiais = (o.itens || []).map((it) => `• ${it.descricao || "-"}${it.qtd ? ` (${it.qtd}${it.unidade ? ` ${it.unidade}` : ""})` : ""}`);
+  const maoDeObraValor = Number(o.maoDeObra?.valor) || 0;
+  const materiaisValor = (o.itens || []).reduce((acc, it) => acc + (Number(it.qtd) || 0) * (Number(it.valorUnit) || 0), 0);
+
   const linhas = [
-    `Olá, ${o.nome || "cliente"}.`,
+    `Olá, ${o.nome || "cliente"}! 👋`,
     "",
-    `Preparamos seu orçamento nº ${o.numero}.`,
+    "Aqui é da ALLA SERVICE — Solução em Ar Condicionado e Instalações Elétricas.",
     "",
-    `Serviço: ${o.servico?.tipo || "-"}`,
-    `Valor: R$ ${o.valorFinal.toFixed(2)}`,
-    `Validade: ${o.validade?.dataExpiracao ? new Date(o.validade.dataExpiracao).toLocaleDateString("pt-BR") : "-"}`,
+    "Conforme solicitado, preparamos seu orçamento:",
     "",
-    "Segue o orçamento completo para sua avaliação.",
+    `📋 *ORÇAMENTO Nº ${o.numero}*`,
     "",
-    "Atenciosamente,",
-    "ALLA SERVICE",
+    `📅 Data: ${new Date(o.createdAt).toLocaleDateString("pt-BR")}`,
+    ...(o.validade?.dataExpiracao ? [`📌 Validade: ${new Date(o.validade.dataExpiracao).toLocaleDateString("pt-BR")}`] : []),
+    "",
+    sep,
+    "",
+    "🔧 *SERVIÇO*",
+    "",
+    descricaoServico,
+    "",
+    sep,
+    ...(materiais.length ? ["", "🛠️ *MATERIAIS / ITENS*", "", ...materiais, "", sep] : []),
+    "",
+    "💰 *INVESTIMENTO*",
+    "",
+    `Serviços: R$ ${maoDeObraValor.toFixed(2)}`,
+    ...(materiaisValor > 0 ? [`Materiais: R$ ${materiaisValor.toFixed(2)}`] : []),
+    ...(o.descontoValor > 0 ? [`Desconto: R$ ${o.descontoValor.toFixed(2)}`] : []),
+    "",
+    `*TOTAL: R$ ${o.valorFinal.toFixed(2)}*`,
+    "",
+    sep,
+    ...(o.pagamento?.forma || o.pagamento?.condicao
+      ? ["", "💳 *CONDIÇÕES DE PAGAMENTO*", "", [o.pagamento?.forma, o.pagamento?.condicao].filter(Boolean).join(" · ") + (o.pagamento?.detalhes ? ` (${o.pagamento.detalhes})` : ""), "", sep]
+      : []),
+    "",
+    "🛡️ *GARANTIA*",
+    "",
+    o.garantia?.servico ? `Garantia do serviço: ${o.garantia.servico}` : GARANTIA_CLAUSULA_TEXTO,
+    "",
+    sep,
+    "",
+    "📄 O orçamento completo está disponível no PDF enviado junto a esta mensagem.",
+    "",
+    "Caso tenha alguma dúvida sobre o serviço, materiais ou condições, estamos à disposição para esclarecer.",
+    "",
+    "Será um prazer atender você.",
+    "",
+    "*ALLA SERVICE*",
+    "Solução em Ar Condicionado e Instalações Elétricas",
+    "📱 (15) 99198-9866",
+    ...(o.endereco ? [`📍 ${o.endereco}`] : []),
   ];
   return linhas.join("\n");
 }
@@ -3649,10 +3764,13 @@ function OrcamentoDetail({ orcamento, onBack, onChanged, onEditar, onNovaVersao,
   };
 
   const enviarWhatsapp = () => {
-    const texto = encodeURIComponent(msgWhats);
     const telefone = (o.whatsapp || o.telefone || "").replace(/\D/g, "");
-    const url = telefone ? `https://wa.me/55${telefone}?text=${texto}` : `https://wa.me/?text=${texto}`;
-    window.open(url, "_blank");
+    if (!telefone) {
+      notificarErroBanco("Este cliente não tem um WhatsApp cadastrado neste orçamento. Cadastre o telefone antes de enviar.");
+      return;
+    }
+    const texto = encodeURIComponent(msgWhats);
+    window.open(`https://wa.me/55${telefone}?text=${texto}`, "_blank");
     if (status === "RASCUNHO") mudarStatus("ENVIADO", "Enviado via WhatsApp");
   };
 
@@ -3756,13 +3874,18 @@ function OrcamentoDetail({ orcamento, onBack, onChanged, onEditar, onNovaVersao,
 
       <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
         <button
-          onClick={() =>
+          onClick={() => {
+            const tel = (o.whatsapp || o.telefone || "").replace(/\D/g, "");
+            if (!tel) {
+              notificarErroBanco("Este cliente não tem um WhatsApp cadastrado neste orçamento. Cadastre o telefone antes de enviar.");
+              return;
+            }
             compartilhar({
               titulo: `Orçamento ${o.numero}`,
               texto: orcWhatsappMsg(o),
-              telefone: o.whatsapp || o.telefone,
-            })
-          }
+              telefone: tel,
+            });
+          }}
           style={{ flex: 1, background: "#1C1C1F", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#C7C9CE", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer" }}
         >
           <Send size={13} /> Enviar
@@ -5735,7 +5858,7 @@ function osPDF(os) {
 
   win.document.write(`
     <html><head><title>OS ${os.numero} — ALLA SERVICE</title>
-    <style>${PDF_ESTILO_PREMIUM}</style></head><body>
+    <style>${PDF_ESTILO_CORPORATIVO}</style></head><body>
       <div class="pdf-page">
         ${header}
         <div class="pdf-meta">
@@ -5788,6 +5911,7 @@ function osPDF(os) {
             <b>${valor(os.valorTotal)}</b>
           </div>
 
+          ${pdfSecaoGarantiaServico(os.garantia)}
           ${GARANTIA_CLAUSULA_HTML}
 
           ${os.observacoes ? card("Observações técnicas", String(os.observacoes).replace(/\n/g, "<br/>")) : ""}
@@ -5809,19 +5933,83 @@ function osPDF(os) {
   win.print();
 }
 
-function osWhatsapp(os) {
+function osWhatsappMsg(os) {
+  const sep = "━━━━━━━━━━━━━━━━━━";
+  const valor = (v) => `R$ ${(Number(v) || 0).toFixed(2)}`;
+  const temEquipamento = [os.eqTipo, os.eqMarca, os.eqModelo, os.eqBtus].some(Boolean);
+  const servicoRealizado = [os.diagnostico, os.procedimentosRealizados].filter(Boolean).join(" — ") || os.tipoServico || "-";
+  const materiais = [os.materiaisUtilizados, os.pecasUtilizadas].filter(Boolean);
+
   const linhas = [
-    `*ALLA SERVICE — OS ${os.numero}*`,
-    `Cliente: ${os.clienteNome}`,
-    `Serviço: ${os.tipoServico}`,
-    `Status: ${os.status}`,
-    `Técnico: ${os.tecnico || "-"} · Data: ${new Date(os.data).toLocaleDateString("pt-BR")}`,
-    `*Valor total: R$ ${Number(os.valorTotal || 0).toFixed(2)}*`,
+    `Olá, ${os.clienteNome || "cliente"}! 👋`,
+    "",
+    "Aqui é da ALLA SERVICE — Solução em Ar Condicionado e Instalações Elétricas.",
+    "",
+    "Estamos enviando os detalhes da sua Ordem de Serviço:",
+    "",
+    `📋 *ORDEM DE SERVIÇO Nº ${os.numero}*`,
+    "",
+    `📅 Data: ${os.data ? new Date(os.data).toLocaleDateString("pt-BR") : new Date(os.createdAt).toLocaleDateString("pt-BR")}`,
+    ...(os.tecnico ? [`👨‍🔧 Técnico responsável: ${os.tecnico}`] : []),
+    "",
+    sep,
+    ...(temEquipamento
+      ? [
+          "",
+          "❄️ *EQUIPAMENTO*",
+          "",
+          ...(os.eqTipo ? [`Tipo: ${os.eqTipo}`] : []),
+          ...(os.eqMarca ? [`Marca: ${os.eqMarca}`] : []),
+          ...(os.eqModelo ? [`Modelo: ${os.eqModelo}`] : []),
+          ...(os.eqBtus ? [`Capacidade: ${os.eqBtus} BTUs`] : []),
+          ...(os.eqSerie ? [`Nº de série: ${os.eqSerie}`] : []),
+          "",
+          sep,
+        ]
+      : []),
+    "",
+    "🔧 *SERVIÇO REALIZADO*",
+    "",
+    servicoRealizado,
+    "",
+    sep,
+    ...(materiais.length ? ["", "🛠️ *MATERIAIS UTILIZADOS*", "", ...materiais, "", sep] : []),
+    "",
+    "💰 *VALOR DO SERVIÇO*",
+    "",
+    `Valor total: ${valor(os.valorTotal)}`,
+    "",
+    ...(os.formaPagamento ? [`💳 Forma de pagamento:`, os.formaPagamento, ""] : []),
+    sep,
+    "",
+    "🛡️ *GARANTIA*",
+    "",
+    ...(os.garantia ? [`Prazo: ${os.garantia}`, ""] : []),
+    GARANTIA_CLAUSULA_TEXTO,
+    "",
+    sep,
+    "",
+    "📄 A Ordem de Serviço completa segue em PDF com todos os detalhes do atendimento.",
+    "",
+    "Agradecemos pela confiança na ALLA SERVICE.",
+    "",
+    "Estamos à disposição sempre que precisar.",
+    "",
+    "*ALLA SERVICE*",
+    "Solução em Ar Condicionado e Instalações Elétricas",
+    "📱 (15) 99198-9866",
   ];
-  const texto = encodeURIComponent(linhas.join("\n"));
+  return linhas.join("\n");
+}
+
+function osWhatsapp(os) {
   const telefone = (os.clienteTelefone || "").replace(/\D/g, "");
-  const url = telefone ? `https://wa.me/55${telefone}?text=${texto}` : `https://wa.me/?text=${texto}`;
-  window.open(url, "_blank");
+  if (!telefone) {
+    notificarErroBanco("Este cliente não tem um WhatsApp cadastrado nesta OS. Cadastre o telefone antes de enviar.");
+    return;
+  }
+  const texto = encodeURIComponent(osWhatsappMsg(os));
+  window.open(`https://wa.me/55${telefone}?text=${texto}`, "_blank");
 }
 
 /* Botão principal dourado, com leve efeito de pressão ao tocar.
