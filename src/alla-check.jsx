@@ -5638,6 +5638,10 @@ function OSForm({ editingOS, onDone, onCancel }) {
       deslocamento: "0",
       desconto: "0",
       status: "ABERTA",
+      garantiaPeriodo: "",
+      garantiaInicio: "",
+      garantiaFim: "",
+      garantiaCondicoes: "",
     }
   );
   const [fotosAntes, setFotosAntes] = useState(editingOS?.fotosAntes || []);
@@ -5817,6 +5821,14 @@ function OSForm({ editingOS, onDone, onCancel }) {
         <SignaturePad value={assinatura} onChange={setAssinatura} />
       </Field>
 
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Garantia (opcional)</div>
+      <LinhaDupla>
+        <Field label="Período da garantia"><input style={inputStyle} value={form.garantiaPeriodo} onChange={set("garantiaPeriodo")} placeholder="Ex: 90 dias" /></Field>
+        <Field label="Início"><input type="date" style={inputStyle} value={form.garantiaInicio} onChange={set("garantiaInicio")} /></Field>
+      </LinhaDupla>
+      <Field label="Fim"><input type="date" style={inputStyle} value={form.garantiaFim} onChange={set("garantiaFim")} /></Field>
+      <Field label="Condições da garantia"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={form.garantiaCondicoes} onChange={set("garantiaCondicoes")} /></Field>
+
       <Field label="Status">
         <select style={{ ...inputStyle, appearance: "none" }} value={form.status} onChange={set("status")}>
           {OS_STATUS.map((s) => (
@@ -5911,7 +5923,19 @@ function osPDF(os) {
             <b>${valor(os.valorTotal)}</b>
           </div>
 
-          ${pdfSecaoGarantiaServico(os.garantia)}
+          <div class="pdf-card">
+            <h4>Garantia</h4>
+            ${
+              os.garantiaPeriodo || os.garantiaInicio || os.garantiaFim || os.garantiaCondicoes
+                ? `
+                  ${os.garantiaPeriodo ? `<div><b>Garantia do serviço:</b> ${os.garantiaPeriodo}</div>` : ""}
+                  ${os.garantiaInicio ? `<div><b>Início:</b> ${new Date(os.garantiaInicio + "T00:00:00").toLocaleDateString("pt-BR")}</div>` : ""}
+                  ${os.garantiaFim ? `<div><b>Fim:</b> ${new Date(os.garantiaFim + "T00:00:00").toLocaleDateString("pt-BR")}</div>` : ""}
+                  ${os.garantiaCondicoes ? `<div style="margin-top:6px">${String(os.garantiaCondicoes).replace(/\n/g, "<br/>")}</div>` : ""}
+                `
+                : `<div>Garantia não informada.</div>`
+            }
+          </div>
           ${GARANTIA_CLAUSULA_HTML}
 
           ${os.observacoes ? card("Observações técnicas", String(os.observacoes).replace(/\n/g, "<br/>")) : ""}
@@ -5984,7 +6008,7 @@ function osWhatsappMsg(os) {
     "",
     "🛡️ *GARANTIA*",
     "",
-    ...(os.garantia ? [`Prazo: ${os.garantia}`, ""] : []),
+    ...(os.garantiaPeriodo ? [`Prazo: ${os.garantiaPeriodo}`, ""] : []),
     GARANTIA_CLAUSULA_TEXTO,
     "",
     sep,
@@ -6087,12 +6111,40 @@ function BotaoNovaOS({ onClick }) {
   );
 }
 
+/* Seção compacta do detalhe de OS — só ocupa espaço quando tem conteúdo,
+   evitando inflar a altura da tela com blocos vazios. */
+function OsSecaoDetalhe({ titulo, children }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>
+        {titulo}
+      </div>
+      <div style={{ background: "#0D0D0E", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: 12 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* Linha label/valor — não renderiza nada se o valor estiver vazio, pra
+   nunca mostrar campo em branco nem inventar dado. */
+function OsLinhaDetalhe({ label, valor }) {
+  if (!valor) return null;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+      <span style={{ color: "#8A8A90", fontSize: 11.5, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: "#F3F3F1", fontSize: 12.5, textAlign: "right" }}>{valor}</span>
+    </div>
+  );
+}
+
 function OrdensServicoModule({ onNavigate }) {
   const [mode, setMode] = useState("lista"); // lista | novo | detalhe
   const [lista, setLista] = useState(null);
   const [selected, setSelected] = useState(null);
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("Todas");
+  const [filtroTecnico, setFiltroTecnico] = useState("Todos");
   const [menuAcoesId, setMenuAcoesId] = useState(null);
 
   const load = useCallback(async () => {
@@ -6146,6 +6198,7 @@ function OrdensServicoModule({ onNavigate }) {
   const filtradas = useMemo(() => {
     let l = lista || [];
     if (filtro !== "Todas") l = l.filter((os) => (os.status || "").toUpperCase() === filtro.toUpperCase());
+    if (filtroTecnico !== "Todos") l = l.filter((os) => os.tecnico === filtroTecnico);
     const q = busca.trim().toLowerCase();
     if (q) {
       l = l.filter((os) =>
@@ -6157,7 +6210,14 @@ function OrdensServicoModule({ onNavigate }) {
       );
     }
     return l;
-  }, [lista, busca, filtro]);
+  }, [lista, busca, filtro, filtroTecnico]);
+
+  // lista de técnicos que realmente aparecem nas OS já cadastradas — não
+  // inventa nomes, só reflete o que já existe.
+  const tecnicosDisponiveis = useMemo(() => {
+    const nomes = new Set((lista || []).map((os) => os.tecnico).filter(Boolean));
+    return Array.from(nomes).sort((a, b) => a.localeCompare(b));
+  }, [lista]);
 
   const filtradasVisiveis = useListaProgressiva(filtradas);
 
@@ -6211,23 +6271,89 @@ function OrdensServicoModule({ onNavigate }) {
           )}
         </div>
 
-        <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
-          {[
-            ["Equipamento", `${os.eqTipo || "-"} ${os.eqMarca || ""} ${os.eqModelo || ""}`],
-            ["Serviço", os.tipoServico],
-            ["Técnico", os.tecnico || "-"],
-            ["Data", new Date(os.data).toLocaleDateString("pt-BR")],
-          ].map(([label, val]) => (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ color: "#8A8A90", fontSize: 12.5 }}>{label}</span>
-              <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{val}</span>
-            </div>
-          ))}
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 10, paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "#F3F3F1", fontSize: 14, fontWeight: 600 }}>Valor total</span>
+        {/* Seção por seção, como pedido — cada uma só aparece se houver algo
+            para mostrar; nunca inventa dado que não esteja na OS. */}
+        <OsSecaoDetalhe titulo="Cliente">
+          <OsLinhaDetalhe label="Nome" valor={os.clienteNome} />
+          <OsLinhaDetalhe label="Telefone" valor={os.clienteTelefone} />
+          <OsLinhaDetalhe label="Endereço" valor={os.clienteEndereco} />
+        </OsSecaoDetalhe>
+
+        {[os.eqTipo, os.eqMarca, os.eqModelo, os.eqBtus, os.eqSerie].some(Boolean) && (
+          <OsSecaoDetalhe titulo="Equipamento">
+            <OsLinhaDetalhe label="Tipo" valor={os.eqTipo} />
+            <OsLinhaDetalhe label="Marca" valor={os.eqMarca} />
+            <OsLinhaDetalhe label="Modelo" valor={os.eqModelo} />
+            <OsLinhaDetalhe label="Capacidade" valor={os.eqBtus ? `${os.eqBtus} BTU` : ""} />
+            <OsLinhaDetalhe label="Número de série" valor={os.eqSerie} />
+          </OsSecaoDetalhe>
+        )}
+
+        <OsSecaoDetalhe titulo="Atendimento">
+          <OsLinhaDetalhe label="Tipo de serviço" valor={os.tipoServico} />
+          <OsLinhaDetalhe label="Técnico responsável" valor={os.tecnico} />
+          <OsLinhaDetalhe label="Data de abertura" valor={os.data ? new Date(os.data).toLocaleDateString("pt-BR") : ""} />
+          <OsLinhaDetalhe label="Data de fechamento" valor={os.finalizedAt ? new Date(os.finalizedAt).toLocaleDateString("pt-BR") : ""} />
+        </OsSecaoDetalhe>
+
+        {os.problemaRelatado && (
+          <OsSecaoDetalhe titulo="Descrição do problema">
+            <div style={{ color: "#D5D5D8", fontSize: 12.5, lineHeight: 1.55 }}>{os.problemaRelatado}</div>
+          </OsSecaoDetalhe>
+        )}
+
+        {os.procedimentosRealizados && (
+          <OsSecaoDetalhe titulo="Serviço executado">
+            <div style={{ color: "#D5D5D8", fontSize: 12.5, lineHeight: 1.55 }}>{os.procedimentosRealizados}</div>
+          </OsSecaoDetalhe>
+        )}
+
+        <OsSecaoDetalhe titulo="Peças e materiais">
+          {os.materiaisUtilizados || os.pecasUtilizadas ? (
+            <>
+              {os.materiaisUtilizados && <OsLinhaDetalhe label="Materiais" valor={os.materiaisUtilizados} />}
+              {os.pecasUtilizadas && <OsLinhaDetalhe label="Peças" valor={os.pecasUtilizadas} />}
+            </>
+          ) : (
+            <div style={{ color: "#6E6E73", fontSize: 12 }}>Nenhuma peça ou material registrado.</div>
+          )}
+        </OsSecaoDetalhe>
+
+        <OsSecaoDetalhe titulo="Valores">
+          <OsLinhaDetalhe label="Mão de obra" valor={`R$ ${Number(os.maoDeObra || 0).toFixed(2)}`} />
+          <OsLinhaDetalhe label="Peças" valor={`R$ ${Number(os.pecas || 0).toFixed(2)}`} />
+          {Number(os.desconto) > 0 && <OsLinhaDetalhe label="Desconto" valor={`R$ ${Number(os.desconto).toFixed(2)}`} />}
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: "#F3F3F1", fontSize: 14, fontWeight: 600 }}>Total</span>
             <span style={{ color: "#E9C878", fontSize: 18, fontWeight: 700 }}>R$ {Number(os.valorTotal || 0).toFixed(2)}</span>
           </div>
-        </div>
+        </OsSecaoDetalhe>
+
+        <OsSecaoDetalhe titulo="Garantia">
+          {os.garantiaPeriodo || os.garantiaInicio || os.garantiaFim || os.garantiaCondicoes ? (
+            <>
+              {os.garantiaPeriodo && <OsLinhaDetalhe label="Garantia do serviço" valor={os.garantiaPeriodo} />}
+              {os.garantiaInicio && <OsLinhaDetalhe label="Início da garantia" valor={new Date(os.garantiaInicio + "T00:00:00").toLocaleDateString("pt-BR")} />}
+              {os.garantiaFim && <OsLinhaDetalhe label="Fim da garantia" valor={new Date(os.garantiaFim + "T00:00:00").toLocaleDateString("pt-BR")} />}
+              {os.garantiaCondicoes && <div style={{ color: "#D5D5D8", fontSize: 12, lineHeight: 1.5, marginTop: 4 }}>{os.garantiaCondicoes}</div>}
+            </>
+          ) : (
+            <div style={{ color: "#6E6E73", fontSize: 12 }}>Garantia não informada.</div>
+          )}
+        </OsSecaoDetalhe>
+
+        {os.observacoes && (
+          <OsSecaoDetalhe titulo="Observações">
+            <div style={{ color: "#D5D5D8", fontSize: 12.5, lineHeight: 1.55 }}>{os.observacoes}</div>
+          </OsSecaoDetalhe>
+        )}
+
+        {os.assinatura && (
+          <OsSecaoDetalhe titulo="Assinaturas">
+            <img src={os.assinatura} style={{ maxHeight: 60, display: "block" }} alt="Assinatura do cliente" />
+            <div style={{ fontSize: 10.5, color: "#6E6E73", marginTop: 4 }}>Assinatura do cliente</div>
+          </OsSecaoDetalhe>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
           <button onClick={() => osWhatsapp(os)} style={{ flex: 1, background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "12px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#0A0A0B", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer" }}>
@@ -6363,6 +6489,28 @@ function OrdensServicoModule({ onNavigate }) {
         })}
       </div>
 
+      {tecnicosDisponiveis.length > 1 && (
+        <select
+          value={filtroTecnico}
+          onChange={(e) => setFiltroTecnico(e.target.value)}
+          style={{
+            marginTop: 10,
+            marginBottom: 4,
+            background: "#0A0A0B",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 8,
+            padding: "6px 10px",
+            color: filtroTecnico === "Todos" ? "#6E6E73" : "#E9C878",
+            fontFamily: "'Roboto',sans-serif",
+            fontSize: 11.5,
+            appearance: "none",
+          }}
+        >
+          <option value="Todos">Todos os técnicos</option>
+          {tecnicosDisponiveis.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      )}
+
       {/* ---- lista: extrato compacto, divisores finos, sem card por item ---- */}
       {lista === null ? (
         <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
@@ -6426,6 +6574,16 @@ function OrdensServicoModule({ onNavigate }) {
                     <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: cor }}>{os.status}</span>
                     <span style={{ fontSize: 10, color: "#5A5A5F", marginLeft: "auto" }}>{new Date(os.data).toLocaleDateString("pt-BR")}</span>
                   </div>
+                  {(os.eqMarca || os.eqModelo || os.eqBtus) && (
+                    <div style={{ fontSize: 10, color: "#5A5A5F", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {[os.eqMarca, os.eqModelo].filter(Boolean).join(" ")}{os.eqBtus ? ` · ${os.eqBtus} BTU` : ""}
+                    </div>
+                  )}
+                  {os.tecnico && (
+                    <div style={{ fontSize: 10, color: "#5A5A5F", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      Técnico: {os.tecnico}
+                    </div>
+                  )}
                 </button>
 
                 {/* menu de ações rápidas */}
