@@ -16594,7 +16594,7 @@ function GarantiaConfigForm({ onBack }) {
 }
 
 /* ---------------- Detalhe de uma garantia: fluxo completo de extensão ---------------- */
-function GarantiaDetail({ garantia, config, onBack }) {
+function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
   const [g, setG] = useState(garantia);
   const [gerando, setGerando] = useState(false);
   const [responsavel, setResponsavel] = useState("");
@@ -16774,17 +16774,28 @@ function GarantiaDetail({ garantia, config, onBack }) {
       <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 600, color: "#F3F3F1" }}>{g.clienteNome || "Cliente"}</div>
       <div style={{ fontSize: 12.5, color: "#8A8A90", marginBottom: 10 }}>{g.origemTipo} {g.origemNumero || ""} · {g.equipamento || g.descricao}</div>
 
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#141416", border: `1px solid ${st}55`, borderRadius: 20, padding: "5px 12px", marginBottom: 16 }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: st }} />
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: st, letterSpacing: 1 }}>{g.status}</span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#141416", border: `1px solid ${st}55`, borderRadius: 20, padding: "5px 12px" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: st }} />
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: st, letterSpacing: 1 }}>{g.status}</span>
+        </div>
+        {g.origemTipo === "OS" && onVerOS && (
+          <button onClick={onVerOS} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 20, padding: "5px 12px", color: "#C7C9CE", fontSize: 11, cursor: "pointer" }}>
+            <FileText size={12} /> Ver OS
+          </button>
+        )}
       </div>
 
       <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
         {[
           ["Telefone", g.clienteTelefone],
+          ["Marca", g.marca],
+          ["Modelo", g.modelo],
+          ["Número de série", g.serie],
           ["Início da garantia", g.dataInicio ? new Date(g.dataInicio).toLocaleDateString("pt-BR") : null],
           ["Vencimento original", g.fimOriginal ? new Date(g.fimOriginal + "T00:00:00").toLocaleDateString("pt-BR") : null],
           ["Vencimento atual", g.fimAtual ? new Date(g.fimAtual + "T00:00:00").toLocaleDateString("pt-BR") : null],
+          ["Dias restantes", g.fimAtual ? (() => { const d = Math.ceil((new Date(g.fimAtual) - new Date()) / 86400000); return d >= 0 ? `${d} dias` : `vencida há ${-d} dias`; })() : null],
           ["Período original", g.periodoOriginal],
         ].filter(([, v]) => v).map(([label, val]) => (
           <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -16792,6 +16803,26 @@ function GarantiaDetail({ garantia, config, onBack }) {
             <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{val}</span>
           </div>
         ))}
+        {(g.extensao?.extensoes || []).length > 0 && (
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 4, paddingTop: 8 }}>
+            <div style={{ fontSize: 10.5, color: "#4681DF", fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, marginBottom: 6 }}>EXTENSÃO CONTRATADA</div>
+            {(() => {
+              const ext = g.extensao.extensoes[g.extensao.extensoes.length - 1];
+              return (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ color: "#8A8A90", fontSize: 12.5 }}>Período adicional</span>
+                    <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{ext.periodoMeses} meses</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ color: "#8A8A90", fontSize: 12.5 }}>Data da extensão</span>
+                    <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{new Date(ext.dataAtivacao).toLocaleDateString("pt-BR")}</span>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {/* fluxo da oferta, um botão de cada vez conforme o estágio atual */}
@@ -16843,7 +16874,7 @@ function GarantiaDetail({ garantia, config, onBack }) {
 }
 
 /* ---------------- Módulo principal: Garantias ---------------- */
-function GarantiasModule() {
+function GarantiasModule({ onNavigate }) {
   const [lista, setLista] = useState(null);
   const [config, setConfig] = useState(null);
   const [selecionada, setSelecionada] = useState(null);
@@ -16886,6 +16917,7 @@ function GarantiasModule() {
         garantia={selecionada}
         config={config}
         onBack={() => { setSelecionada(null); load(); }}
+        onVerOS={onNavigate ? () => onNavigate("os") : null}
       />
     );
   }
@@ -16913,79 +16945,107 @@ function GarantiasModule() {
     return true;
   });
 
+  const STATUS_LABEL_CURTO = { "PRÓXIMA DO VENCIMENTO": "VENCENDO" };
+
   return (
-    <div style={{ padding: 16, paddingBottom: 40 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 700, color: "#F3F3F1" }}>Garantias</div>
-        <button onClick={() => setMostrarConfig(true)} style={{ background: "#1C1C1F", border: "1px solid #2A2A2E", borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#C7C9CE", cursor: "pointer" }}>
-          <IconeCaneta size={15} />
+    <div style={{ padding: "12px 14px", paddingBottom: 40 }}>
+      {/* barra que esconde a scrollbar horizontal dos filtros, sem CSS externo */}
+      <style>{`.gar-filtros::-webkit-scrollbar{display:none}`}</style>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <button onClick={() => setMostrarConfig(true)} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 9, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", color: "#C7C9CE", cursor: "pointer", flexShrink: 0 }}>
+          <IconeCaneta size={13} />
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+      {/* resumo compacto 2x3 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 12 }}>
         {[
-          ["Ativas", contagem.ativas, "#4ADE80"],
-          ["Vencendo em 30 dias", contagem.vencendo30, "#E9C878"],
-          ["Vencendo em 15 dias", contagem.vencendo15, "#E9C878"],
-          ["Vencidas", contagem.vencidas, "#F0605A"],
-          ["Extensões ativadas", contagem.estendidas, "#4681DF"],
-          ["Ofertas pendentes de envio", contagem.ofertasPendentes, "#8A8A90"],
+          ["ATIVAS", contagem.ativas, "#4ADE80"],
+          ["VENCEM 30D", contagem.vencendo30, "#E9C878"],
+          ["VENCEM 15D", contagem.vencendo15, "#E9C878"],
+          ["VENCIDAS", contagem.vencidas, "#F0605A"],
+          ["EXTENSÕES", contagem.estendidas, "#4681DF"],
+          ["OFERTAS", contagem.ofertasPendentes, "#8A8A90"],
         ].map(([label, valor, cor]) => (
-          <div key={label} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 14 }}>
-            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 1, textTransform: "uppercase" }}>{label}</div>
-            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 20, color: cor, marginTop: 4 }}>{valor}</div>
+          <div key={label} style={{ background: "#141416", border: "1px solid #232326", borderRadius: 9, padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 0.3 }}>{label}</span>
+            <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 16, color: cor }}>{valor}</span>
           </div>
         ))}
       </div>
 
-      <div style={{ position: "relative", marginBottom: 10 }}>
-        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+      <div style={{ position: "relative", marginBottom: 8 }}>
+        <Search size={13} color="#5A5A5F" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar por cliente ou equipamento..."
-          style={{ width: "100%", boxSizing: "border-box", background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "10px 12px 10px 34px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 13, outline: "none" }}
+          placeholder="Buscar cliente, equipamento ou OS..."
+          style={{ width: "100%", boxSizing: "border-box", background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 9, padding: "8px 10px 8px 30px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 12.5, outline: "none" }}
         />
       </div>
 
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 14, WebkitOverflowScrolling: "touch" }}>
+      <div className="gar-filtros" style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, scrollbarWidth: "none", msOverflowStyle: "none" }}>
         {["Todas", "ATIVA", "PRÓXIMA DO VENCIMENTO", "VENCIDA", "ESTENDIDA"].map((f) => (
           <button
             key={f}
             onClick={() => setFiltroStatus(f)}
-            style={{ flexShrink: 0, fontSize: 10.5, padding: "6px 12px", borderRadius: 20, border: `1px solid ${filtroStatus === f ? "#C9A24B" : "#2A2A2E"}`, background: filtroStatus === f ? "rgba(201,162,75,0.12)" : "transparent", color: filtroStatus === f ? "#E9C878" : "#8A8A90", cursor: "pointer", whiteSpace: "nowrap" }}
+            style={{ flexShrink: 0, fontSize: 10, padding: "5px 10px", borderRadius: 20, border: `1px solid ${filtroStatus === f ? "#C9A24B" : "#232326"}`, background: filtroStatus === f ? "rgba(201,162,75,0.12)" : "transparent", color: filtroStatus === f ? "#E9C878" : "#8A8A90", cursor: "pointer", whiteSpace: "nowrap" }}
           >
-            {f === "Todas" ? "Todas" : f.charAt(0) + f.slice(1).toLowerCase()}
+            {f === "Todas" ? "Todas" : STATUS_LABEL_CURTO[f] || (f.charAt(0) + f.slice(1).toLowerCase())}
           </button>
         ))}
       </div>
 
       {filtradas.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "40px 20px", color: "#6E6E73" }}>
-          <ClipboardCheck size={26} style={{ marginBottom: 10, opacity: 0.5 }} />
-          <div style={{ fontSize: 13 }}>{lista.length === 0 ? "Nenhuma garantia encontrada em OS ou vendas ainda." : "Nenhuma garantia para esse filtro."}</div>
+        <div style={{ textAlign: "center", padding: "36px 20px", color: "#6E6E73" }}>
+          <ClipboardCheck size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
+          <div style={{ fontSize: 12.5 }}>{lista.length === 0 ? "Nenhuma garantia encontrada em OS ou vendas ainda." : "Nenhuma garantia para esse filtro."}</div>
         </div>
       ) : (
         filtradas.map((g) => {
           const cor = GARANTIA_STATUS_COR[g.status] || "#6E6E73";
           const dias = g.fimAtual ? Math.ceil((new Date(g.fimAtual) - new Date()) / 86400000) : null;
+          const statusExibido = g.extensao?.oferta?.status === "ATIVADA" ? "EXTENSÃO ATIVA" : g.extensao?.oferta?.criada && !g.extensao?.oferta?.enviada ? "OFERTA PENDENTE" : (STATUS_LABEL_CURTO[g.status] || g.status);
           return (
             <button
               key={g.chave}
               onClick={() => setSelecionada(g)}
-              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer" }}
+              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #232326", borderRadius: 11, padding: "11px 12px", marginBottom: 7, cursor: "pointer" }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14, color: "#F3F3F1" }}>{g.clienteNome || "Cliente"}</span>
-                <span style={{ fontSize: 10, color: cor, fontFamily: "'JetBrains Mono',monospace" }}>{g.status}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 13, color: "#F3F3F1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {(g.clienteNome || "Cliente").toUpperCase()}
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: cor }} />
+                  <span style={{ fontSize: 9, color: cor, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.3 }}>{statusExibido}</span>
+                </span>
               </div>
-              <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>
-                {g.origemTipo} {g.origemNumero || ""} · {g.equipamento || g.descricao}
-                {dias !== null && ` · ${dias >= 0 ? `${dias} dias restantes` : `vencida há ${-dias} dias`}`}
-              </div>
-              {g.extensao?.oferta?.enviada && (
-                <div style={{ fontSize: 10, color: "#4681DF", marginTop: 3 }}>Oferta enviada em {new Date(g.extensao.oferta.enviadaEm).toLocaleDateString("pt-BR")}</div>
+
+              {g.origemNumero && (
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", marginTop: 4 }}>{g.origemNumero}</div>
               )}
+              {(g.equipamento || g.descricao) && (
+                <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 3 }}>{g.equipamento || g.descricao}</div>
+              )}
+              {(g.dataInicio || g.fimAtual) && (
+                <div style={{ fontSize: 11, color: "#C7C9CE", marginTop: 3 }}>
+                  {g.dataInicio ? new Date(g.dataInicio).toLocaleDateString("pt-BR") : "-"} → {g.fimAtual ? new Date(g.fimAtual + "T00:00:00").toLocaleDateString("pt-BR") : "-"}
+                </div>
+              )}
+              {dias !== null && (
+                <div style={{ fontSize: 11, color: dias < 0 ? "#F0605A" : dias <= 30 ? "#E9C878" : "#4ADE80", marginTop: 3, fontWeight: 600 }}>
+                  {dias >= 0 ? `${dias} dias restantes` : `vencida há ${-dias} dias`}
+                </div>
+              )}
+              {g.extensao?.oferta?.enviada && (
+                <div style={{ fontSize: 10, color: "#4681DF", marginTop: 4 }}>Oferta enviada em {new Date(g.extensao.oferta.enviadaEm).toLocaleDateString("pt-BR")}</div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+                <span style={{ fontSize: 10.5, color: "#E9C878", fontFamily: "'Roboto',sans-serif", fontWeight: 600 }}>Ver detalhes →</span>
+              </div>
             </button>
           );
         })
@@ -17726,7 +17786,7 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "tool-alla-venda" && <AllaVendaModule />}
         {telaVisivel === "tool-agenda-cortes" && <AgendaCortesModule />}
         {telaVisivel === "tool-visita-tecnica" && <VisitaTecnicaModule />}
-        {telaVisivel === "tool-garantias" && <GarantiasModule />}
+        {telaVisivel === "tool-garantias" && <GarantiasModule onNavigate={navigate} />}
         {telaVisivel === "tool-assinaturas" && <AssinaturasModule />}
         {telaVisivel === "tool-rastreio-tecnico" && <RastreioTecnico />}
         {telaVisivel === "tool-historico-equipamento" && <HistoricoEquipamento />}
