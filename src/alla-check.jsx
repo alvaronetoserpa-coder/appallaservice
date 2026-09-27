@@ -66,6 +66,7 @@ const FIRESTORE_COLLECTION_MAP = {
   "agenda-cortes": "agenda_cortes",
   "agenda-cortes-servicos": "agenda_cortes_servicos",
   "visitas-tecnicas": "visitas_tecnicas",
+  "pmoc-config": "pmoc_config",
   manuais: "manuais",
 };
 
@@ -4797,7 +4798,19 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
       const historico = [...(current.historico || []), registro];
       const meses = PMOC_FREQ_MESES[current.frequencia] || 3;
       const proximaManutencao = addMeses(registro.data.slice(0, 10), meses);
-      const atualizado = { ...current, historico, proximaManutencao, ultimaManutencao: registro.data };
+      // cada item marcado com nota vira uma não conformidade RASTREÁVEL,
+      // com status próprio que pode evoluir ao longo do tempo — não fica
+      // preso à inspeção que a originou.
+      const novasNaoConformidades = Object.entries(registro.notas || {}).map(([item, descricao]) => ({
+        id: uid(),
+        item,
+        descricao,
+        status: "Aberta",
+        data: registro.data,
+        osVinculada: "",
+      }));
+      const naoConformidades = [...(current.naoConformidades || []), ...novasNaoConformidades];
+      const atualizado = { ...current, historico, naoConformidades, proximaManutencao, ultimaManutencao: registro.data };
       await window.storage.set(`pmocs:${current.id}`, JSON.stringify(atualizado));
       setCurrent(atualizado);
       setChecklistMode(false);
@@ -4806,6 +4819,37 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
       console.error("Erro em registrarManutencao", err);
       notificarErroBanco(diagnosticarErroFirestore(err, "operação"));
     }
+  };
+
+  const PMOC_NC_STATUS = ["Aberta", "Em correção", "Corrigida", "Encerrada"];
+  const PMOC_NC_COR = { "Aberta": "#F0605A", "Em correção": "#E9C878", "Corrigida": "#4681DF", "Encerrada": "#4ADE80" };
+  const avancarStatusNC = async (ncId) => {
+    const naoConformidades = (current.naoConformidades || []).map((nc) => {
+      if (nc.id !== ncId) return nc;
+      const idx = PMOC_NC_STATUS.indexOf(nc.status);
+      return { ...nc, status: PMOC_NC_STATUS[Math.min(idx + 1, PMOC_NC_STATUS.length - 1)] };
+    });
+    const atualizado = { ...current, naoConformidades };
+    await window.storage.set(`pmocs:${current.id}`, JSON.stringify(atualizado));
+    setCurrent(atualizado);
+    onUpdated && onUpdated();
+  };
+  const vincularOsNaNC = async (ncId, numeroOS) => {
+    const naoConformidades = (current.naoConformidades || []).map((nc) => (nc.id === ncId ? { ...nc, osVinculada: numeroOS } : nc));
+    const atualizado = { ...current, naoConformidades };
+    await window.storage.set(`pmocs:${current.id}`, JSON.stringify(atualizado));
+    setCurrent(atualizado);
+  };
+
+  // Versionamento: nunca sobrescreve — guarda o estado anterior do plano
+  // (config, sem histórico/NCs) e sobe o número da versão.
+  const criarNovaVersao = async () => {
+    const snapshot = { versao: current.versao || 1, dataVersao: new Date().toISOString(), frequencia: current.frequencia, atividades: current.atividades, responsavel: current.responsavel, equipamentos: pmocEquipamentosDe(current) };
+    const versoesAnteriores = [...(current.versoesAnteriores || []), snapshot];
+    const atualizado = { ...current, versoesAnteriores, versao: (current.versao || 1) + 1 };
+    await window.storage.set(`pmocs:${current.id}`, JSON.stringify(atualizado));
+    setCurrent(atualizado);
+    onUpdated && onUpdated();
   };
 
   // Contagem por status de uma manutenção — usado no resumo do PDF e do
@@ -4852,11 +4896,22 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
     window.open(`https://wa.me/55${telefone}?text=${texto}`, "_blank");
   };
 
-  const gerarPDF = () => {
+  const gerarPDF = async () => {
     const win = window.open("", "_blank");
     if (!win) return;
     const { header, footer } = pdfCabecalhoRodape(LOGO_DATA_URI);
     const st2 = pmocStatus(current.proximaManutencao);
+    const respTecnico = await window.storage.get("pmoc-config:responsavel-tecnico").then(
+      (r) => (r ? JSON.parse(r.value) : null),
+      () => null
+    );
+    const equipamentosHtml = pmocEquipamentosDe(current)
+      .map((eq) => `<div style="margin-bottom:4px;">${[eq.tipo, eq.marca, eq.modelo].filter(Boolean).join(" ") || "-"}${eq.btu ? ` · ${eq.btu} BTU` : ""}${eq.serie ? ` · Série ${eq.serie}` : ""}${eq.ambiente ? ` — ${eq.ambiente}` : ""}</div>`)
+      .join("");
+    const naoConfAbertasHtml = (current.naoConformidades || [])
+      .filter((nc) => nc.status !== "Encerrada")
+      .map((nc) => `<div style="margin-bottom:4px;">• <b>${nc.item}</b>: ${nc.descricao} <span style="color:#8A6A22;">[${nc.status}]</span>${nc.osVinculada ? ` — OS ${nc.osVinculada}` : ""}</div>`)
+      .join("");
 
     const historicoHtml = (current.historico || [])
       .slice()
@@ -4891,10 +4946,8 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
             <div>${[current.telefone, current.email].filter(Boolean).join(" · ")}</div>
           </div>
           <div class="pdf-card">
-            <h4>Equipamento</h4>
-            <div>${[current.eqTipo, current.eqMarca, current.eqModelo].filter(Boolean).join(" ")}${current.eqBtus ? ` · ${current.eqBtus} BTUs` : ""}</div>
-            ${current.eqSerie ? `<div>Nº de série: ${current.eqSerie}</div>` : ""}
-            ${current.localInstalado ? `<div>Local: ${current.localInstalado}</div>` : ""}
+            <h4>Equipamentos (${pmocEquipamentosDe(current).length}) · v${current.versao || 1}</h4>
+            ${equipamentosHtml || "<div>Nenhum equipamento cadastrado.</div>"}
           </div>
           <div class="pdf-card">
             <h4>Plano de manutenção</h4>
@@ -4904,8 +4957,17 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
             ${current.atividades ? `<div style="margin-top:6px;">${String(current.atividades).replace(/\n/g, "<br/>")}</div>` : ""}
           </div>
 
+          ${naoConfAbertasHtml ? `<div class="pdf-card"><h4>Não conformidades em aberto</h4>${naoConfAbertasHtml}</div>` : ""}
+
           <h2 style="font-size:13px;color:#1A1A1A;margin:20px 0 4px;">Histórico de manutenções (${(current.historico || []).length})</h2>
           ${historicoHtml || `<div class="pdf-card">Nenhuma manutenção registrada ainda.</div>`}
+
+          <div class="pdf-card">
+            <h4>Responsável técnico</h4>
+            <div>${respTecnico?.nome || "Não informado"}${respTecnico?.engenheiro ? ` — ${respTecnico.engenheiro}` : ""}</div>
+            <div>${respTecnico?.crea ? `CREA: ${respTecnico.crea}` : "CREA: Não informado"}</div>
+            <div>${respTecnico?.art ? `ART: ${respTecnico.art}` : "ART: Não informada"}</div>
+          </div>
 
           ${GARANTIA_CLAUSULA_HTML}
         </div>
@@ -4945,26 +5007,70 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
 
       <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
         {[
-          ["Equipamento", `${current.eqTipo || "-"} ${current.eqMarca || ""} ${current.eqModelo || ""}`],
-          ["BTUs", current.eqBtus || "-"],
           ["Local instalado", current.localInstalado || "-"],
           ["Frequência", current.frequencia],
           ["Responsável", current.responsavel || "-"],
           ["Próxima manutenção", current.proximaManutencao || "-"],
+          ["Versão do plano", `v${current.versao || 1}`],
         ].map(([label, val]) => (
           <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
             <span style={{ color: "#8A8A90", fontSize: 12.5 }}>{label}</span>
             <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{val}</span>
           </div>
         ))}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 8, paddingTop: 8 }}>
+          <span style={{ color: "#8A8A90", fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }}>Equipamentos ({pmocEquipamentosDe(current).length})</span>
+          {pmocEquipamentosDe(current).map((eq, i) => (
+            <div key={eq.id || i} style={{ fontSize: 12, color: "#F3F3F1", marginTop: 6 }}>
+              {[eq.tipo, eq.marca, eq.modelo].filter(Boolean).join(" ") || "-"}{eq.btu ? ` · ${eq.btu} BTU` : ""}
+              {eq.ambiente && <span style={{ color: "#8A8A90" }}> — {eq.ambiente}</span>}
+            </div>
+          ))}
+        </div>
       </div>
 
       <button
         onClick={() => setChecklistMode(true)}
-        style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}
+        style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 10 }}
       >
         Registrar manutenção
       </button>
+      <button
+        onClick={criarNovaVersao}
+        style={{ width: "100%", background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "10px 0", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 11.5, color: "#8A8A90", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}
+      >
+        Salvar como nova versão do plano (v{(current.versao || 1) + 1})
+      </button>
+
+      {(current.naoConformidades || []).length > 0 && (
+        <>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
+            Não conformidades ({(current.naoConformidades || []).filter((n) => n.status !== "Encerrada").length} em aberto)
+          </div>
+          {[...(current.naoConformidades || [])].reverse().map((nc) => (
+            <div key={nc.id} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ fontSize: 12.5, color: "#F3F3F1", flex: 1 }}>
+                  <b>{nc.item}</b>
+                  <div style={{ color: "#C7C9CE", fontSize: 12, marginTop: 2 }}>{nc.descricao}</div>
+                </div>
+                <button
+                  onClick={() => nc.status !== "Encerrada" && avancarStatusNC(nc.id)}
+                  style={{ flexShrink: 0, fontSize: 9.5, padding: "4px 8px", borderRadius: 20, border: `1px solid ${PMOC_NC_COR[nc.status]}55`, background: `${PMOC_NC_COR[nc.status]}22`, color: PMOC_NC_COR[nc.status], cursor: nc.status !== "Encerrada" ? "pointer" : "default" }}
+                >
+                  {nc.status}
+                </button>
+              </div>
+              <input
+                style={{ ...inputStyle, marginTop: 6, fontSize: 11, padding: "6px 10px" }}
+                value={nc.osVinculada}
+                onChange={(e) => vincularOsNaNC(nc.id, e.target.value)}
+                placeholder="Vincular nº da OS (opcional)"
+              />
+            </div>
+          ))}
+        </>
+      )}
 
       <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
         Histórico ({(current.historico || []).length})
@@ -5005,6 +5111,98 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
   );
 }
 
+/* Um PMOC pode ter vários equipamentos (novo). PMOCs antigos têm um só,
+   guardado em campos soltos (eqTipo/eqMarca/...) — esta função devolve
+   sempre uma lista, convertendo o formato antigo na hora, sem precisar
+   migrar nada no banco. */
+function pmocEquipamentosDe(pmoc) {
+  if (Array.isArray(pmoc.equipamentos) && pmoc.equipamentos.length > 0) return pmoc.equipamentos;
+  if (pmoc.eqTipo || pmoc.eqMarca || pmoc.eqModelo || pmoc.eqBtus) {
+    return [{
+      id: "legado",
+      tipo: pmoc.eqTipo || "", marca: pmoc.eqMarca || "", modelo: pmoc.eqModelo || "",
+      serie: pmoc.eqSerie || "", btu: pmoc.eqBtus || "", gas: "", tensao: "",
+      ambiente: pmoc.localInstalado || "", quantidade: 1, codigo: "",
+    }];
+  }
+  return [];
+}
+
+/* ================= Responsável Técnico / ART (evolução PMOC) =================
+   Dado único da empresa (não muda por PMOC), guardado numa chave própria —
+   nova, mas isolada, não mexe em nenhuma coleção existente. */
+function PmocConfigResponsavelTecnico({ onBack }) {
+  const [nome, setNome] = useState("");
+  const [engenheiro, setEngenheiro] = useState("");
+  const [crea, setCrea] = useState("");
+  const [art, setArt] = useState("");
+  const [artPdf, setArtPdf] = useState(null);
+  const [carregado, setCarregado] = useState(false);
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    window.storage.get("pmoc-config:responsavel-tecnico").then((r) => {
+      if (r) {
+        try {
+          const d = JSON.parse(r.value);
+          setNome(d.nome || ""); setEngenheiro(d.engenheiro || ""); setCrea(d.crea || ""); setArt(d.art || ""); setArtPdf(d.artPdf || null);
+        } catch {}
+      }
+      setCarregado(true);
+    });
+  }, []);
+
+  const anexarArt = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setArtPdf({ nome: file.name, dados: reader.result });
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const salvar = async () => {
+    await window.storage.set("pmoc-config:responsavel-tecnico", JSON.stringify({ nome, engenheiro, crea, art, artPdf }));
+    onBack();
+  };
+
+  if (!carregado) return <div style={{ padding: 30, textAlign: "center" }}><Loader2 size={20} className="spin" /></div>;
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 17, fontWeight: 600, color: "#F3F3F1", marginBottom: 4 }}>Responsável Técnico</div>
+      <div style={{ fontSize: 12, color: "#8A8A90", marginBottom: 16 }}>Usado no rodapé dos documentos de PMOC e Laudo Técnico.</div>
+
+      <Field label="Nome"><input style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
+      <Field label="Engenheiro Mecânico (título/especialidade)"><input style={inputStyle} value={engenheiro} onChange={(e) => setEngenheiro(e.target.value)} placeholder="Ex: Engenheiro Mecânico" /></Field>
+      <LinhaDupla>
+        <Field label="CREA"><input style={inputStyle} value={crea} onChange={(e) => setCrea(e.target.value)} placeholder="Ex: CREA-SP 000000" /></Field>
+        <Field label="ART"><input style={inputStyle} value={art} onChange={(e) => setArt(e.target.value)} placeholder="Deixe em branco se não houver" /></Field>
+      </LinhaDupla>
+      <Field label="PDF da ART (opcional)">
+        {artPdf ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#C7C9CE" }}>
+            <FileText size={14} /> {artPdf.nome}
+            <button onClick={() => setArtPdf(null)} style={{ background: "none", border: "none", color: "#F0605A", cursor: "pointer" }}><X size={14} /></button>
+          </div>
+        ) : (
+          <button onClick={() => fileRef.current.click()} style={{ ...btnSecundario, width: "100%" }}>Anexar PDF da ART</button>
+        )}
+        <input ref={fileRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={anexarArt} />
+      </Field>
+
+      <div style={{ fontSize: 11, color: "#6E6E73", marginTop: 4, marginBottom: 16 }}>
+        Se a ART não for informada, os documentos mostram claramente "ART: Não informada" — nunca um número inventado.
+      </div>
+
+      <button onClick={salvar} style={{ ...btnPrincipal, width: "100%" }}>Salvar</button>
+    </div>
+  );
+}
+
 function PmocCadastroForm({ onSaved, onCancel }) {
   const [form, setForm] = useState({
     clienteNome: "",
@@ -5013,19 +5211,19 @@ function PmocCadastroForm({ onSaved, onCancel }) {
     endereco: "",
     telefone: "",
     email: "",
-    eqTipo: "",
-    eqMarca: "",
-    eqModelo: "",
-    eqBtus: "",
-    eqSerie: "",
-    localInstalado: "",
     frequencia: "Trimestral",
     atividades: "",
     responsavel: "",
     dataInicio: new Date().toISOString().slice(0, 10),
   });
+  const [equipamentos, setEquipamentos] = useState([
+    { id: uid(), tipo: "", marca: "", modelo: "", serie: "", btu: "", gas: "", tensao: "", ambiente: "", quantidade: 1, codigo: "" },
+  ]);
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setEq = (id, campo) => (e) => setEquipamentos((eqs) => eqs.map((eq) => (eq.id === id ? { ...eq, [campo]: e.target.value } : eq)));
+  const addEquipamento = () => setEquipamentos((eqs) => [...eqs, { id: uid(), tipo: "", marca: "", modelo: "", serie: "", btu: "", gas: "", tensao: "", ambiente: "", quantidade: 1, codigo: "" }]);
+  const removerEquipamento = (id) => setEquipamentos((eqs) => (eqs.length > 1 ? eqs.filter((eq) => eq.id !== id) : eqs));
 
   const salvar = async () => {
     setSaving(true);
@@ -5033,7 +5231,7 @@ function PmocCadastroForm({ onSaved, onCancel }) {
       const id = uid();
       const meses = PMOC_FREQ_MESES[form.frequencia] || 3;
       const proximaManutencao = addMeses(form.dataInicio, meses);
-      const pmoc = { id, createdAt: new Date().toISOString(), ...form, proximaManutencao, historico: [] };
+      const pmoc = { id, createdAt: new Date().toISOString(), ...form, equipamentos, proximaManutencao, historico: [], naoConformidades: [], versao: 1 };
       await window.storage.set(`pmocs:${id}`, JSON.stringify(pmoc));
       onSaved && onSaved();
     } catch (err) {
@@ -5057,17 +5255,41 @@ function PmocCadastroForm({ onSaved, onCancel }) {
         <div style={{ flex: 1 }}><Field label="E-mail"><input style={inputStyle} value={form.email} onChange={set("email")} /></Field></div>
       </div>
 
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Equipamento</div>
-      <div style={{ display: "flex", gap: 10 }}>
-        <div style={{ flex: 1 }}><Field label="Tipo"><input style={inputStyle} value={form.eqTipo} onChange={set("eqTipo")} placeholder="Ex: Split" /></Field></div>
-        <div style={{ flex: 1 }}><Field label="BTUs"><input style={inputStyle} value={form.eqBtus} onChange={set("eqBtus")} inputMode="numeric" /></Field></div>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>
+        Equipamentos ({equipamentos.length})
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
-        <div style={{ flex: 1 }}><Field label="Marca"><input style={inputStyle} value={form.eqMarca} onChange={set("eqMarca")} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Modelo"><input style={inputStyle} value={form.eqModelo} onChange={set("eqModelo")} /></Field></div>
-      </div>
-      <Field label="Número de série"><input style={inputStyle} value={form.eqSerie} onChange={set("eqSerie")} /></Field>
-      <Field label="Local instalado"><input style={inputStyle} value={form.localInstalado} onChange={set("localInstalado")} placeholder="Ex: Recepção, Sala 2..." /></Field>
+      {equipamentos.map((eq, i) => (
+        <div key={eq.id} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: 12, marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, color: "#8A8A90" }}>Equipamento {i + 1}</span>
+            {equipamentos.length > 1 && (
+              <button onClick={() => removerEquipamento(eq.id)} style={{ background: "none", border: "none", color: "#F0605A", cursor: "pointer", display: "flex" }}>
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}><Field label="Tipo"><input style={inputStyle} value={eq.tipo} onChange={setEq(eq.id, "tipo")} placeholder="Ex: Split" /></Field></div>
+            <div style={{ flex: 1 }}><Field label="BTUs"><input style={inputStyle} value={eq.btu} onChange={setEq(eq.id, "btu")} inputMode="numeric" /></Field></div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}><Field label="Marca"><input style={inputStyle} value={eq.marca} onChange={setEq(eq.id, "marca")} /></Field></div>
+            <div style={{ flex: 1 }}><Field label="Modelo"><input style={inputStyle} value={eq.modelo} onChange={setEq(eq.id, "modelo")} /></Field></div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}><Field label="Nº de série"><input style={inputStyle} value={eq.serie} onChange={setEq(eq.id, "serie")} /></Field></div>
+            <div style={{ flex: 1 }}><Field label="Código/patrimônio"><input style={inputStyle} value={eq.codigo} onChange={setEq(eq.id, "codigo")} /></Field></div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}><Field label="Gás"><input style={inputStyle} value={eq.gas} onChange={setEq(eq.id, "gas")} placeholder="Ex: R410A" /></Field></div>
+            <div style={{ flex: 1 }}><Field label="Tensão"><input style={inputStyle} value={eq.tensao} onChange={setEq(eq.id, "tensao")} placeholder="Ex: 220V" /></Field></div>
+          </div>
+          <Field label="Ambiente/localização"><input style={inputStyle} value={eq.ambiente} onChange={setEq(eq.id, "ambiente")} placeholder="Ex: Recepção, Sala 2..." /></Field>
+        </div>
+      ))}
+      <button onClick={addEquipamento} style={{ ...btnSecundario, width: "100%", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+        <Plus size={14} /> Adicionar equipamento
+      </button>
 
       <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Plano de manutenção</div>
       <Field label="Frequência">
@@ -5101,6 +5323,7 @@ function PmocTool() {
   const [lista, setLista] = useState(null);
   const [selected, setSelected] = useState(null);
   const [novo, setNovo] = useState(false);
+  const [config, setConfig] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -5122,6 +5345,10 @@ function PmocTool() {
   useEffect(() => {
     load();
   }, [load]);
+
+  if (config) {
+    return <PmocConfigResponsavelTecnico onBack={() => setConfig(false)} />;
+  }
 
   if (selected) {
     return (
@@ -5176,12 +5403,21 @@ function PmocTool() {
         </div>
       )}
 
-      <button
-        onClick={() => setNovo(true)}
-        style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}
-      >
-        <Plus size={16} /> Novo plano PMOC
-      </button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          onClick={() => setNovo(true)}
+          style={{ flex: 1, background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer" }}
+        >
+          <Plus size={16} /> Novo plano PMOC
+        </button>
+        <button
+          onClick={() => setConfig(true)}
+          title="Responsável técnico / ART"
+          style={{ width: 48, background: "#1C1C1F", border: "1px solid #2A2A2E", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#C7C9CE", cursor: "pointer" }}
+        >
+          <FileCheck2 size={16} />
+        </button>
+      </div>
 
       {lista === null ? (
         <div style={{ textAlign: "center", padding: 30 }}>
@@ -8984,6 +9220,8 @@ function GestaoInteligente({ onBack }) {
 }
 
 
+const CERVEJEIRA_ESTADOS = ["Nova", "Seminova", "Usada", "Recondicionada"];
+
 function ProdutoForm({ onDone, onCancel }) {
   const [form, setForm] = useState({
     nome: "",
@@ -8997,6 +9235,7 @@ function ProdutoForm({ onDone, onCancel }) {
     precoVenda: "",
     estoque: "1",
     descricao: "",
+    garantiaMeses: "",
   });
   const [fotos, setFotos] = useState([]);
   const fileInputRef = useRef(null);
@@ -9057,7 +9296,10 @@ function ProdutoForm({ onDone, onCancel }) {
         <div style={{ flex: 1 }}><Field label="Custo (R$)"><input style={inputStyle} value={form.custo} onChange={set("custo")} inputMode="decimal" /></Field></div>
         <div style={{ flex: 1 }}><Field label="Preço de venda (R$)"><input style={inputStyle} value={form.precoVenda} onChange={set("precoVenda")} inputMode="decimal" /></Field></div>
       </div>
-      <Field label="Estoque (unidades)"><input style={inputStyle} value={form.estoque} onChange={set("estoque")} inputMode="numeric" /></Field>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1 }}><Field label="Estoque (unidades)"><input style={inputStyle} value={form.estoque} onChange={set("estoque")} inputMode="numeric" /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Garantia (meses, opcional)"><input style={inputStyle} value={form.garantiaMeses} onChange={set("garantiaMeses")} inputMode="numeric" placeholder="Ex: 12" /></Field></div>
+      </div>
       <Field label="Descrição">
         <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: "'Roboto',sans-serif" }} value={form.descricao} onChange={set("descricao")} />
       </Field>
@@ -9088,9 +9330,16 @@ function VendaForm({ produtos, onDone, onCancel }) {
   const [desconto, setDesconto] = useState("0");
   const [cliente, setCliente] = useState({ nome: "", telefone: "", documento: "", endereco: "" });
   const [pagamento, setPagamento] = useState("PIX");
+  const [garantiaMeses, setGarantiaMeses] = useState("");
   const [saving, setSaving] = useState(false);
 
   const produto = produtos.find((p) => p.id === produtoId);
+
+  // ao trocar de produto, preenche a garantia com o que está cadastrado
+  // nele (o técnico ainda pode ajustar) — nunca inventa um prazo do zero.
+  useEffect(() => {
+    setGarantiaMeses(produto?.garantiaMeses || "");
+  }, [produtoId]);
   const qtd = Math.max(1, Number(quantidade) || 1);
   const valorVenda = produto ? Number(produto.precoVenda || 0) * qtd : 0;
   const total = Math.max(0, valorVenda - (Number(desconto) || 0));
@@ -9102,10 +9351,15 @@ function VendaForm({ produtos, onDone, onCancel }) {
     setSaving(true);
     try {
       const id = uid();
+      const dataVenda = new Date().toISOString();
+      const meses = Number(garantiaMeses) || 0;
       const venda = {
         id,
         produtoId: produto.id,
         produtoNome: produto.nome,
+        produtoMarca: produto.marca,
+        produtoModelo: produto.modelo,
+        produtoSerie: produto.numeroSerie,
         quantidade: qtd,
         precoUnit: Number(produto.precoVenda || 0),
         custoUnit: Number(produto.custo || 0),
@@ -9114,7 +9368,9 @@ function VendaForm({ produtos, onDone, onCancel }) {
         lucro,
         cliente,
         pagamento,
-        createdAt: new Date().toISOString(),
+        garantiaMeses: meses || null,
+        garantiaFim: meses > 0 ? addMeses(dataVenda.slice(0, 10), meses) : null,
+        createdAt: dataVenda,
       };
       await window.storage.set(`cervejeiras-vendas:${id}`, JSON.stringify(venda));
 
@@ -9172,11 +9428,18 @@ function VendaForm({ produtos, onDone, onCancel }) {
       </div>
       <Field label="Endereço"><input style={inputStyle} value={cliente.endereco} onChange={(e) => setCliente((c) => ({ ...c, endereco: e.target.value }))} /></Field>
 
-      <Field label="Forma de pagamento">
-        <select style={{ ...inputStyle, appearance: "none" }} value={pagamento} onChange={(e) => setPagamento(e.target.value)}>
-          {FORMAS_PAGAMENTO.map((f) => <option key={f}>{f}</option>)}
-        </select>
-      </Field>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Forma de pagamento">
+            <select style={{ ...inputStyle, appearance: "none" }} value={pagamento} onChange={(e) => setPagamento(e.target.value)}>
+              {FORMAS_PAGAMENTO.map((f) => <option key={f}>{f}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Garantia (meses)"><input style={inputStyle} value={garantiaMeses} onChange={(e) => setGarantiaMeses(e.target.value)} inputMode="numeric" placeholder="Opcional" /></Field>
+        </div>
+      </div>
 
       <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "13px 14px", margin: "14px 0" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -9203,10 +9466,146 @@ function VendaForm({ produtos, onDone, onCancel }) {
   );
 }
 
+/* Detalhe de uma venda de cervejeira: dados completos do cliente,
+   produto e garantia — nada disso existia antes, era só uma linha na
+   lista sem clique. */
+function VendaDetail({ venda, onBack }) {
+  const v = venda;
+  const garantiaVencida = v.garantiaFim && new Date(v.garantiaFim) < new Date();
+
+  const enviarWhatsapp = () => {
+    const telefone = (v.cliente?.telefone || "").replace(/\D/g, "");
+    if (!telefone) {
+      notificarErroBanco("Este cliente não tem um WhatsApp cadastrado nesta venda. Cadastre o telefone antes de enviar.");
+      return;
+    }
+    const linhas = [
+      `Olá, ${v.cliente?.nome || "cliente"}! 👋`,
+      "",
+      "Aqui é da ALLA SERVICE.",
+      "",
+      `Produto: ${[v.produtoMarca, v.produtoModelo, v.produtoNome].filter(Boolean).join(" ") || v.produtoNome}`,
+      `Quantidade: ${v.quantidade}`,
+      `Valor: R$ ${v.total.toFixed(2)}`,
+      "",
+      v.garantiaMeses
+        ? `🛡️ Garantia: ${v.garantiaMeses} meses (até ${new Date(v.garantiaFim + "T00:00:00").toLocaleDateString("pt-BR")})`
+        : "🛡️ Garantia: não informada nesta venda.",
+      "",
+      "Qualquer dúvida, estamos à disposição.",
+      "",
+      "*ALLA SERVICE*",
+      "📱 (15) 99198-9866",
+    ];
+    window.open(`https://wa.me/55${telefone}?text=${encodeURIComponent(linhas.join("\n"))}`, "_blank");
+  };
+
+  const gerarPDF = () => {
+    const win = window.open("", "_blank");
+    if (!win) return;
+    const { header, footer } = pdfCabecalhoRodape(LOGO_DATA_URI);
+    win.document.write(`
+      <html><head><title>Venda — ALLA SERVICE</title>
+      <style>${PDF_ESTILO_CORPORATIVO}</style></head><body>
+      <div class="pdf-page">
+        ${header}
+        <div class="pdf-doctitle">Comprovante de Venda</div>
+        <div class="pdf-body">
+          <div class="pdf-card">
+            <h4>Cliente</h4>
+            <div><b>${v.cliente?.nome || "-"}</b></div>
+            <div>${[v.cliente?.telefone, v.cliente?.documento].filter(Boolean).join(" · ")}</div>
+            ${v.cliente?.endereco ? `<div>${v.cliente.endereco}</div>` : ""}
+          </div>
+          <div class="pdf-card">
+            <h4>Produto</h4>
+            <div>${[v.produtoMarca, v.produtoModelo, v.produtoNome].filter(Boolean).join(" ") || v.produtoNome}</div>
+            ${v.produtoSerie ? `<div>Nº de série: ${v.produtoSerie}</div>` : ""}
+            <div>Quantidade: ${v.quantidade}</div>
+          </div>
+          <div class="pdf-total-box">
+            <span class="pdf-total-label">Valor total</span>
+            <span class="pdf-total-value">R$ ${v.total.toFixed(2)}</span>
+          </div>
+          <div class="pdf-body" style="padding-top:0;">
+            <div class="pdf-card">
+              <h4>Garantia</h4>
+              ${
+                v.garantiaMeses
+                  ? `<div>Garantia de ${v.garantiaMeses} meses, válida até ${new Date(v.garantiaFim + "T00:00:00").toLocaleDateString("pt-BR")}.</div>`
+                  : `<div>Garantia não informada nesta venda.</div>`
+              }
+            </div>
+          </div>
+        </div>
+        ${footer}
+      </div>
+      </body></html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 600, color: "#F3F3F1" }}>{v.cliente?.nome || "Cliente"}</div>
+      <div style={{ fontSize: 12.5, color: "#8A8A90", marginBottom: 16 }}>{new Date(v.createdAt).toLocaleDateString("pt-BR")}</div>
+
+      <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Cliente</div>
+        {[["Nome", v.cliente?.nome], ["Telefone", v.cliente?.telefone], ["CPF/CNPJ", v.cliente?.documento], ["Endereço", v.cliente?.endereco]]
+          .filter(([, val]) => val)
+          .map(([label, val]) => (
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ color: "#8A8A90", fontSize: 12 }}>{label}</span>
+              <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{val}</span>
+            </div>
+          ))}
+
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 1, textTransform: "uppercase", margin: "12px 0 8px" }}>Produto</div>
+        <div style={{ fontSize: 13, color: "#F3F3F1" }}>{[v.produtoMarca, v.produtoModelo, v.produtoNome].filter(Boolean).join(" ") || v.produtoNome}</div>
+        {v.produtoSerie && <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>Nº de série: {v.produtoSerie}</div>}
+        <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>Quantidade: {v.quantidade} · Pagamento: {v.pagamento}</div>
+
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 10, paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: "#F3F3F1", fontSize: 14, fontWeight: 600 }}>Total</span>
+          <span style={{ color: "#E9C878", fontSize: 18, fontWeight: 700 }}>R$ {v.total.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div style={{ background: "#141416", border: `1px solid ${v.garantiaMeses ? (garantiaVencida ? "rgba(240,96,90,0.4)" : "rgba(74,222,128,0.3)") : "#2A2A2E"}`, borderRadius: 14, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Garantia</div>
+        {v.garantiaMeses ? (
+          <div style={{ fontSize: 13, color: garantiaVencida ? "#F0605A" : "#4ADE80" }}>
+            {v.garantiaMeses} meses — {garantiaVencida ? "vencida em" : "válida até"} {new Date(v.garantiaFim + "T00:00:00").toLocaleDateString("pt-BR")}
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: "#6E6E73" }}>Garantia não informada nesta venda.</div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={enviarWhatsapp} style={{ ...btnSecundario, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <Send size={13} /> WhatsApp
+        </button>
+        <button onClick={gerarPDF} style={{ ...btnSecundario, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <FileText size={13} /> PDF
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function VendasCervejeiraModule() {
-  const [mode, setMode] = useState("dashboard"); // dashboard | novo-produto | nova-venda
+  const [mode, setMode] = useState("dashboard"); // dashboard | novo-produto | nova-venda | detalhe
   const [produtos, setProdutos] = useState(null);
   const [vendas, setVendas] = useState(null);
+  const [selectedVenda, setSelectedVenda] = useState(null);
 
   const load = useCallback(async () => {
     setProdutos(await carregarTudoStorage("cervejeiras-produtos:"));
@@ -9237,6 +9636,10 @@ function VendasCervejeiraModule() {
         <VendaForm produtos={(produtos || []).filter((p) => Number(p.estoque) > 0)} onCancel={() => setMode("dashboard")} onDone={() => { setMode("dashboard"); load(); }} />
       </div>
     );
+  }
+
+  if (mode === "detalhe" && selectedVenda) {
+    return <VendaDetail venda={selectedVenda} onBack={() => { setSelectedVenda(null); setMode("dashboard"); }} />;
   }
 
   if (produtos === null || vendas === null) {
@@ -9296,13 +9699,17 @@ function VendasCervejeiraModule() {
             Vendas recentes ({vendas.length})
           </div>
           {[...vendas].reverse().slice(0, 10).map((v) => (
-            <div key={v.id} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+            <button
+              key={v.id}
+              onClick={() => { setSelectedVenda(v); setMode("detalhe"); }}
+              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between", cursor: "pointer" }}
+            >
               <div>
                 <div style={{ fontSize: 13, color: "#F3F3F1" }}>{v.produtoNome}</div>
                 <div style={{ fontSize: 11, color: "#8A8A90", marginTop: 2 }}>{v.cliente.nome} · {new Date(v.createdAt).toLocaleDateString("pt-BR")}</div>
               </div>
               <span style={{ color: "#E9C878", fontSize: 13.5, fontWeight: 700 }}>R$ {v.total.toFixed(2)}</span>
-            </div>
+            </button>
           ))}
         </>
       )}
