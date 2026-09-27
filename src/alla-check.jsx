@@ -67,6 +67,8 @@ const FIRESTORE_COLLECTION_MAP = {
   "agenda-cortes-servicos": "agenda_cortes_servicos",
   "visitas-tecnicas": "visitas_tecnicas",
   "pmoc-config": "pmoc_config",
+  "garantias-extensoes": "garantias_extensoes",
+  "garantia-config": "garantia_config",
   manuais: "manuais",
 };
 
@@ -1407,6 +1409,7 @@ const TOOLS = [
   { key: "alla-venda", label: "ALLA VENDA", desc: "Venda de ar-condicionado: catálogo, cotações e propostas", icon: Snowflake, active: true },
   { key: "agenda-cortes", label: "Agenda de Cortes", desc: "Agenda provisória de sábado — Barbearia Serpas", icon: CalendarClock, active: true },
   { key: "visita-tecnica", label: "Visita Técnica", desc: "Vistoria completa com relatório em PDF", icon: ClipboardCheck, active: true },
+  { key: "garantias", label: "Garantias", desc: "Extensão de garantia de serviços e vendas", icon: FileCheck2, active: true },
   { key: "assinaturas", label: "Assinaturas", desc: "Contratos recorrentes, vencimentos e cobrança", icon: CalendarClock, active: true },
   { key: "btu", label: "Calculadora de BTU", desc: "Dimensionamento de ar-condicionado por ambiente", icon: Calculator, active: true },
   { key: "conversor", label: "Conversor Técnico", desc: "BTU, pressão, temperatura, potência e medidas", icon: Ruler, active: true },
@@ -1505,7 +1508,7 @@ function ToolCard({ tool, onClick }) {
 /* Agrupamento visual das ferramentas. Nenhuma ferramenta é removida:
    o que não estiver listado aqui cai automaticamente em "Utilidades". */
 const TOOL_CATEGORIAS = [
-  { titulo: "Gestão", chaves: ["alla-venda", "agenda-cortes", "visita-tecnica", "assinaturas", "pmoc-tool"] },
+  { titulo: "Gestão", chaves: ["alla-venda", "agenda-cortes", "visita-tecnica", "garantias", "assinaturas", "pmoc-tool"] },
   { titulo: "Operação", chaves: ["rastreio-tecnico", "laudo-tecnico"] },
   { titulo: "Equipamentos", chaves: ["historico-equipamento", "manuais"] },
   { titulo: "Financeiro", chaves: ["relatorios-financeiros"] },
@@ -1519,6 +1522,7 @@ const TOOL_CORES = {
   "alla-venda": "#3FBCD1",
   "agenda-cortes": "#E9C878",
   "visita-tecnica": "#3FBCD1",
+  "garantias": "#4681DF",
   assinaturas: "#C9A24B",
   "pmoc-tool": "#9B8AFB",
   "rastreio-tecnico": "#4681DF",
@@ -9469,9 +9473,85 @@ function VendaForm({ produtos, onDone, onCancel }) {
 /* Detalhe de uma venda de cervejeira: dados completos do cliente,
    produto e garantia — nada disso existia antes, era só uma linha na
    lista sem clique. */
+/* Editar uma venda já registrada — hoje só permite ajustar os dados do
+   cliente e a garantia (o que motivou o pedido); não mexe em produto,
+   quantidade ou valores, que ficam como no momento da venda original. */
+function VendaEditForm({ venda, onSaved, onCancel }) {
+  const [cliente, setCliente] = useState({ ...venda.cliente });
+  const [pagamento, setPagamento] = useState(venda.pagamento || "PIX");
+  const [garantiaMeses, setGarantiaMeses] = useState(venda.garantiaMeses ? String(venda.garantiaMeses) : "");
+  const [saving, setSaving] = useState(false);
+
+  const salvar = async () => {
+    if (!cliente.nome.trim()) return;
+    setSaving(true);
+    try {
+      const meses = Number(garantiaMeses) || 0;
+      const atualizada = {
+        ...venda,
+        cliente,
+        pagamento,
+        garantiaMeses: meses || null,
+        garantiaFim: meses > 0 ? addMeses(venda.createdAt.slice(0, 10), meses) : null,
+      };
+      await window.storage.set(`cervejeiras-vendas:${venda.id}`, JSON.stringify(atualizada));
+      onSaved(atualizada);
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar venda"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 17, fontWeight: 600, color: "#F3F3F1", marginBottom: 16 }}>Editar venda</div>
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Cliente</div>
+      <Field label="Nome"><input style={inputStyle} value={cliente.nome} onChange={(e) => setCliente((c) => ({ ...c, nome: e.target.value }))} /></Field>
+      <LinhaDupla>
+        <Field label="Telefone"><input style={inputStyle} value={cliente.telefone} onChange={(e) => setCliente((c) => ({ ...c, telefone: e.target.value }))} inputMode="numeric" /></Field>
+        <Field label="CPF/CNPJ"><input style={inputStyle} value={cliente.documento} onChange={(e) => setCliente((c) => ({ ...c, documento: e.target.value }))} /></Field>
+      </LinhaDupla>
+      <Field label="Endereço"><input style={inputStyle} value={cliente.endereco} onChange={(e) => setCliente((c) => ({ ...c, endereco: e.target.value }))} /></Field>
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Venda</div>
+      <LinhaDupla>
+        <Field label="Forma de pagamento">
+          <select style={{ ...inputStyle, appearance: "none" }} value={pagamento} onChange={(e) => setPagamento(e.target.value)}>
+            {FORMAS_PAGAMENTO.map((f) => <option key={f}>{f}</option>)}
+          </select>
+        </Field>
+        <Field label="Garantia (meses)"><input style={inputStyle} value={garantiaMeses} onChange={(e) => setGarantiaMeses(e.target.value)} inputMode="numeric" placeholder="Opcional" /></Field>
+      </LinhaDupla>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+        <button onClick={onCancel} style={{ ...btnSecundario, flex: 1 }}>Cancelar</button>
+        <button onClick={salvar} disabled={saving || !cliente.nome.trim()} style={{ ...btnPrincipal, flex: 1.4, opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Salvando..." : "Salvar alterações"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function VendaDetail({ venda, onBack }) {
-  const v = venda;
+  const [v, setV] = useState(venda);
+  const [editando, setEditando] = useState(false);
   const garantiaVencida = v.garantiaFim && new Date(v.garantiaFim) < new Date();
+
+  if (editando) {
+    return (
+      <VendaEditForm
+        venda={v}
+        onCancel={() => setEditando(false)}
+        onSaved={(atualizada) => { setV(atualizada); setEditando(false); }}
+      />
+    );
+  }
 
   const enviarWhatsapp = () => {
     const telefone = (v.cliente?.telefone || "").replace(/\D/g, "");
@@ -9590,6 +9670,9 @@ function VendaDetail({ venda, onBack }) {
       </div>
 
       <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={() => setEditando(true)} style={{ ...btnSecundario, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <IconeCaneta size={13} /> Editar
+        </button>
         <button onClick={enviarWhatsapp} style={{ ...btnSecundario, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
           <Send size={13} /> WhatsApp
         </button>
@@ -9639,7 +9722,7 @@ function VendasCervejeiraModule() {
   }
 
   if (mode === "detalhe" && selectedVenda) {
-    return <VendaDetail venda={selectedVenda} onBack={() => { setSelectedVenda(null); setMode("dashboard"); }} />;
+    return <VendaDetail venda={selectedVenda} onBack={() => { setSelectedVenda(null); setMode("dashboard"); load(); }} />;
   }
 
   if (produtos === null || vendas === null) {
@@ -16339,6 +16422,578 @@ function VisitaTecnicaModule() {
   );
 }
 
+/* ================= Módulo de Garantias (extensão) =================
+   Não duplica cadastro: lê as garantias já existentes em Ordens de
+   Serviço (garantiaPeriodo/Inicio/Fim) e em Vendas de Cervejeira
+   (garantiaMeses/Fim) — a única coisa nova é a camada de acompanhamento
+   da OFERTA DE EXTENSÃO, guardada numa coleção própria e pequena
+   (garantias-extensoes:), uma por origem (OS ou venda). */
+
+const GARANTIA_STATUS_COR = {
+  "ATIVA": "#4ADE80",
+  "PRÓXIMA DO VENCIMENTO": "#E9C878",
+  "VENCIDA": "#F0605A",
+  "ESTENDIDA": "#4681DF",
+  "CANCELADA": "#6E6E73",
+};
+
+function garantiaCalcularStatus(fimAtual, cancelada) {
+  if (cancelada) return "CANCELADA";
+  if (!fimAtual) return null;
+  const dias = Math.ceil((new Date(fimAtual) - new Date()) / (1000 * 60 * 60 * 24));
+  if (dias < 0) return "VENCIDA";
+  if (dias <= 30) return "PRÓXIMA DO VENCIMENTO";
+  return "ATIVA";
+}
+
+/* Varre OS e vendas de cervejeira e devolve uma lista única e normalizada
+   de garantias — sem gravar nada novo, só juntando o que já existe. */
+async function garantiasVarrer() {
+  const [oss, vendas, extensoes] = await Promise.all([
+    carregarTudoStorage("ordens-servico:").catch(() => []),
+    carregarTudoStorage("cervejeiras-vendas:").catch(() => []),
+    carregarTudoStorage("garantias-extensoes:").catch(() => []),
+  ]);
+  const extMap = Object.fromEntries(extensoes.map((e) => [e.id, e]));
+
+  const daOS = oss
+    .filter((os) => os.garantiaPeriodo || os.garantiaInicio || os.garantiaFim)
+    .map((os) => {
+      const chave = `os-${os.id}`;
+      const ext = extMap[chave];
+      const fimAtual = (ext?.extensoes || []).length ? ext.extensoes[ext.extensoes.length - 1].novaFim : os.garantiaFim;
+      return {
+        chave,
+        origemTipo: "OS",
+        origemId: os.id,
+        origemNumero: os.numero,
+        clienteNome: os.clienteNome,
+        clienteTelefone: os.clienteTelefone,
+        clienteDocumento: "",
+        descricao: os.tipoServico || "Serviço",
+        equipamento: [os.eqMarca, os.eqModelo].filter(Boolean).join(" "),
+        marca: os.eqMarca, modelo: os.eqModelo, serie: os.eqSerie,
+        valor: os.valorTotal,
+        dataInicio: os.garantiaInicio || os.data,
+        fimOriginal: os.garantiaFim,
+        fimAtual,
+        periodoOriginal: os.garantiaPeriodo,
+        condicoes: os.garantiaCondicoes,
+        extensao: ext || null,
+      };
+    });
+
+  const daVenda = vendas
+    .filter((v) => v.garantiaMeses)
+    .map((v) => {
+      const chave = `venda-${v.id}`;
+      const ext = extMap[chave];
+      const fimAtual = (ext?.extensoes || []).length ? ext.extensoes[ext.extensoes.length - 1].novaFim : v.garantiaFim;
+      return {
+        chave,
+        origemTipo: "Venda",
+        origemId: v.id,
+        origemNumero: null,
+        clienteNome: v.cliente?.nome,
+        clienteTelefone: v.cliente?.telefone,
+        clienteDocumento: v.cliente?.documento,
+        descricao: "Produto vendido",
+        equipamento: [v.produtoMarca, v.produtoModelo, v.produtoNome].filter(Boolean).join(" ") || v.produtoNome,
+        marca: v.produtoMarca, modelo: v.produtoModelo, serie: v.produtoSerie,
+        valor: v.total,
+        dataInicio: v.createdAt,
+        fimOriginal: v.garantiaFim,
+        fimAtual,
+        periodoOriginal: v.garantiaMeses ? `${v.garantiaMeses} meses` : "",
+        condicoes: "",
+        extensao: ext || null,
+      };
+    });
+
+  return [...daOS, ...daVenda].map((g) => {
+    const baseStatus = garantiaCalcularStatus(g.fimAtual, g.extensao?.cancelada);
+    const foiEstendida = g.extensao?.oferta?.status === "ATIVADA";
+    const status = foiEstendida && baseStatus !== "VENCIDA" ? "ESTENDIDA" : baseStatus;
+    return { ...g, status };
+  });
+}
+
+/* Configuração da oferta — editável, nunca fixa no código. */
+async function garantiaConfigLer() {
+  const r = await window.storage.get("garantia-config:padrao").catch(() => null);
+  const padrao = { antecedenciaDias: 30, extensaoMeses: 3, extensaoValor: 100, automacaoAtiva: true, mensagem: "" };
+  if (!r) return padrao;
+  try { return { ...padrao, ...JSON.parse(r.value) }; } catch { return padrao; }
+}
+
+const GARANTIA_MSG_PADRAO =
+  "Olá, [NOME]! 👋\n\nA garantia do seu [EQUIPAMENTO] realizado pela ALLA SERVICE está próxima do vencimento.\n\nPara continuar contando com a proteção da ALLA SERVICE, disponibilizamos uma extensão da garantia por mais [PERIODO].\n\n🛡️ EXTENSÃO DE GARANTIA\nPeríodo adicional: +[PERIODO]\nValor: R$ [VALOR]\n\nCaso tenha interesse, responda SIM e nossa equipe dará continuidade à ativação.\n\nALLA SERVICE\nClimatização • Elétrica • Manutenção";
+
+function garantiaMontarMensagemOferta(g, config) {
+  const template = config.mensagem || GARANTIA_MSG_PADRAO;
+  return template
+    .replaceAll("[NOME]", g.clienteNome || "cliente")
+    .replaceAll("[EQUIPAMENTO]", g.equipamento || g.descricao || "equipamento/serviço")
+    .replaceAll("[PERIODO]", `${config.extensaoMeses} meses`)
+    .replaceAll("[VALOR]", Number(config.extensaoValor).toFixed(2));
+}
+
+function garantiaMontarMensagemCertificado(g, novaFim) {
+  return [
+    `Olá, ${g.clienteNome || "cliente"}.`,
+    "",
+    "Sua extensão de garantia foi confirmada pela ALLA SERVICE.",
+    "",
+    `🛡️ Extensão: +${g.extensao?.extensoes?.slice(-1)[0]?.periodoMeses || ""} meses`,
+    `📅 Nova validade: ${new Date(novaFim + "T00:00:00").toLocaleDateString("pt-BR")}`,
+    "",
+    "Estamos encaminhando o certificado da extensão em PDF para seu arquivo.",
+    "",
+    "Obrigado por continuar contando com a ALLA SERVICE.",
+  ].join("\n");
+}
+
+/* ---------------- Tela de configurações da extensão ---------------- */
+function GarantiaConfigForm({ onBack }) {
+  const [cfg, setCfg] = useState(null);
+
+  useEffect(() => { garantiaConfigLer().then(setCfg); }, []);
+
+  const salvar = async () => {
+    await window.storage.set("garantia-config:padrao", JSON.stringify(cfg));
+    onBack();
+  };
+
+  if (!cfg) return <div style={{ padding: 30, textAlign: "center" }}><Loader2 size={20} className="spin" /></div>;
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 17, fontWeight: 600, color: "#F3F3F1", marginBottom: 16 }}>Configurações de Garantia</div>
+
+      <LinhaDupla>
+        <Field label="Antecedência do aviso (dias)"><input style={inputStyle} value={cfg.antecedenciaDias} onChange={(e) => setCfg((c) => ({ ...c, antecedenciaDias: e.target.value }))} inputMode="numeric" /></Field>
+        <Field label="Extensão (meses)"><input style={inputStyle} value={cfg.extensaoMeses} onChange={(e) => setCfg((c) => ({ ...c, extensaoMeses: e.target.value }))} inputMode="numeric" /></Field>
+      </LinhaDupla>
+      <Field label="Valor da extensão (R$)"><input style={inputStyle} value={cfg.extensaoValor} onChange={(e) => setCfg((c) => ({ ...c, extensaoValor: e.target.value }))} inputMode="decimal" /></Field>
+      <Field label="Mensagem do WhatsApp (use [NOME], [EQUIPAMENTO], [PERIODO], [VALOR])">
+        <textarea style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} value={cfg.mensagem || GARANTIA_MSG_PADRAO} onChange={(e) => setCfg((c) => ({ ...c, mensagem: e.target.value }))} />
+      </Field>
+      <Field label="Criar ofertas automaticamente ao abrir esta ferramenta">
+        <select style={{ ...inputStyle, appearance: "none" }} value={cfg.automacaoAtiva ? "sim" : "nao"} onChange={(e) => setCfg((c) => ({ ...c, automacaoAtiva: e.target.value === "sim" }))}>
+          <option value="sim">Sim</option>
+          <option value="nao">Não</option>
+        </select>
+      </Field>
+
+      <button onClick={salvar} style={{ ...btnPrincipal, width: "100%", marginTop: 10 }}>Salvar</button>
+    </div>
+  );
+}
+
+/* ---------------- Detalhe de uma garantia: fluxo completo de extensão ---------------- */
+function GarantiaDetail({ garantia, config, onBack }) {
+  const [g, setG] = useState(garantia);
+  const [gerando, setGerando] = useState(false);
+  const [responsavel, setResponsavel] = useState("");
+
+  const salvarExtensao = async (novoDoc) => {
+    await window.storage.set(`garantias-extensoes:${g.chave}`, JSON.stringify({ ...novoDoc, id: g.chave }));
+    // reconstrói o objeto normalizado com o novo doc, sem precisar varrer tudo de novo
+    const fimAtual = (novoDoc.extensoes || []).length ? novoDoc.extensoes[novoDoc.extensoes.length - 1].novaFim : g.fimOriginal;
+    setG((atual) => ({ ...atual, extensao: novoDoc, fimAtual, status: garantiaCalcularStatus(fimAtual, novoDoc.cancelada) }));
+  };
+
+  const extensaoAtual = () => g.extensao || { oferta: {}, extensoes: [], historico: [] };
+
+  const criarOferta = async () => {
+    const doc = extensaoAtual();
+    await salvarExtensao({
+      ...doc,
+      oferta: { criada: true, criadaEm: new Date().toISOString(), enviada: doc.oferta?.enviada || false, status: doc.oferta?.status || "PENDENTE", count: doc.oferta?.count || 0 },
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: "Oferta de extensão criada" }],
+    });
+  };
+
+  const enviarOferta = () => {
+    const telefone = (g.clienteTelefone || "").replace(/\D/g, "");
+    if (!telefone) {
+      notificarErroBanco("Este cliente não tem um WhatsApp cadastrado. Cadastre o telefone na OS ou na venda antes de enviar.");
+      return;
+    }
+    const doc = extensaoAtual();
+    const texto = garantiaMontarMensagemOferta(g, config);
+    window.open(`https://wa.me/55${telefone}?text=${encodeURIComponent(texto)}`, "_blank");
+    salvarExtensao({
+      ...doc,
+      oferta: { ...doc.oferta, enviada: true, enviadaEm: new Date().toISOString(), numero: telefone, status: "ENVIADA", count: (doc.oferta?.count || 0) + 1, ultimaMensagem: texto },
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: `Oferta enviada pelo WhatsApp para ${telefone}` }],
+    });
+  };
+
+  const clienteAceitou = async () => {
+    const doc = extensaoAtual();
+    const idVenda = uid();
+    await window.storage.set(
+      `fin-receitas:${idVenda}`,
+      JSON.stringify({
+        id: idVenda,
+        servico: `Extensão de Garantia +${config.extensaoMeses} meses`,
+        cliente: g.clienteNome,
+        osId: g.origemTipo === "OS" ? g.origemId : null,
+        osNumero: g.origemNumero,
+        data: new Date().toISOString().slice(0, 10),
+        valor: Number(config.extensaoValor),
+        formaPagamento: "",
+        status: "pendente",
+        createdAt: new Date().toISOString(),
+      })
+    );
+    await salvarExtensao({
+      ...doc,
+      oferta: { ...doc.oferta, status: "ACEITA" },
+      vendaExtensaoId: idVenda,
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: "Cliente aceitou a oferta — venda registrada (pagamento pendente)" }],
+    });
+  };
+
+  const confirmarPagamento = async () => {
+    const doc = extensaoAtual();
+    if (!doc.vendaExtensaoId) return;
+    const r = await window.storage.get(`fin-receitas:${doc.vendaExtensaoId}`).catch(() => null);
+    if (r) {
+      const rec = JSON.parse(r.value);
+      await window.storage.set(`fin-receitas:${doc.vendaExtensaoId}`, JSON.stringify({ ...rec, status: "pago" }));
+    }
+    await salvarExtensao({
+      ...doc,
+      oferta: { ...doc.oferta, status: "PAGA" },
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: "Pagamento confirmado" }],
+    });
+  };
+
+  const ativarExtensao = async () => {
+    const doc = extensaoAtual();
+    const meses = Number(config.extensaoMeses) || 3;
+    const fimAnterior = g.fimAtual || g.fimOriginal;
+    const novaFim = addMeses(fimAnterior, meses);
+    const novaExtensao = {
+      periodoMeses: meses,
+      valor: Number(config.extensaoValor),
+      dataAtivacao: new Date().toISOString(),
+      vendaId: doc.vendaExtensaoId,
+      responsavel: responsavel || "Não informado",
+      fimAnterior,
+      novaFim,
+    };
+    await salvarExtensao({
+      ...doc,
+      oferta: { ...doc.oferta, status: "ATIVADA" },
+      extensoes: [...(doc.extensoes || []), novaExtensao],
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: `Extensão ativada: +${meses} meses — nova validade ${new Date(novaFim + "T00:00:00").toLocaleDateString("pt-BR")}` }],
+    });
+    // Mantém a origem (OS ou venda) coerente com a nova data — a data
+    // anterior fica preservada no histórico de extensões acima, nunca é
+    // apagada, só o campo "atual" avança.
+    if (g.origemTipo === "OS") {
+      const r = await window.storage.get(`ordens-servico:${g.origemId}`).catch(() => null);
+      if (r) { const os = JSON.parse(r.value); await window.storage.set(`ordens-servico:${g.origemId}`, JSON.stringify({ ...os, garantiaFim: novaFim })); }
+    } else {
+      const r = await window.storage.get(`cervejeiras-vendas:${g.origemId}`).catch(() => null);
+      if (r) { const v = JSON.parse(r.value); await window.storage.set(`cervejeiras-vendas:${g.origemId}`, JSON.stringify({ ...v, garantiaFim: novaFim })); }
+    }
+  };
+
+  const gerarCertificado = () => {
+    const win = window.open("", "_blank");
+    if (!win) return;
+    const { header, footer } = pdfCabecalhoRodape(LOGO_DATA_URI);
+    const ultimaExt = (g.extensao?.extensoes || []).slice(-1)[0];
+    win.document.write(`
+      <html><head><title>Certificado de Extensão — ALLA SERVICE</title>
+      <style>${PDF_ESTILO_CORPORATIVO}</style></head><body>
+      <div class="pdf-page">
+        ${header}
+        <div class="pdf-doctitle">Certificado de Extensão de Garantia</div>
+        <div class="pdf-body">
+          <div class="pdf-card">
+            <h4>Cliente</h4>
+            <div><b>${g.clienteNome || "-"}</b></div>
+            <div>${[g.clienteTelefone, g.clienteDocumento].filter(Boolean).join(" · ")}</div>
+          </div>
+          <div class="pdf-card">
+            <h4>Equipamento/Serviço</h4>
+            <div>${g.equipamento || g.descricao}</div>
+            ${g.serie ? `<div>Nº de série: ${g.serie}</div>` : ""}
+          </div>
+          <div class="pdf-card">
+            <h4>Garantia original</h4>
+            <div>Início: ${g.dataInicio ? new Date(g.dataInicio).toLocaleDateString("pt-BR") : "-"}</div>
+            <div>Vencimento original: ${g.fimOriginal ? new Date(g.fimOriginal + "T00:00:00").toLocaleDateString("pt-BR") : "-"}</div>
+          </div>
+          <div class="pdf-card">
+            <h4>Extensão contratada</h4>
+            <div>Período adicional: ${ultimaExt?.periodoMeses || "-"} meses</div>
+            <div>Valor: R$ ${(ultimaExt?.valor || 0).toFixed(2)}</div>
+            <div>Nova data de vencimento: <b>${ultimaExt?.novaFim ? new Date(ultimaExt.novaFim + "T00:00:00").toLocaleDateString("pt-BR") : "-"}</b></div>
+            <div style="margin-top:6px;">Responsável pela ativação: ${ultimaExt?.responsavel || "-"}</div>
+          </div>
+          ${GARANTIA_CLAUSULA_HTML}
+        </div>
+        ${footer}
+      </div>
+      </body></html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
+  const enviarCertificadoWhatsapp = () => {
+    const telefone = (g.clienteTelefone || "").replace(/\D/g, "");
+    if (!telefone) {
+      notificarErroBanco("Este cliente não tem um WhatsApp cadastrado.");
+      return;
+    }
+    const ultimaExt = (g.extensao?.extensoes || []).slice(-1)[0];
+    if (!ultimaExt) return;
+    window.open(`https://wa.me/55${telefone}?text=${encodeURIComponent(garantiaMontarMensagemCertificado(g, ultimaExt.novaFim))}`, "_blank");
+  };
+
+  const st = GARANTIA_STATUS_COR[g.status] || "#6E6E73";
+  const oferta = g.extensao?.oferta || {};
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 600, color: "#F3F3F1" }}>{g.clienteNome || "Cliente"}</div>
+      <div style={{ fontSize: 12.5, color: "#8A8A90", marginBottom: 10 }}>{g.origemTipo} {g.origemNumero || ""} · {g.equipamento || g.descricao}</div>
+
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#141416", border: `1px solid ${st}55`, borderRadius: 20, padding: "5px 12px", marginBottom: 16 }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: st }} />
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: st, letterSpacing: 1 }}>{g.status}</span>
+      </div>
+
+      <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
+        {[
+          ["Telefone", g.clienteTelefone],
+          ["Início da garantia", g.dataInicio ? new Date(g.dataInicio).toLocaleDateString("pt-BR") : null],
+          ["Vencimento original", g.fimOriginal ? new Date(g.fimOriginal + "T00:00:00").toLocaleDateString("pt-BR") : null],
+          ["Vencimento atual", g.fimAtual ? new Date(g.fimAtual + "T00:00:00").toLocaleDateString("pt-BR") : null],
+          ["Período original", g.periodoOriginal],
+        ].filter(([, v]) => v).map(([label, val]) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ color: "#8A8A90", fontSize: 12.5 }}>{label}</span>
+            <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{val}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* fluxo da oferta, um botão de cada vez conforme o estágio atual */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+        {!oferta.criada && (
+          <button onClick={criarOferta} style={{ ...btnPrincipal, width: "100%" }}>Criar oferta de extensão (+{config.extensaoMeses} meses · R$ {Number(config.extensaoValor).toFixed(2)})</button>
+        )}
+        {oferta.criada && !oferta.enviada && (
+          <button onClick={enviarOferta} style={{ ...btnPrincipal, width: "100%" }}>Enviar oferta pelo WhatsApp</button>
+        )}
+        {oferta.enviada && oferta.status === "ENVIADA" && (
+          <>
+            <div style={{ fontSize: 11.5, color: "#6E6E73", textAlign: "center" }}>
+              Oferta enviada em {new Date(oferta.enviadaEm).toLocaleDateString("pt-BR")} — aguardando resposta do cliente.
+            </div>
+            <button onClick={clienteAceitou} style={{ ...btnPrincipal, width: "100%" }}>Cliente aceitou</button>
+            <button onClick={enviarOferta} style={{ ...btnSecundario, width: "100%", fontSize: 11 }}>Reenviar oferta manualmente</button>
+          </>
+        )}
+        {oferta.status === "ACEITA" && (
+          <button onClick={confirmarPagamento} style={{ ...btnPrincipal, width: "100%" }}>Confirmar pagamento (R$ {Number(config.extensaoValor).toFixed(2)})</button>
+        )}
+        {oferta.status === "PAGA" && (
+          <>
+            <Field label="Responsável pela ativação"><input style={inputStyle} value={responsavel} onChange={(e) => setResponsavel(e.target.value)} /></Field>
+            <button onClick={ativarExtensao} style={{ ...btnPrincipal, width: "100%" }}>Ativar extensão</button>
+          </>
+        )}
+        {oferta.status === "ATIVADA" && (
+          <>
+            <button onClick={gerarCertificado} style={{ ...btnPrincipal, width: "100%" }}>Gerar certificado (PDF)</button>
+            <button onClick={enviarCertificadoWhatsapp} style={{ ...btnSecundario, width: "100%" }}>Enviar certificado pelo WhatsApp</button>
+          </>
+        )}
+      </div>
+
+      {(g.extensao?.historico || []).length > 0 && (
+        <>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Histórico</div>
+          {[...g.extensao.historico].reverse().map((h, i) => (
+            <div key={i} style={{ fontSize: 12, color: "#C7C9CE", marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <span style={{ color: "#6E6E73", fontSize: 10.5 }}>{new Date(h.data).toLocaleDateString("pt-BR")}</span> — {h.evento}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Módulo principal: Garantias ---------------- */
+function GarantiasModule() {
+  const [lista, setLista] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [selecionada, setSelecionada] = useState(null);
+  const [mostrarConfig, setMostrarConfig] = useState(false);
+  const [filtroStatus, setFiltroStatus] = useState("Todas");
+  const [busca, setBusca] = useState("");
+
+  const load = useCallback(async () => {
+    const cfg = await garantiaConfigLer();
+    setConfig(cfg);
+    let garantias = await garantiasVarrer();
+
+    // "automação": ao abrir a ferramenta, cria a oferta automaticamente
+    // para garantias que entraram na janela configurada e ainda não têm
+    // oferta — nunca duplica (só cria se oferta.criada não existir).
+    if (cfg.automacaoAtiva) {
+      for (const g of garantias) {
+        const dentroDaJanela = g.status === "PRÓXIMA DO VENCIMENTO";
+        if (dentroDaJanela && !g.extensao?.oferta?.criada) {
+          await window.storage.set(
+            `garantias-extensoes:${g.chave}`,
+            JSON.stringify({ id: g.chave, oferta: { criada: true, criadaEm: new Date().toISOString(), enviada: false, status: "PENDENTE", count: 0 }, extensoes: [], historico: [{ data: new Date().toISOString(), evento: "Oferta de extensão criada automaticamente (garantia próxima do vencimento)" }] })
+          );
+        }
+      }
+      garantias = await garantiasVarrer(); // recarrega já com as ofertas recém-criadas
+    }
+    setLista(garantias);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (mostrarConfig) {
+    return <GarantiaConfigForm onBack={() => { setMostrarConfig(false); load(); }} />;
+  }
+
+  if (selecionada && config) {
+    return (
+      <GarantiaDetail
+        garantia={selecionada}
+        config={config}
+        onBack={() => { setSelecionada(null); load(); }}
+      />
+    );
+  }
+
+  if (lista === null || config === null) {
+    return <div style={{ textAlign: "center", padding: 40 }}><Loader2 size={20} className="spin" /></div>;
+  }
+
+  const contagem = {
+    ativas: lista.filter((g) => g.status === "ATIVA").length,
+    vencendo30: lista.filter((g) => g.status === "PRÓXIMA DO VENCIMENTO").length,
+    vencendo15: lista.filter((g) => g.status === "PRÓXIMA DO VENCIMENTO" && Math.ceil((new Date(g.fimAtual) - new Date()) / 86400000) <= 15).length,
+    vencidas: lista.filter((g) => g.status === "VENCIDA").length,
+    estendidas: lista.filter((g) => g.status === "ESTENDIDA" || g.extensao?.oferta?.status === "ATIVADA").length,
+    ofertasEnviadas: lista.filter((g) => g.extensao?.oferta?.enviada).length,
+    ofertasPendentes: lista.filter((g) => g.extensao?.oferta?.criada && !g.extensao?.oferta?.enviada).length,
+  };
+
+  const filtradas = lista.filter((g) => {
+    if (filtroStatus !== "Todas" && g.status !== filtroStatus) return false;
+    if (busca.trim()) {
+      const q = busca.toLowerCase();
+      if (!`${g.clienteNome} ${g.equipamento} ${g.origemNumero || ""}`.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 700, color: "#F3F3F1" }}>Garantias</div>
+        <button onClick={() => setMostrarConfig(true)} style={{ background: "#1C1C1F", border: "1px solid #2A2A2E", borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#C7C9CE", cursor: "pointer" }}>
+          <IconeCaneta size={15} />
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        {[
+          ["Ativas", contagem.ativas, "#4ADE80"],
+          ["Vencendo em 30 dias", contagem.vencendo30, "#E9C878"],
+          ["Vencendo em 15 dias", contagem.vencendo15, "#E9C878"],
+          ["Vencidas", contagem.vencidas, "#F0605A"],
+          ["Extensões ativadas", contagem.estendidas, "#4681DF"],
+          ["Ofertas pendentes de envio", contagem.ofertasPendentes, "#8A8A90"],
+        ].map(([label, valor, cor]) => (
+          <div key={label} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 14 }}>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 1, textTransform: "uppercase" }}>{label}</div>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 20, color: cor, marginTop: 4 }}>{valor}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por cliente ou equipamento..."
+          style={{ width: "100%", boxSizing: "border-box", background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "10px 12px 10px 34px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 13, outline: "none" }}
+        />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 14, WebkitOverflowScrolling: "touch" }}>
+        {["Todas", "ATIVA", "PRÓXIMA DO VENCIMENTO", "VENCIDA", "ESTENDIDA"].map((f) => (
+          <button
+            key={f}
+            onClick={() => setFiltroStatus(f)}
+            style={{ flexShrink: 0, fontSize: 10.5, padding: "6px 12px", borderRadius: 20, border: `1px solid ${filtroStatus === f ? "#C9A24B" : "#2A2A2E"}`, background: filtroStatus === f ? "rgba(201,162,75,0.12)" : "transparent", color: filtroStatus === f ? "#E9C878" : "#8A8A90", cursor: "pointer", whiteSpace: "nowrap" }}
+          >
+            {f === "Todas" ? "Todas" : f.charAt(0) + f.slice(1).toLowerCase()}
+          </button>
+        ))}
+      </div>
+
+      {filtradas.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "40px 20px", color: "#6E6E73" }}>
+          <ClipboardCheck size={26} style={{ marginBottom: 10, opacity: 0.5 }} />
+          <div style={{ fontSize: 13 }}>{lista.length === 0 ? "Nenhuma garantia encontrada em OS ou vendas ainda." : "Nenhuma garantia para esse filtro."}</div>
+        </div>
+      ) : (
+        filtradas.map((g) => {
+          const cor = GARANTIA_STATUS_COR[g.status] || "#6E6E73";
+          const dias = g.fimAtual ? Math.ceil((new Date(g.fimAtual) - new Date()) / 86400000) : null;
+          return (
+            <button
+              key={g.chave}
+              onClick={() => setSelecionada(g)}
+              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer" }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14, color: "#F3F3F1" }}>{g.clienteNome || "Cliente"}</span>
+                <span style={{ fontSize: 10, color: cor, fontFamily: "'JetBrains Mono',monospace" }}>{g.status}</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>
+                {g.origemTipo} {g.origemNumero || ""} · {g.equipamento || g.descricao}
+                {dias !== null && ` · ${dias >= 0 ? `${dias} dias restantes` : `vencida há ${-dias} dias`}`}
+              </div>
+              {g.extensao?.oferta?.enviada && (
+                <div style={{ fontSize: 10, color: "#4681DF", marginTop: 3 }}>Oferta enviada em {new Date(g.extensao.oferta.enviadaEm).toLocaleDateString("pt-BR")}</div>
+              )}
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 /* ================= Agenda de Cortes (Barbearia Serpas) =================
    Ferramenta provisória, simples, só para organizar os sábados.
    Segue o MESMO padrão visual de Ordens de Serviço (resumo numérico,
@@ -17071,6 +17726,7 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "tool-alla-venda" && <AllaVendaModule />}
         {telaVisivel === "tool-agenda-cortes" && <AgendaCortesModule />}
         {telaVisivel === "tool-visita-tecnica" && <VisitaTecnicaModule />}
+        {telaVisivel === "tool-garantias" && <GarantiasModule />}
         {telaVisivel === "tool-assinaturas" && <AssinaturasModule />}
         {telaVisivel === "tool-rastreio-tecnico" && <RastreioTecnico />}
         {telaVisivel === "tool-historico-equipamento" && <HistoricoEquipamento />}
