@@ -4632,12 +4632,28 @@ function addMeses(dataStr, meses) {
   return d.toISOString().slice(0, 10);
 }
 
+/* Checklist organizado por seção do equipamento, com 4 estados (o "N/A"
+   que faltava) e nota obrigatória quando o item não está conforme —
+   isso alimenta a lista de não conformidades do laudo automaticamente,
+   sem precisar de uma tela/coleção separada para isso. */
+const PMOC_SECOES_CHECKLIST = {
+  Evaporadora: ["Limpeza da evaporadora", "Filtros de ar", "Serpentina", "Dreno de condensado", "Ventilador/turbina", "Isolamento térmico"],
+  Condensadora: ["Limpeza da condensadora", "Serpentina condensadora", "Ventilador da condensadora", "Fixação e nivelamento", "Sinais de corrosão"],
+  "Sistema Geral": ["Componentes elétricos", "Aterramento", "Disjuntor", "Tubulação frigorífica", "Nível de gás refrigerante"],
+};
+const PMOC_STATUS_OPCOES = ["OK", "Atenção", "Não conforme", "N/A"];
+const PMOC_STATUS_COR = { OK: "#4ADE80", "Atenção": "#E9C878", "Não conforme": "#F0605A", "N/A": "#6E6E73" };
+
 function PmocChecklistForm({ onSubmit, onCancel }) {
-  const itens = ["Limpeza", "Filtros", "Serpentina", "Dreno", "Ventilador", "Componentes elétricos"];
-  const [status, setStatus] = useState(Object.fromEntries(itens.map((i) => [i, "OK"])));
+  const todosItens = Object.values(PMOC_SECOES_CHECKLIST).flat();
+  const [status, setStatus] = useState(Object.fromEntries(todosItens.map((i) => [i, "OK"])));
+  const [notas, setNotas] = useState({});
   const [medicoes, setMedicoes] = useState({ temperatura: "", corrente: "", pressao: "" });
   const [observacoes, setObservacoes] = useState("");
   const [fotos, setFotos] = useState([]);
+  const [dataExecucao, setDataExecucao] = useState(new Date().toISOString().slice(0, 10));
+  const [responsavelNome, setResponsavelNome] = useState("");
+  const [assinatura, setAssinatura] = useState(null);
   const fileInputRef = useRef(null);
 
   const addFotos = async (e) => {
@@ -4653,37 +4669,56 @@ function PmocChecklistForm({ onSubmit, onCancel }) {
     e.target.value = "";
   };
 
+  const marcarStatus = (item, opt) => {
+    setStatus((s) => ({ ...s, [item]: opt }));
+    if (opt === "OK" || opt === "N/A") setNotas((n) => { const c = { ...n }; delete c[item]; return c; });
+  };
+
   return (
     <div>
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
-        Checklist de manutenção
-      </div>
-      {itens.map((item) => (
-        <div key={item} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <span style={{ color: "#C7C9CE", fontSize: 13.5 }}>{item}</span>
-          <div style={{ display: "flex", gap: 6 }}>
-            {["OK", "Atenção", "Problema"].map((opt) => (
-              <button
-                key={opt}
-                onClick={() => setStatus((s) => ({ ...s, [item]: opt }))}
-                style={{
-                  fontSize: 10.5,
-                  padding: "5px 9px",
-                  borderRadius: 7,
-                  border: `1px solid ${status[item] === opt ? "#C9A24B" : "#2A2A2E"}`,
-                  background: status[item] === opt ? "rgba(201,162,75,0.15)" : "transparent",
-                  color: status[item] === opt ? "#E9C878" : "#8A8A90",
-                  cursor: "pointer",
-                }}
-              >
-                {opt}
-              </button>
-            ))}
+      {Object.entries(PMOC_SECOES_CHECKLIST).map(([secao, itens]) => (
+        <div key={secao} style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
+            {secao}
           </div>
+          {itens.map((item) => (
+            <div key={item} style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ color: "#C7C9CE", fontSize: 13 }}>{item}</span>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {PMOC_STATUS_OPCOES.map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => marcarStatus(item, opt)}
+                      style={{
+                        fontSize: 10,
+                        padding: "4px 8px",
+                        borderRadius: 7,
+                        border: `1px solid ${status[item] === opt ? PMOC_STATUS_COR[opt] : "#2A2A2E"}`,
+                        background: status[item] === opt ? `${PMOC_STATUS_COR[opt]}22` : "transparent",
+                        color: status[item] === opt ? PMOC_STATUS_COR[opt] : "#8A8A90",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {(status[item] === "Atenção" || status[item] === "Não conforme") && (
+                <input
+                  style={{ ...inputStyle, marginTop: 6, fontSize: 12 }}
+                  value={notas[item] || ""}
+                  onChange={(e) => setNotas((n) => ({ ...n, [item]: e.target.value }))}
+                  placeholder="Descreva a não conformidade encontrada..."
+                />
+              )}
+            </div>
+          ))}
         </div>
       ))}
 
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
         <div style={{ flex: 1 }}>
           <Field label="Temperatura (°C)">
             <input style={inputStyle} value={medicoes.temperatura} onChange={(e) => setMedicoes((m) => ({ ...m, temperatura: e.target.value }))} inputMode="decimal" />
@@ -4701,7 +4736,7 @@ function PmocChecklistForm({ onSubmit, onCancel }) {
         </div>
       </div>
 
-      <Field label="Observações">
+      <Field label="Observações gerais">
         <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical", fontFamily: "'Roboto',sans-serif" }} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
       </Field>
 
@@ -4717,12 +4752,32 @@ function PmocChecklistForm({ onSubmit, onCancel }) {
         <input ref={fileInputRef} type="file" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={addFotos} />
       </Field>
 
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Responsável técnico</div>
+      <LinhaDupla>
+        <Field label="Nome do técnico"><input style={inputStyle} value={responsavelNome} onChange={(e) => setResponsavelNome(e.target.value)} /></Field>
+        <Field label="Data da manutenção"><input type="date" style={inputStyle} value={dataExecucao} onChange={(e) => setDataExecucao(e.target.value)} /></Field>
+      </LinhaDupla>
+      <Field label="Assinatura do técnico">
+        <SignaturePad value={assinatura} onChange={setAssinatura} />
+      </Field>
+
       <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
         <button onClick={onCancel} style={{ flex: 1, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", color: "#C7C9CE", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12.5, textTransform: "uppercase", cursor: "pointer" }}>
           Cancelar
         </button>
         <button
-          onClick={() => onSubmit({ status, medicoes, observacoes, fotos, data: new Date().toISOString() })}
+          onClick={() =>
+            onSubmit({
+              status,
+              notas,
+              medicoes,
+              observacoes,
+              fotos,
+              responsavelNome,
+              assinatura,
+              data: new Date(dataExecucao + "T12:00:00").toISOString(),
+            })
+          }
           style={{ flex: 1.4, background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "12px 0", color: "#0A0A0B", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12.5, textTransform: "uppercase", cursor: "pointer" }}
         >
           Concluir manutenção
@@ -4753,39 +4808,110 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
     }
   };
 
+  // Contagem por status de uma manutenção — usado no resumo do PDF e do
+  // histórico exibido na tela, sem inventar nada além do que foi marcado.
+  const contarStatusManutencao = (h) => {
+    const c = { OK: 0, "Atenção": 0, "Não conforme": 0, "N/A": 0 };
+    Object.values(h.status || {}).forEach((v) => { if (c[v] !== undefined) c[v]++; });
+    return c;
+  };
+
+  const naoConformidadesDe = (h) =>
+    Object.entries(h.notas || {}).map(([item, nota]) => `${item}: ${nota}`);
+
   const gerarRelatorioTexto = () => {
     const linhas = [
       `Relatório PMOC — ${current.clienteNome}`,
       `Empresa: ${current.empresa || "-"} · CNPJ: ${current.cnpj || "-"}`,
-      `Equipamento: ${current.eqTipo} ${current.eqMarca} ${current.eqModelo} · ${current.eqBtus || "-"} BTUs`,
+      `Equipamento: ${[current.eqTipo, current.eqMarca, current.eqModelo].filter(Boolean).join(" ") || "-"} · ${current.eqBtus || "-"} BTUs`,
       `Frequência: ${current.frequencia} · Responsável: ${current.responsavel || "-"}`,
       `Próxima manutenção: ${current.proximaManutencao || "-"} (${pmocStatus(current.proximaManutencao).label})`,
       "",
       `Histórico de manutenções (${(current.historico || []).length}):`,
-      ...(current.historico || []).map(
-        (h, idx) =>
-          `${idx + 1}. ${new Date(h.data).toLocaleDateString("pt-BR")} — ${Object.entries(h.status).map(([k, v]) => `${k}: ${v}`).join(", ")}${h.observacoes ? ` · Obs: ${h.observacoes}` : ""}`
-      ),
+      ...(current.historico || []).map((h, idx) => {
+        const c = contarStatusManutencao(h);
+        const naoConf = naoConformidadesDe(h);
+        return [
+          `${idx + 1}. ${new Date(h.data).toLocaleDateString("pt-BR")} — OK: ${c.OK} · Atenção: ${c["Atenção"]} · Não conforme: ${c["Não conforme"]}`,
+          h.responsavelNome ? `   Técnico: ${h.responsavelNome}` : "",
+          naoConf.length ? `   Não conformidades: ${naoConf.join("; ")}` : "",
+          h.observacoes ? `   Obs: ${h.observacoes}` : "",
+        ].filter(Boolean).join("\n");
+      }),
     ];
     return linhas.join("\n");
   };
 
   const enviarWhatsapp = () => {
-    const texto = encodeURIComponent(`*ALLA SERVICE — PMOC*\n\n${gerarRelatorioTexto()}`);
     const telefone = (current.telefone || "").replace(/\D/g, "");
-    const url = telefone ? `https://wa.me/55${telefone}?text=${texto}` : `https://wa.me/?text=${texto}`;
-    window.open(url, "_blank");
+    if (!telefone) {
+      notificarErroBanco("Este cliente não tem um WhatsApp cadastrado neste plano PMOC. Cadastre o telefone antes de enviar.");
+      return;
+    }
+    const texto = encodeURIComponent(`Olá, ${current.clienteNome}! 👋\n\nSegue o relatório do seu plano PMOC.\n\n${gerarRelatorioTexto()}\n\n*ALLA SERVICE*\n📱 (15) 99198-9866`);
+    window.open(`https://wa.me/55${telefone}?text=${texto}`, "_blank");
   };
 
   const gerarPDF = () => {
     const win = window.open("", "_blank");
     if (!win) return;
+    const { header, footer } = pdfCabecalhoRodape(LOGO_DATA_URI);
+    const st2 = pmocStatus(current.proximaManutencao);
+
+    const historicoHtml = (current.historico || [])
+      .slice()
+      .reverse()
+      .map((h, idx) => {
+        const c = contarStatusManutencao(h);
+        const naoConf = naoConformidadesDe(h);
+        return `
+          <div class="pdf-card">
+            <h4>Manutenção — ${new Date(h.data).toLocaleDateString("pt-BR")}</h4>
+            <div>🟢 OK: ${c.OK} &nbsp; 🟡 Atenção: ${c["Atenção"]} &nbsp; 🔴 Não conforme: ${c["Não conforme"]} &nbsp; ➖ N/A: ${c["N/A"]}</div>
+            ${h.medicoes && (h.medicoes.temperatura || h.medicoes.corrente || h.medicoes.pressao) ? `<div style="margin-top:6px;">Medições: ${[h.medicoes.temperatura && `${h.medicoes.temperatura}°C`, h.medicoes.corrente && `${h.medicoes.corrente}A`, h.medicoes.pressao && `${h.medicoes.pressao} PSI`].filter(Boolean).join(" · ")}</div>` : ""}
+            ${naoConf.length ? `<div style="margin-top:6px;"><b>Não conformidades:</b><br/>${naoConf.map((n) => `• ${n}`).join("<br/>")}</div>` : ""}
+            ${h.observacoes ? `<div style="margin-top:6px;">${h.observacoes}</div>` : ""}
+            ${h.responsavelNome ? `<div style="margin-top:6px;font-size:11px;color:#8A6A22;">Responsável técnico: ${h.responsavelNome}</div>` : ""}
+          </div>`;
+      })
+      .join("");
+
     win.document.write(`
-      <html><head><title>PMOC — ALLA SERVICE</title>
-      <style>body{font-family:Arial,sans-serif;color:#111;padding:32px;max-width:700px;margin:0 auto}
-      h1{font-size:20px;border-bottom:3px solid #C9A24B;padding-bottom:10px}
-      pre{white-space:pre-wrap;font-family:Arial,sans-serif;font-size:13px;line-height:1.6}</style></head>
-      <body><h1>ALLA SERVICE — Relatório PMOC</h1><pre>${gerarRelatorioTexto()}</pre></body></html>
+      <html><head><title>PMOC ${current.clienteNome} — ALLA SERVICE</title>
+      <style>${PDF_ESTILO_CORPORATIVO}</style></head><body>
+      <div class="pdf-page">
+        ${header}
+        <div class="pdf-doctitle">Plano de Manutenção, Operação e Controle</div>
+        <div class="pdf-body">
+          <div class="pdf-card">
+            <h4>Cliente</h4>
+            <div><b>${current.clienteNome}</b></div>
+            <div>${current.empresa || ""}${current.cnpj ? ` · CNPJ ${current.cnpj}` : ""}</div>
+            <div>${current.endereco || ""}</div>
+            <div>${[current.telefone, current.email].filter(Boolean).join(" · ")}</div>
+          </div>
+          <div class="pdf-card">
+            <h4>Equipamento</h4>
+            <div>${[current.eqTipo, current.eqMarca, current.eqModelo].filter(Boolean).join(" ")}${current.eqBtus ? ` · ${current.eqBtus} BTUs` : ""}</div>
+            ${current.eqSerie ? `<div>Nº de série: ${current.eqSerie}</div>` : ""}
+            ${current.localInstalado ? `<div>Local: ${current.localInstalado}</div>` : ""}
+          </div>
+          <div class="pdf-card">
+            <h4>Plano de manutenção</h4>
+            <div>Frequência: ${current.frequencia}</div>
+            <div>Responsável: ${current.responsavel || "-"}</div>
+            <div>Próxima manutenção: ${current.proximaManutencao ? new Date(current.proximaManutencao).toLocaleDateString("pt-BR") : "-"} (${st2.label})</div>
+            ${current.atividades ? `<div style="margin-top:6px;">${String(current.atividades).replace(/\n/g, "<br/>")}</div>` : ""}
+          </div>
+
+          <h2 style="font-size:13px;color:#1A1A1A;margin:20px 0 4px;">Histórico de manutenções (${(current.historico || []).length})</h2>
+          ${historicoHtml || `<div class="pdf-card">Nenhuma manutenção registrada ainda.</div>`}
+
+          ${GARANTIA_CLAUSULA_HTML}
+        </div>
+        ${footer}
+      </div>
+      </body></html>
     `);
     win.document.close();
     win.focus();
@@ -4846,12 +4972,25 @@ function PmocDetail({ pmoc, onBack, onUpdated }) {
       {(current.historico || []).length === 0 ? (
         <div style={{ color: "#6E6E73", fontSize: 12.5, marginBottom: 16 }}>Nenhuma manutenção registrada ainda.</div>
       ) : (
-        [...current.historico].reverse().map((h, idx) => (
-          <div key={idx} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
-            <div style={{ fontSize: 12, color: "#C7C9CE" }}>{new Date(h.data).toLocaleString("pt-BR")}</div>
-            {h.observacoes && <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 3 }}>{h.observacoes}</div>}
-          </div>
-        ))
+        [...current.historico].reverse().map((h, idx) => {
+          const c = contarStatusManutencao(h);
+          const naoConf = naoConformidadesDe(h);
+          return (
+            <div key={idx} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: "#C7C9CE" }}>{new Date(h.data).toLocaleDateString("pt-BR")}</div>
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <span style={{ fontSize: 10.5, color: "#4ADE80" }}>🟢 {c.OK}</span>
+                <span style={{ fontSize: 10.5, color: "#E9C878" }}>🟡 {c["Atenção"]}</span>
+                <span style={{ fontSize: 10.5, color: "#F0605A" }}>🔴 {c["Não conforme"]}</span>
+              </div>
+              {naoConf.length > 0 && (
+                <div style={{ fontSize: 11, color: "#F0605A", marginTop: 4 }}>{naoConf.join("; ")}</div>
+              )}
+              {h.observacoes && <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 3 }}>{h.observacoes}</div>}
+              {h.responsavelNome && <div style={{ fontSize: 10.5, color: "#6E6E73", marginTop: 3 }}>Técnico: {h.responsavelNome}</div>}
+            </div>
+          );
+        })
       )}
 
       <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
@@ -5016,30 +5155,33 @@ function PmocTool() {
 
   const atrasados = (lista || []).filter((p) => pmocStatus(p.proximaManutencao).label === "ATRASADO").length;
   const proximos = (lista || []).filter((p) => pmocStatus(p.proximaManutencao).label === "PRÓXIMO DO VENCIMENTO").length;
+  const emDia = (lista || []).filter((p) => pmocStatus(p.proximaManutencao).label === "EM DIA").length;
 
   return (
     <div style={{ padding: 16, paddingBottom: 40 }}>
+      {/* resumo numérico compacto, mesmo padrão usado em OS/Agenda */}
+      {(lista || []).length > 0 && (
+        <div style={{ display: "flex", overflowX: "auto", gap: 0, marginBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 12, WebkitOverflowScrolling: "touch" }}>
+          {[
+            ["Total", (lista || []).length, "#F3F3F1"],
+            ["Em dia", emDia, "#4ADE80"],
+            ["Próximos", proximos, "#E9C878"],
+            ["Atrasados", atrasados, "#F0605A"],
+          ].map(([rotulo, valor, cor], i) => (
+            <div key={rotulo} style={{ flexShrink: 0, paddingRight: 20, borderRight: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none", marginRight: i < 3 ? 20 : 0 }}>
+              <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 18, color: cor, lineHeight: 1 }}>{valor}</div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#6E6E73", letterSpacing: 0.8, textTransform: "uppercase", marginTop: 4, whiteSpace: "nowrap" }}>{rotulo}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <button
         onClick={() => setNovo(true)}
         style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}
       >
         <Plus size={16} /> Novo plano PMOC
       </button>
-
-      {(atrasados > 0 || proximos > 0) && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          {atrasados > 0 && (
-            <div style={{ flex: 1, background: "rgba(240,96,90,0.1)", border: "1px solid rgba(240,96,90,0.35)", borderRadius: 10, padding: "8px 10px", fontSize: 11, color: "#F0605A" }}>
-              {atrasados} atrasado{atrasados > 1 ? "s" : ""}
-            </div>
-          )}
-          {proximos > 0 && (
-            <div style={{ flex: 1, background: "rgba(233,200,120,0.1)", border: "1px solid rgba(233,200,120,0.35)", borderRadius: 10, padding: "8px 10px", fontSize: 11, color: "#E9C878" }}>
-              {proximos} próximo{proximos > 1 ? "s" : ""} do vencimento
-            </div>
-          )}
-        </div>
-      )}
 
       {lista === null ? (
         <div style={{ textAlign: "center", padding: 30 }}>
