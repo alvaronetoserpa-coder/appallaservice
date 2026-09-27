@@ -16949,9 +16949,6 @@ function GarantiasModule({ onNavigate }) {
 
   return (
     <div style={{ padding: "12px 14px", paddingBottom: 40 }}>
-      {/* barra que esconde a scrollbar horizontal dos filtros, sem CSS externo */}
-      <style>{`.gar-filtros::-webkit-scrollbar{display:none}`}</style>
-
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
         <button onClick={() => setMostrarConfig(true)} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 9, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", color: "#C7C9CE", cursor: "pointer", flexShrink: 0 }}>
           <IconeCaneta size={13} />
@@ -16985,16 +16982,22 @@ function GarantiasModule({ onNavigate }) {
         />
       </div>
 
-      <div className="gar-filtros" style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, scrollbarWidth: "none", msOverflowStyle: "none" }}>
-        {["Todas", "ATIVA", "PRÓXIMA DO VENCIMENTO", "VENCIDA", "ESTENDIDA"].map((f) => (
-          <button
-            key={f}
-            onClick={() => setFiltroStatus(f)}
-            style={{ flexShrink: 0, fontSize: 10, padding: "5px 10px", borderRadius: 20, border: `1px solid ${filtroStatus === f ? "#C9A24B" : "#232326"}`, background: filtroStatus === f ? "rgba(201,162,75,0.12)" : "transparent", color: filtroStatus === f ? "#E9C878" : "#8A8A90", cursor: "pointer", whiteSpace: "nowrap" }}
-          >
-            {f === "Todas" ? "Todas" : STATUS_LABEL_CURTO[f] || (f.charAt(0) + f.slice(1).toLowerCase())}
-          </button>
-        ))}
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+        {["Todas", "ATIVA", "PRÓXIMA DO VENCIMENTO", "VENCIDA", "ESTENDIDA"].map((f) => {
+          const ativo = filtroStatus === f;
+          return (
+            <button
+              key={f}
+              onClick={() => setFiltroStatus(f)}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
+            >
+              <span style={{ fontSize: 11, fontFamily: "'Roboto',sans-serif", fontWeight: ativo ? 600 : 400, color: ativo ? "#F3F3F1" : "#6E6E73", whiteSpace: "nowrap" }}>
+                {f === "Todas" ? "Todas" : STATUS_LABEL_CURTO[f] || (f.charAt(0) + f.slice(1).toLowerCase())}
+              </span>
+              <span style={{ width: 14, height: 2, borderRadius: 2, background: ativo ? "#C9A24B" : "transparent" }} />
+            </button>
+          );
+        })}
       </div>
 
       {filtradas.length === 0 ? (
