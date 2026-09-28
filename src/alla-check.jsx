@@ -1409,7 +1409,7 @@ const TOOLS = [
   { key: "alla-venda", label: "ALLA VENDA", desc: "Venda de ar-condicionado: catálogo, cotações e propostas", icon: Snowflake, active: true },
   { key: "agenda-cortes", label: "Agenda de Cortes", desc: "Agenda provisória de sábado — Barbearia Serpas", icon: CalendarClock, active: true },
   { key: "visita-tecnica", label: "Visita Técnica", desc: "Vistoria completa com relatório em PDF", icon: ClipboardCheck, active: true },
-  { key: "garantias", label: "Garantias", desc: "Extensão de garantia de serviços e vendas", icon: FileCheck2, active: true },
+  { key: "garantias", label: "Garantia Estendida", desc: "Gestão de pós-venda e oportunidades", icon: FileCheck2, active: true },
   { key: "assinaturas", label: "Assinaturas", desc: "Contratos recorrentes, vencimentos e cobrança", icon: CalendarClock, active: true },
   { key: "btu", label: "Calculadora de BTU", desc: "Dimensionamento de ar-condicionado por ambiente", icon: Calculator, active: true },
   { key: "conversor", label: "Conversor Técnico", desc: "BTU, pressão, temperatura, potência e medidas", icon: Ruler, active: true },
@@ -16437,10 +16437,24 @@ const GARANTIA_STATUS_COR = {
   "CANCELADA": "#6E6E73",
 };
 
+/* Dias de CALENDÁRIO entre hoje e uma data (sem depender da hora do dia):
+   antes a conta usava horas e um serviço de 135 dias atrás aparecia como
+   134 dependendo do horário em que a tela era aberta. */
+function garDiasDesde(dataStr) {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const d = new Date(String(dataStr).slice(0, 10) + "T00:00:00");
+  return Math.max(0, Math.round((hoje - d) / 86400000));
+}
+function garDiasAte(dataStr) {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const d = new Date(String(dataStr).slice(0, 10) + "T00:00:00");
+  return Math.round((d - hoje) / 86400000);
+}
+
 function garantiaCalcularStatus(fimAtual, cancelada) {
   if (cancelada) return "CANCELADA";
   if (!fimAtual) return null;
-  const dias = Math.ceil((new Date(fimAtual) - new Date()) / (1000 * 60 * 60 * 24));
+  const dias = garDiasAte(fimAtual);
   if (dias < 0) return "VENCIDA";
   if (dias <= 30) return "PRÓXIMA DO VENCIMENTO";
   return "ATIVA";
@@ -16448,74 +16462,138 @@ function garantiaCalcularStatus(fimAtual, cancelada) {
 
 /* Varre OS e vendas de cervejeira e devolve uma lista única e normalizada
    de garantias — sem gravar nada novo, só juntando o que já existe. */
-async function garantiasVarrer() {
+function garantiaAddDias(dataStr, dias) {
+  const d = new Date(dataStr + "T12:00:00");
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/* Varre TODAS as ordens de serviço finalizadas e TODAS as vendas — não só
+   as que já têm garantia preenchida (era esse o defeito: o filtro antigo
+   descartava quase todos os clientes antigos, porque o campo de garantia é
+   recente). Quando o registro não tem garantia própria, calcula pela data
+   do serviço + o prazo padrão configurável. Nada é limitado por
+   "últimos N registros": a leitura traz a coleção inteira. */
+async function garantiasVarrer(config) {
+  const cfgDias = config && config.garantiaPadraoDias !== undefined && config.garantiaPadraoDias !== "" ? Number(config.garantiaPadraoDias) : 90;
   const [oss, vendas, extensoes] = await Promise.all([
     carregarTudoStorage("ordens-servico:").catch(() => []),
     carregarTudoStorage("cervejeiras-vendas:").catch(() => []),
     carregarTudoStorage("garantias-extensoes:").catch(() => []),
   ]);
   const extMap = Object.fromEntries(extensoes.map((e) => [e.id, e]));
+  const diasDesde = (dataServico) => garDiasDesde(dataServico);
+
+  const montar = (base, ext, explicitoFim) => {
+    const fimOriginal = ext?.extensoes?.length ? ext.extensoes[0].fimAnterior : (explicitoFim || (cfgDias > 0 ? garantiaAddDias(base.dataServico, cfgDias) : null));
+    const fimAtual = ext?.extensoes?.length ? ext.extensoes[ext.extensoes.length - 1].novaFim : fimOriginal;
+    const baseStatus = garantiaCalcularStatus(fimAtual, ext?.cancelada);
+    const foiEstendida = ext?.oferta?.status === "ATIVADA";
+    return {
+      ...base,
+      fimOriginal,
+      fimAtual,
+      garantiaPadrao: !explicitoFim,
+      diasDesdeServico: diasDesde(base.dataServico),
+      extensao: ext || null,
+      status: foiEstendida && baseStatus !== "VENCIDA" ? "ESTENDIDA" : baseStatus,
+    };
+  };
 
   const daOS = oss
-    .filter((os) => os.garantiaPeriodo || os.garantiaInicio || os.garantiaFim)
+    .filter((os) => {
+      const st = (os.status || "").toUpperCase();
+      const temGarantiaPropria = os.garantiaPeriodo || os.garantiaInicio || os.garantiaFim;
+      return st !== "CANCELADA" && (os.data || os.createdAt) && (st === "FINALIZADA" || temGarantiaPropria);
+    })
     .map((os) => {
       const chave = `os-${os.id}`;
-      const ext = extMap[chave];
-      const fimAtual = (ext?.extensoes || []).length ? ext.extensoes[ext.extensoes.length - 1].novaFim : os.garantiaFim;
-      return {
-        chave,
-        origemTipo: "OS",
-        origemId: os.id,
-        origemNumero: os.numero,
-        clienteNome: os.clienteNome,
-        clienteTelefone: os.clienteTelefone,
-        clienteDocumento: "",
-        descricao: os.tipoServico || "Serviço",
-        equipamento: [os.eqMarca, os.eqModelo].filter(Boolean).join(" "),
-        marca: os.eqMarca, modelo: os.eqModelo, serie: os.eqSerie,
-        valor: os.valorTotal,
-        dataInicio: os.garantiaInicio || os.data,
-        fimOriginal: os.garantiaFim,
-        fimAtual,
-        periodoOriginal: os.garantiaPeriodo,
-        condicoes: os.garantiaCondicoes,
-        extensao: ext || null,
-      };
+      const dataServico = String(os.garantiaInicio || os.finalizedAt || os.data || os.createdAt).slice(0, 10);
+      return montar(
+        {
+          chave,
+          origemTipo: "OS",
+          origemId: os.id,
+          origemNumero: os.numero,
+          clienteNome: os.clienteNome,
+          clienteTelefone: os.clienteTelefone,
+          clienteDocumento: os.clienteDocumento || "",
+          clienteEndereco: os.clienteEndereco || "",
+          descricao: os.tipoServico || "Serviço",
+          tecnico: os.tecnico || "",
+          equipamento: [os.eqMarca, os.eqModelo].filter(Boolean).join(" "),
+          marca: os.eqMarca, modelo: os.eqModelo, serie: os.eqSerie,
+          valor: os.valorTotal,
+          dataServico,
+          dataInicio: os.garantiaInicio || dataServico,
+          periodoOriginal: os.garantiaPeriodo || "",
+          condicoes: os.garantiaCondicoes,
+        },
+        extMap[chave],
+        os.garantiaFim
+      );
     });
 
   const daVenda = vendas
-    .filter((v) => v.garantiaMeses)
+    .filter((v) => v.createdAt)
     .map((v) => {
       const chave = `venda-${v.id}`;
-      const ext = extMap[chave];
-      const fimAtual = (ext?.extensoes || []).length ? ext.extensoes[ext.extensoes.length - 1].novaFim : v.garantiaFim;
-      return {
-        chave,
-        origemTipo: "Venda",
-        origemId: v.id,
-        origemNumero: null,
-        clienteNome: v.cliente?.nome,
-        clienteTelefone: v.cliente?.telefone,
-        clienteDocumento: v.cliente?.documento,
-        descricao: "Produto vendido",
-        equipamento: [v.produtoMarca, v.produtoModelo, v.produtoNome].filter(Boolean).join(" ") || v.produtoNome,
-        marca: v.produtoMarca, modelo: v.produtoModelo, serie: v.produtoSerie,
-        valor: v.total,
-        dataInicio: v.createdAt,
-        fimOriginal: v.garantiaFim,
-        fimAtual,
-        periodoOriginal: v.garantiaMeses ? `${v.garantiaMeses} meses` : "",
-        condicoes: "",
-        extensao: ext || null,
-      };
+      const dataServico = String(v.createdAt).slice(0, 10);
+      return montar(
+        {
+          chave,
+          origemTipo: "Venda",
+          origemId: v.id,
+          origemNumero: null,
+          clienteNome: v.cliente?.nome,
+          clienteTelefone: v.cliente?.telefone,
+          clienteDocumento: v.cliente?.documento,
+          clienteEndereco: v.cliente?.endereco || "",
+          descricao: "Produto vendido",
+          tecnico: "",
+          equipamento: [v.produtoMarca, v.produtoModelo, v.produtoNome].filter(Boolean).join(" ") || v.produtoNome,
+          marca: v.produtoMarca, modelo: v.produtoModelo, serie: v.produtoSerie,
+          valor: v.total,
+          dataServico,
+          dataInicio: dataServico,
+          periodoOriginal: v.garantiaMeses ? `${v.garantiaMeses} meses` : "",
+          condicoes: "",
+        },
+        extMap[chave],
+        v.garantiaFim
+      );
     });
 
-  return [...daOS, ...daVenda].map((g) => {
-    const baseStatus = garantiaCalcularStatus(g.fimAtual, g.extensao?.cancelada);
-    const foiEstendida = g.extensao?.oferta?.status === "ATIVADA";
-    const status = foiEstendida && baseStatus !== "VENCIDA" ? "ESTENDIDA" : baseStatus;
-    return { ...g, status };
-  });
+  return [...daOS, ...daVenda];
+}
+
+/* Rótulo da oferta usando o vocabulário pedido:
+   NÃO ENVIADA / ENVIADA / RESPONDEU / INTERESSADO / CONTRATOU / RECUSOU /
+   SEM RESPOSTA. */
+function garantiaOfertaRotulo(g, config) {
+  const o = g.extensao?.oferta || {};
+  if (g.extensao?.cancelada) return "CANCELADA";
+  if (["ACEITA", "PAGA", "ATIVADA"].includes(o.status)) return "CONTRATOU";
+  if (o.status === "RECUSADA") return "RECUSOU";
+  if (o.status === "INTERESSADA") return "INTERESSADO";
+  if (o.status === "RESPONDEU") return "RESPONDEU";
+  if (o.enviada) {
+    const max = config && config.maxTentativas !== undefined && config.maxTentativas !== "" ? Number(config.maxTentativas) : 3;
+    const intervalo = config && config.intervaloFollowupDias !== undefined && config.intervaloFollowupDias !== "" ? Number(config.intervaloFollowupDias) : 3;
+    const diasDesdeEnvio = Math.floor((Date.now() - new Date(o.enviadaEm).getTime()) / 86400000);
+    if ((o.count || 0) >= max && diasDesdeEnvio >= intervalo) return "SEM RESPOSTA";
+    return "ENVIADA";
+  }
+  return "NÃO ENVIADA";
+}
+
+/* Elegível = ainda não contratou nem cancelou, e o serviço já tem pelo
+   menos X dias (configurável). Não há teto: um cliente de 2 anos atrás é
+   tão elegível quanto um de 40 dias. */
+function garantiaEhElegivel(g, config) {
+  const minimo = config && config.diasMinimosElegivel !== undefined && config.diasMinimosElegivel !== "" ? Number(config.diasMinimosElegivel) : 30;
+  const rot = garantiaOfertaRotulo(g, config);
+  return rot !== "CONTRATOU" && rot !== "CANCELADA" && g.diasDesdeServico >= minimo;
 }
 
 /* Configuração da oferta — editável, nunca fixa no código. */
@@ -16528,6 +16606,10 @@ async function garantiaConfigLer() {
     automacaoAtiva: true,
     intervaloFollowupDias: 3,
     maxTentativas: 3,
+    nomeOferta: "Extensão de Garantia",
+    prazoOfertaDias: 15,
+    garantiaPadraoDias: 90,
+    diasMinimosElegivel: 30,
     modelos: [
       { nome: "Primeira oferta", texto: "" },
       { nome: "Lembrete", texto: "" },
@@ -16549,7 +16631,7 @@ async function garantiaConfigLer() {
 }
 
 const GARANTIA_MSG_PADRAO =
-  "Olá, [NOME]! 👋\n\nA garantia do seu [EQUIPAMENTO] referente à OS {OS} está próxima do vencimento.\n\nPara continuar protegido, a ALLA SERVICE disponibiliza uma extensão de garantia por mais [PERIODO].\n\n🛡️ EXTENSÃO DE GARANTIA\nPeríodo adicional: +[PERIODO]\nValor: R$ [VALOR]\n\nSe tiver interesse, responda esta mensagem e nossa equipe dará continuidade ao atendimento.\n\nALLA SERVICE\nClimatização • Elétrica • Manutenção";
+  "Olá, [NOME]! Tudo bem?\n\nAqui é da ALLA SERVICE.\n\nIdentificamos que já faz alguns meses desde o serviço realizado em {DATA_SERVICO} ({EQUIPAMENTO}) pela nossa equipe.\n\nPara continuar contando com a nossa proteção, estamos oferecendo uma extensão de garantia por mais [PERIODO].\n\nValor da extensão:\nR$ [VALOR].\n\nSe tiver interesse, basta responder esta mensagem que nossa equipe explica como funciona.\n\nALLA SERVICE\nClimatização • Elétrica • Manutenção";
 
 /* Escolhe o modelo pelo número de tentativas já feitas (0 = primeira
    oferta, 1 = lembrete, 2 = última oportunidade...) — nunca passa do
@@ -16565,6 +16647,9 @@ function garantiaMontarMensagemOferta(g, config) {
     .replaceAll("[EQUIPAMENTO]", g.equipamento || g.descricao || "equipamento/serviço")
     .replaceAll("{EQUIPAMENTO}", g.equipamento || g.descricao || "equipamento/serviço")
     .replaceAll("{OS}", g.origemNumero || "-")
+    .replaceAll("{DATA_SERVICO}", g.dataServico ? new Date(g.dataServico + "T12:00:00").toLocaleDateString("pt-BR") : "-")
+    .replaceAll("{OFERTA}", config.nomeOferta || "Extensão de Garantia")
+    .replaceAll("{PRAZO}", `${config.prazoOfertaDias ?? 15} dias`)
     .replaceAll("[PERIODO]", `${config.extensaoMeses} meses`)
     .replaceAll("{MESES}", `${config.extensaoMeses}`)
     .replaceAll("[VALOR]", Number(config.extensaoValor).toFixed(2))
@@ -16612,6 +16697,12 @@ function GarantiaConfigForm({ onBack }) {
       </LinhaDupla>
       <Field label="Valor da extensão (R$)"><input style={inputStyle} value={cfg.extensaoValor} onChange={(e) => setCfg((c) => ({ ...c, extensaoValor: e.target.value }))} inputMode="decimal" /></Field>
 
+      <Field label="Nome da oferta"><input style={inputStyle} value={cfg.nomeOferta || ""} onChange={(e) => setCfg((c) => ({ ...c, nomeOferta: e.target.value }))} /></Field>
+      <LinhaDupla>
+        <Field label="Garantia padrão quando a OS não tem (dias)"><input style={inputStyle} value={cfg.garantiaPadraoDias} onChange={(e) => setCfg((c) => ({ ...c, garantiaPadraoDias: e.target.value }))} inputMode="numeric" /></Field>
+        <Field label="Elegível a partir de (dias desde o serviço)"><input style={inputStyle} value={cfg.diasMinimosElegivel} onChange={(e) => setCfg((c) => ({ ...c, diasMinimosElegivel: e.target.value }))} inputMode="numeric" /></Field>
+      </LinhaDupla>
+      <Field label="Prazo da oferta (dias para o cliente decidir)"><input style={inputStyle} value={cfg.prazoOfertaDias} onChange={(e) => setCfg((c) => ({ ...c, prazoOfertaDias: e.target.value }))} inputMode="numeric" /></Field>
       <LinhaDupla>
         <Field label="Intervalo entre follow-ups (dias)"><input style={inputStyle} value={cfg.intervaloFollowupDias} onChange={(e) => setCfg((c) => ({ ...c, intervaloFollowupDias: e.target.value }))} inputMode="numeric" /></Field>
         <Field label="Máximo de tentativas"><input style={inputStyle} value={cfg.maxTentativas} onChange={(e) => setCfg((c) => ({ ...c, maxTentativas: e.target.value }))} inputMode="numeric" /></Field>
@@ -16646,7 +16737,7 @@ function GarantiaConfigForm({ onBack }) {
 }
 
 /* ---------------- Detalhe de uma garantia: fluxo completo de extensão ---------------- */
-function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
+function GarantiaDetail({ garantia, config, onBack, onVerOS, usuario }) {
   const [g, setG] = useState(garantia);
   const [gerando, setGerando] = useState(false);
   const [responsavel, setResponsavel] = useState("");
@@ -16655,7 +16746,9 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
     await window.storage.set(`garantias-extensoes:${g.chave}`, JSON.stringify({ ...novoDoc, id: g.chave }));
     // reconstrói o objeto normalizado com o novo doc, sem precisar varrer tudo de novo
     const fimAtual = (novoDoc.extensoes || []).length ? novoDoc.extensoes[novoDoc.extensoes.length - 1].novaFim : g.fimOriginal;
-    setG((atual) => ({ ...atual, extensao: novoDoc, fimAtual, status: garantiaCalcularStatus(fimAtual, novoDoc.cancelada) }));
+    const statusBase = garantiaCalcularStatus(fimAtual, novoDoc.cancelada);
+    const estendida = novoDoc.oferta?.status === "ATIVADA" && statusBase !== "VENCIDA" && statusBase !== "CANCELADA";
+    setG((atual) => ({ ...atual, extensao: novoDoc, fimAtual, status: estendida ? "ESTENDIDA" : statusBase }));
   };
 
   const extensaoAtual = () => g.extensao || { oferta: {}, extensoes: [], historico: [] };
@@ -16680,8 +16773,20 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
     window.open(`https://wa.me/55${telefone}?text=${encodeURIComponent(texto)}`, "_blank");
     salvarExtensao({
       ...doc,
-      oferta: { ...doc.oferta, enviada: true, enviadaEm: new Date().toISOString(), numero: telefone, status: "ENVIADA", count: (doc.oferta?.count || 0) + 1, ultimaMensagem: texto },
-      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: `Oferta enviada pelo WhatsApp para ${telefone}` }],
+      oferta: {
+        ...doc.oferta,
+        enviada: true,
+        enviadaEm: new Date().toISOString(),
+        enviadaPor: usuario?.displayName || usuario?.email || "Usuário do sistema",
+        numero: telefone,
+        status: "ENVIADA",
+        count: (doc.oferta?.count || 0) + 1,
+        ultimaMensagem: texto,
+        valor: Number(config.extensaoValor),
+        mesesExtensao: Number(config.extensaoMeses),
+        nomeOferta: config.nomeOferta || "Extensão de Garantia",
+      },
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: `${(doc.oferta?.count || 0) > 0 ? `Follow-up ${(doc.oferta?.count || 0) + 1}` : "Oferta"} enviada pelo WhatsApp para ${telefone}` }],
     });
   };
 
@@ -16824,6 +16929,15 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
   const [motivo, setMotivo] = useState("");
   const [pedindoMotivo, setPedindoMotivo] = useState(null); // "recusa" | "cancelamento" | null
 
+  const marcarResposta = async (novoStatus, evento) => {
+    const doc = extensaoAtual();
+    await salvarExtensao({
+      ...doc,
+      oferta: { ...doc.oferta, status: novoStatus, respondeuEm: new Date().toISOString() },
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento }],
+    });
+  };
+
   const recusarOferta = async () => {
     if (!motivo.trim()) return;
     const doc = extensaoAtual();
@@ -16865,82 +16979,97 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
   const podeReenviar = diasDesdeUltimoEnvio >= intervaloConfigurado && (oferta.count || 0) < maxTentativasConfigurado && !g.extensao?.followupDesativado;
   const followupEsgotado = (oferta.count || 0) >= maxTentativasConfigurado;
 
+  // ---- apresentação (somente visual) ----
+  const GBP = { background: "transparent", border: "1px solid rgba(201,162,75,0.55)", color: "#E9C878", borderRadius: 10, padding: "13px 0", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, letterSpacing: 0.4, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 };
+  const GBS = { background: "transparent", border: "1px solid #222222", color: "#B5B5B5", borderRadius: 10, padding: "12px 0", fontFamily: "'Roboto',sans-serif", fontWeight: 500, fontSize: 12, cursor: "pointer" };
+  const rotulo = garantiaOfertaRotulo(g, config);
+  const OFERTA_TXT = { "NÃO ENVIADA": "Oferta pendente", "ENVIADA": "Oferta enviada", "RESPONDEU": "Cliente respondeu", "INTERESSADO": "Cliente interessado", "CONTRATOU": "Contratada", "RECUSOU": "Recusada", "SEM RESPOSTA": "Sem resposta", "CANCELADA": "Cancelada" };
+  const STATUS_TXT = { "ATIVA": "Garantia ativa", "PRÓXIMA DO VENCIMENTO": "Garantia vencendo", "VENCIDA": "Garantia encerrada", "ESTENDIDA": "Garantia estendida", "CANCELADA": "Cancelada" };
+  const fd = (d, t) => (d ? new Date(String(d).length === 10 ? d + "T12:00:00" : d).toLocaleDateString("pt-BR") : null);
+  const ultimaExt = (g.extensao?.extensoes || []).slice(-1)[0];
+  const diasRest = g.fimAtual ? garDiasAte(g.fimAtual) : null;
+
+  const secoes = [
+    ["Cliente", [["WhatsApp", g.clienteTelefone], ["Endereço", g.clienteEndereco]]],
+    ["Equipamento", [["Marca", g.marca], ["Modelo", g.modelo], ["Número de série", g.serie], ...(!g.marca && !g.modelo ? [["Equipamento", g.equipamento]] : [])]],
+    ["Serviço", [["Serviço", g.descricao], ["OS", g.origemNumero], ["Técnico", g.tecnico], ["Data da instalação", fd(g.dataServico)]]],
+    ["Garantia", [
+      ["Garantia original", g.periodoOriginal || (g.garantiaPadrao ? `${config.garantiaPadraoDias ?? 90} dias (prazo padrão)` : null)],
+      ["Início", fd(g.dataInicio)],
+      ["Data de vencimento", fd(g.fimOriginal)],
+      ["Dias decorridos", g.diasDesdeServico !== undefined ? `${g.diasDesdeServico} dias` : null],
+      ["Situação", diasRest === null ? null : diasRest >= 0 ? `${diasRest} dias restantes` : `encerrada há ${-diasRest} dias`],
+      ...(ultimaExt ? [["Extensão contratada", `+${ultimaExt.periodoMeses} meses`], ["Nova validade", fd(ultimaExt.novaFim)]] : []),
+    ]],
+    ["Oferta de extensão", [["Extensão", `+${config.extensaoMeses} meses`], ["Valor", `R$ ${Number(config.extensaoValor).toFixed(2)}`], ["Status", OFERTA_TXT[rotulo] || rotulo]]],
+  ];
+
+  // linha do tempo: etapas base (derivadas dos dados) + histórico real
+  const etapas = [];
+  if (g.dataServico) etapas.push({ t: "Serviço realizado", d: fd(g.dataServico) });
+  if (g.dataInicio) etapas.push({ t: "Garantia original", d: fd(g.dataInicio), s: g.periodoOriginal || null });
+  if (g.fimOriginal && garDiasAte(g.fimOriginal) < 0) etapas.push({ t: "Garantia encerrada", d: fd(g.fimOriginal) });
+  (g.extensao?.historico || []).forEach((h) => etapas.push({ t: h.evento, d: new Date(h.data).toLocaleDateString("pt-BR") }));
+
+  const secTitulo = { fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#6A6A6A", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 };
+
   return (
-    <div style={{ padding: 16, paddingBottom: 40 }}>
-      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+    <div className="gar-root" style={{ padding: "14px 16px 40px", background: "#000" }}>
+      <style>{`.gar-root button{transition:opacity .15s ease}.gar-root button:active{opacity:.6}`}</style>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 12.5, marginBottom: 18, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 0 }}>
         <ChevronLeft size={15} /> voltar
       </button>
 
-      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 600, color: "#F3F3F1" }}>{g.clienteNome || "Cliente"}</div>
-      <div style={{ fontSize: 12.5, color: "#8A8A90", marginBottom: 10 }}>{g.origemTipo} {g.origemNumero || ""} · {g.equipamento || g.descricao}</div>
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#141416", border: `1px solid ${st}55`, borderRadius: 20, padding: "5px 12px" }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: st }} />
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: st, letterSpacing: 1 }}>{g.status}</span>
-        </div>
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 21, fontWeight: 600, color: "#FFFFFF", letterSpacing: 0.3, lineHeight: 1.2, wordBreak: "break-word" }}>{(g.clienteNome || "Cliente").toUpperCase()}</div>
+      <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4 }}>{g.equipamento || g.descricao}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "14px 0 22px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, color: "#E6E6E6", fontWeight: 600 }}>● {rotulo !== "NÃO ENVIADA" ? OFERTA_TXT[rotulo] : (STATUS_TXT[g.status] || g.status)}</span>
         {g.origemTipo === "OS" && onVerOS && (
-          <button onClick={onVerOS} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 20, padding: "5px 12px", color: "#C7C9CE", fontSize: 11, cursor: "pointer" }}>
+          <button onClick={onVerOS} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "none", padding: 0, color: "#8A8A90", fontSize: 11.5, cursor: "pointer" }}>
             <FileText size={12} /> Ver OS
           </button>
         )}
       </div>
 
-      <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
-        {[
-          ["Telefone", g.clienteTelefone],
-          ["Marca", g.marca],
-          ["Modelo", g.modelo],
-          ["Número de série", g.serie],
-          ["Início da garantia", g.dataInicio ? new Date(g.dataInicio).toLocaleDateString("pt-BR") : null],
-          ["Vencimento original", g.fimOriginal ? new Date(g.fimOriginal + "T00:00:00").toLocaleDateString("pt-BR") : null],
-          ["Vencimento atual", g.fimAtual ? new Date(g.fimAtual + "T00:00:00").toLocaleDateString("pt-BR") : null],
-          ["Dias restantes", g.fimAtual ? (() => { const d = Math.ceil((new Date(g.fimAtual) - new Date()) / 86400000); return d >= 0 ? `${d} dias` : `vencida há ${-d} dias`; })() : null],
-          ["Período original", g.periodoOriginal],
-        ].filter(([, v]) => v).map(([label, val]) => (
-          <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ color: "#8A8A90", fontSize: 12.5 }}>{label}</span>
-            <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{val}</span>
+      {secoes.map(([titulo, linhas]) => {
+        const visiveis = linhas.filter(([, v]) => v);
+        if (visiveis.length === 0) return null;
+        return (
+          <div key={titulo} style={{ marginBottom: 20 }}>
+            <div style={secTitulo}>{titulo}</div>
+            <div style={{ background: "#111111", border: "1px solid #222222", borderRadius: 12, padding: "4px 14px" }}>
+              {visiveis.map(([label, val], idx) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, padding: "11px 0", borderTop: idx ? "1px solid #1A1A1A" : "none" }}>
+                  <span style={{ color: "#8A8A8A", fontSize: 12, flexShrink: 0 }}>{label}</span>
+                  <span style={{ color: "#F2F2F2", fontSize: 12.5, textAlign: "right", wordBreak: "break-word" }}>{val}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
-        {(g.extensao?.extensoes || []).length > 0 && (
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 4, paddingTop: 8 }}>
-            <div style={{ fontSize: 10.5, color: "#4681DF", fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, marginBottom: 6 }}>EXTENSÃO CONTRATADA</div>
-            {(() => {
-              const ext = g.extensao.extensoes[g.extensao.extensoes.length - 1];
-              return (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                    <span style={{ color: "#8A8A90", fontSize: 12.5 }}>Período adicional</span>
-                    <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{ext.periodoMeses} meses</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                    <span style={{ color: "#8A8A90", fontSize: 12.5 }}>Data da extensão</span>
-                    <span style={{ color: "#F3F3F1", fontSize: 12.5 }}>{new Date(ext.dataAtivacao).toLocaleDateString("pt-BR")}</span>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </div>
+        );
+      })}
 
       {/* fluxo da oferta, um botão de cada vez conforme o estágio atual */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
         {!oferta.criada && (
-          <button onClick={criarOferta} style={{ ...btnPrincipal, width: "100%" }}>Criar oferta de extensão (+{config.extensaoMeses} meses · R$ {Number(config.extensaoValor).toFixed(2)})</button>
+          <button onClick={criarOferta} style={{ ...GBP, width: "100%" }}>Criar oferta de extensão (+{config.extensaoMeses} meses · R$ {Number(config.extensaoValor).toFixed(2)})</button>
         )}
         {oferta.criada && !oferta.enviada && (
-          <button onClick={enviarOferta} style={{ ...btnPrincipal, width: "100%" }}>Enviar oferta pelo WhatsApp</button>
+          <button onClick={enviarOferta} style={{ ...GBP, width: "100%" }}><MessageCircle size={14} /> Enviar pelo WhatsApp</button>
         )}
-        {oferta.enviada && oferta.status === "ENVIADA" && (
+        {oferta.enviada && ["ENVIADA", "RESPONDEU", "INTERESSADA"].includes(oferta.status) && (
           <>
-            <div style={{ fontSize: 11.5, color: "#6E6E73", textAlign: "center" }}>
-              {oferta.count > 1 ? `${oferta.count}ª tentativa` : "Oferta enviada"} em {new Date(oferta.enviadaEm).toLocaleDateString("pt-BR")} — aguardando resposta do cliente.
+            <div style={{ fontSize: 11.5, color: "#8A8A90", textAlign: "center" }}>
+              Oferta já enviada em {new Date(oferta.enviadaEm).toLocaleDateString("pt-BR")} às {new Date(oferta.enviadaEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              {oferta.enviadaPor ? ` por ${oferta.enviadaPor}` : ""}{oferta.count > 1 ? ` (${oferta.count} envios)` : ""}.
             </div>
-            <button onClick={clienteAceitou} style={{ ...btnPrincipal, width: "100%" }}>Cliente aceitou</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              {oferta.status === "ENVIADA" && <button onClick={() => marcarResposta("RESPONDEU", "Cliente respondeu à oferta")} style={{ ...GBS, flex: 1, fontSize: 11 }}>Cliente respondeu</button>}
+              {oferta.status !== "INTERESSADA" && <button onClick={() => marcarResposta("INTERESSADA", "Cliente demonstrou interesse")} style={{ ...GBS, flex: 1, fontSize: 11 }}>Interessado</button>}
+            </div>
+            <button onClick={clienteAceitou} style={{ ...GBP, width: "100%" }}>Cliente aceitou</button>
 
-            {podeReenviar && <button onClick={enviarOferta} style={{ ...btnSecundario, width: "100%", fontSize: 11 }}>Enviar follow-up ({oferta.count}/{config.maxTentativas})</button>}
+            {podeReenviar && <button onClick={enviarOferta} style={{ ...GBS, width: "100%", fontSize: 11 }}>Enviar follow-up ({oferta.count}/{config.maxTentativas})</button>}
             {!podeReenviar && !followupEsgotado && !g.extensao?.followupDesativado && (
               <div style={{ fontSize: 10.5, color: "#6E6E73", textAlign: "center" }}>
                 Próximo follow-up disponível em {intervaloConfigurado - diasDesdeUltimoEnvio} dia(s)
@@ -16948,22 +17077,22 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
             )}
             {followupEsgotado && <div style={{ fontSize: 10.5, color: "#6E6E73", textAlign: "center" }}>Follow-up encerrado (máximo de tentativas atingido)</div>}
 
-            <button onClick={alternarFollowup} style={{ ...btnSecundario, width: "100%", fontSize: 10.5 }}>
+            <button onClick={alternarFollowup} style={{ ...GBS, width: "100%", fontSize: 10.5 }}>
               {g.extensao?.followupDesativado ? "Reativar follow-up" : "Desativar follow-up desta garantia"}
             </button>
 
             {pedindoMotivo === "recusa" ? (
               <div style={{ display: "flex", gap: 6 }}>
                 <input style={{ ...inputStyle, flex: 1, fontSize: 11.5 }} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo da recusa" autoFocus />
-                <button onClick={recusarOferta} disabled={!motivo.trim()} style={{ ...btnSecundario, padding: "0 14px", opacity: motivo.trim() ? 1 : 0.5 }}>OK</button>
+                <button onClick={recusarOferta} disabled={!motivo.trim()} style={{ ...GBS, padding: "0 14px", opacity: motivo.trim() ? 1 : 0.5 }}>OK</button>
               </div>
             ) : (
-              <button onClick={() => setPedindoMotivo("recusa")} style={{ ...btnSecundario, width: "100%", fontSize: 11, color: "#F0605A" }}>Cliente recusou</button>
+              <button onClick={() => setPedindoMotivo("recusa")} style={{ ...GBS, width: "100%", fontSize: 11, color: "#A8A8A8" }}>Cliente recusou</button>
             )}
           </>
         )}
         {oferta.status === "RECUSADA" && (
-          <div style={{ fontSize: 11.5, color: "#F0605A", textAlign: "center" }}>
+          <div style={{ fontSize: 11.5, color: "#A8A8A8", textAlign: "center" }}>
             Cliente recusou{oferta.motivoRecusa ? ` — ${oferta.motivoRecusa}` : ""}.
           </div>
         )}
@@ -16971,7 +17100,7 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
           pedindoMotivo === "cancelamento" ? (
             <div style={{ display: "flex", gap: 6 }}>
               <input style={{ ...inputStyle, flex: 1, fontSize: 11.5 }} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo do cancelamento" autoFocus />
-              <button onClick={cancelarExtensao} disabled={!motivo.trim()} style={{ ...btnSecundario, padding: "0 14px", opacity: motivo.trim() ? 1 : 0.5 }}>OK</button>
+              <button onClick={cancelarExtensao} disabled={!motivo.trim()} style={{ ...GBS, padding: "0 14px", opacity: motivo.trim() ? 1 : 0.5 }}>OK</button>
             </div>
           ) : (
             <button onClick={() => setPedindoMotivo("cancelamento")} style={{ background: "none", border: "none", color: "#5A5A5F", fontSize: 10.5, textDecoration: "underline", cursor: "pointer", marginTop: 2 }}>
@@ -16980,69 +17109,145 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
           )
         )}
         {oferta.status === "ACEITA" && (
-          <button onClick={confirmarPagamento} style={{ ...btnPrincipal, width: "100%" }}>Confirmar pagamento (R$ {Number(config.extensaoValor).toFixed(2)})</button>
+          <button onClick={confirmarPagamento} style={{ ...GBP, width: "100%" }}>Confirmar pagamento (R$ {Number(config.extensaoValor).toFixed(2)})</button>
         )}
         {oferta.status === "PAGA" && (
           <>
             <Field label="Responsável pela ativação"><input style={inputStyle} value={responsavel} onChange={(e) => setResponsavel(e.target.value)} /></Field>
-            <button onClick={ativarExtensao} style={{ ...btnPrincipal, width: "100%" }}>Ativar extensão</button>
+            <button onClick={ativarExtensao} style={{ ...GBP, width: "100%" }}>Ativar extensão</button>
           </>
         )}
         {oferta.status === "ATIVADA" && (
           <>
-            <button onClick={gerarCertificado} style={{ ...btnPrincipal, width: "100%" }}>Gerar certificado (PDF)</button>
-            <button onClick={enviarCertificadoWhatsapp} style={{ ...btnSecundario, width: "100%" }}>Enviar certificado pelo WhatsApp</button>
+            <button onClick={gerarCertificado} style={{ ...GBP, width: "100%" }}>Gerar certificado (PDF)</button>
+            <button onClick={enviarCertificadoWhatsapp} style={{ ...GBS, width: "100%" }}>Enviar certificado pelo WhatsApp</button>
           </>
         )}
       </div>
 
-      {(g.extensao?.historico || []).length > 0 && (
-        <>
-          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Histórico</div>
-          {[...g.extensao.historico].reverse().map((h, i) => (
-            <div key={i} style={{ fontSize: 12, color: "#C7C9CE", marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-              <span style={{ color: "#6E6E73", fontSize: 10.5 }}>{new Date(h.data).toLocaleDateString("pt-BR")}</span> — {h.evento}
-            </div>
-          ))}
-        </>
+      {etapas.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={secTitulo}>Histórico</div>
+          <div style={{ marginLeft: 4, borderLeft: "1px solid #222222", paddingLeft: 18 }}>
+            {etapas.map((e, i) => (
+              <div key={i} style={{ position: "relative", paddingBottom: i === etapas.length - 1 ? 0 : 18 }}>
+                <span style={{ position: "absolute", left: -22, top: 4, width: 7, height: 7, borderRadius: "50%", background: i === etapas.length - 1 ? "#E9C878" : "#4A4A4A" }} />
+                <div style={{ fontSize: 12.5, color: i === etapas.length - 1 ? "#FFFFFF" : "#C8C8C8", fontWeight: i === etapas.length - 1 ? 600 : 400 }}>{e.t}</div>
+                <div style={{ fontSize: 10.5, color: "#6A6A6A", marginTop: 2 }}>{e.d}{e.s ? ` · ${e.s}` : ""}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-/* ---------------- Módulo principal: Garantias ---------------- */
-function GarantiasModule({ onNavigate }) {
+/* ---------------- Módulo principal: Garantias / Pós-venda ---------------- */
+const GAR_FILTROS = [
+  ["todos", "Todos"], ["30", "30+ dias"], ["60", "60+ dias"], ["90", "90+ dias"], ["120", "120+ dias"],
+  ["180", "180+ dias"], ["365", "1 ano+"], ["proxima", "Próx. vencimento"], ["vencida", "Vencida"],
+  ["enviada", "Oferta enviada"], ["naoEnviada", "Não enviada"], ["estendida", "Estendida"],
+];
+
+function garNormalizar(t) {
+  return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function GarantiasModule({ onNavigate, usuario }) {
   const [lista, setLista] = useState(null);
   const [config, setConfig] = useState(null);
   const [selecionada, setSelecionada] = useState(null);
   const [mostrarConfig, setMostrarConfig] = useState(false);
-  const [filtroStatus, setFiltroStatus] = useState("Todas");
+  const [filtro, setFiltro] = useState("todos");
   const [busca, setBusca] = useState("");
+  const [de, setDe] = useState("");
+  const [ate, setAte] = useState("");
+  const [ultimaVarredura, setUltimaVarredura] = useState(null);
 
   const load = useCallback(async () => {
     const cfg = await garantiaConfigLer();
     setConfig(cfg);
-    let garantias = await garantiasVarrer();
+    let garantias = await garantiasVarrer(cfg);
 
-    // "automação": ao abrir a ferramenta, cria a oferta automaticamente
-    // para garantias que entraram na janela configurada e ainda não têm
-    // oferta — nunca duplica (só cria se oferta.criada não existir).
+    // Rotina de verificação — idempotente: só cria registro de oferta para
+    // quem ainda não tem, nunca duplica e nunca apaga ninguém. Roda a cada
+    // abertura da ferramenta (não há servidor para rodar de madrugada) e
+    // guarda a data/hora da última verificação.
     if (cfg.automacaoAtiva) {
-      for (const g of garantias) {
-        const dentroDaJanela = g.status === "PRÓXIMA DO VENCIMENTO";
-        if (dentroDaJanela && !g.extensao?.oferta?.criada) {
-          await window.storage.set(
-            `garantias-extensoes:${g.chave}`,
-            JSON.stringify({ id: g.chave, oferta: { criada: true, criadaEm: new Date().toISOString(), enviada: false, status: "PENDENTE", count: 0 }, extensoes: [], historico: [{ data: new Date().toISOString(), evento: "Oferta de extensão criada automaticamente (garantia próxima do vencimento)" }] })
-          );
-        }
+      let criadas = 0;
+      const faltando = garantias.filter((g) => garantiaEhElegivel(g, cfg) && !g.extensao?.oferta?.criada && !g.extensao?.cancelada);
+      // grava em lotes de 20 em paralelo: com muitos clientes antigos a
+      // primeira verificação não fica presa numa fila de uma escrita por vez
+      for (let i = 0; i < faltando.length; i += 20) {
+        await Promise.all(
+          faltando.slice(i, i + 20).map((g) =>
+            window.storage.set(
+              `garantias-extensoes:${g.chave}`,
+              JSON.stringify({
+                id: g.chave,
+                oferta: { criada: true, criadaEm: new Date().toISOString(), enviada: false, status: "PENDENTE", count: 0 },
+                extensoes: [],
+                historico: [{ data: new Date().toISOString(), evento: `Cliente adicionado à fila de ofertas automaticamente (${g.diasDesdeServico} dias desde o serviço)` }],
+              })
+            )
+          )
+        );
+        criadas += Math.min(20, faltando.length - i);
       }
-      garantias = await garantiasVarrer(); // recarrega já com as ofertas recém-criadas
+      const registro = { data: new Date().toISOString(), novasNaFila: criadas, total: garantias.length };
+      await window.storage.set("garantia-config:varredura", JSON.stringify(registro));
+      setUltimaVarredura(registro);
+      if (criadas > 0) garantias = await garantiasVarrer(cfg);
     }
     setLista(garantias);
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const aplicaFiltro = useCallback((g) => {
+    if (!config) return true;
+    const rot = garantiaOfertaRotulo(g, config);
+    switch (filtro) {
+      case "todos": return true;
+      case "proxima": return g.status === "PRÓXIMA DO VENCIMENTO";
+      case "vencida": return g.status === "VENCIDA";
+      case "enviada": return !!g.extensao?.oferta?.enviada;
+      case "naoEnviada": return rot === "NÃO ENVIADA";
+      case "estendida": return g.status === "ESTENDIDA";
+      default: return g.diasDesdeServico >= Number(filtro);
+    }
+  }, [filtro, config]);
+
+  const filtradas = useMemo(() => {
+    if (!lista) return [];
+    const q = garNormalizar(busca.trim());
+    const qDigitos = busca.replace(/\D/g, "");
+    return lista
+      .filter((g) => {
+        if (!aplicaFiltro(g)) return false;
+        if (de && g.dataServico < de) return false;
+        if (ate && g.dataServico > ate) return false;
+        if (!q) return true;
+        const texto = garNormalizar([g.clienteNome, g.equipamento, g.marca, g.modelo, g.serie, g.origemNumero, g.clienteDocumento, g.clienteEndereco, g.descricao].filter(Boolean).join(" "));
+        if (texto.includes(q)) return true;
+        // telefone e documento comparados só pelos dígitos, para "(15) 99999-9999" achar "15999999999"
+        if (qDigitos.length >= 3) {
+          const fone = String(g.clienteTelefone || "").replace(/\D/g, "");
+          const doc = String(g.clienteDocumento || "").replace(/\D/g, "");
+          if (fone.includes(qDigitos) || doc.includes(qDigitos)) return true;
+        }
+        return false;
+      })
+      .sort((a, b) => (a.dataServico < b.dataServico ? 1 : -1));
+  }, [lista, aplicaFiltro, busca, de, ate]);
+
+  // Exibição paginada (50 por vez + "Mostrar mais"): a busca e os filtros
+  // sempre rodam sobre a base COMPLETA, então um cliente antigo nunca fica
+  // escondido — a paginação só evita desenhar milhares de cards de uma vez.
+  const [limite, setLimite] = useState(50);
+  useEffect(() => { setLimite(50); }, [filtro, busca, de, ate]);
+  const visiveis = filtradas.slice(0, limite);
 
   if (mostrarConfig) {
     return <GarantiaConfigForm onBack={() => { setMostrarConfig(false); load(); }} />;
@@ -17053,6 +17258,7 @@ function GarantiasModule({ onNavigate }) {
       <GarantiaDetail
         garantia={selecionada}
         config={config}
+        usuario={usuario}
         onBack={() => { setSelecionada(null); load(); }}
         onVerOS={onNavigate ? () => onNavigate("os") : null}
       />
@@ -17063,143 +17269,143 @@ function GarantiasModule({ onNavigate }) {
     return <div style={{ textAlign: "center", padding: 40 }}><Loader2 size={20} className="spin" /></div>;
   }
 
+  const elegiveis = lista.filter((g) => garantiaEhElegivel(g, config));
   const contagem = {
-    // "Elegíveis" = dentro da janela configurada e ainda sem contratação
-    elegiveis: lista.filter((g) => g.status === "PRÓXIMA DO VENCIMENTO" && g.extensao?.oferta?.status !== "ATIVADA").length,
-    ofertasPendentes: lista.filter((g) => g.extensao?.oferta?.criada && !g.extensao?.oferta?.enviada).length,
-    ofertasEnviadas: lista.filter((g) => g.extensao?.oferta?.enviada).length,
-    emNegociacao: lista.filter((g) => g.extensao?.oferta?.status === "ENVIADA").length,
-    contratadas: lista.filter((g) => g.extensao?.oferta?.status === "ATIVADA").length,
-    recusadas: lista.filter((g) => g.extensao?.oferta?.status === "RECUSADA").length,
-    expiradas: lista.filter((g) => g.status === "VENCIDA" && g.extensao?.oferta?.status !== "ATIVADA").length,
+    elegiveis: elegiveis.length,
+    pendentes: elegiveis.filter((g) => garantiaOfertaRotulo(g, config) === "NÃO ENVIADA").length,
+    enviadas: lista.filter((g) => g.extensao?.oferta?.enviada).length,
+    interessados: lista.filter((g) => garantiaOfertaRotulo(g, config) === "INTERESSADO").length,
+    contratados: lista.filter((g) => garantiaOfertaRotulo(g, config) === "CONTRATOU").length,
+    proximas: lista.filter((g) => g.status === "PRÓXIMA DO VENCIMENTO").length,
   };
-  // receita real — soma dos valores das extensões já ativadas, sem estimar nada
-  const receitaGerada = lista.reduce((soma, g) => soma + (g.extensao?.extensoes || []).reduce((s, e) => s + (Number(e.valor) || 0), 0), 0);
-  const baseConversao = contagem.contratadas + contagem.recusadas + contagem.emNegociacao;
-  const taxaConversao = baseConversao > 0 ? Math.round((contagem.contratadas / baseConversao) * 100) : 0;
+  const valorExt = Number(config.extensaoValor) || 0;
+  const potencial = elegiveis.length * valorExt;
+  const receitaGerada = lista.reduce((soma, g) => soma + (g.extensao?.extensoes || []).reduce((sm, e) => sm + (Number(e.valor) || 0), 0), 0);
+  const baseConv = contagem.contratados + lista.filter((g) => garantiaOfertaRotulo(g, config) === "RECUSOU").length + contagem.enviadas - contagem.contratados;
+  const taxaConversao = baseConv > 0 ? Math.round((contagem.contratados / baseConv) * 100) : 0;
 
-  const filtradas = lista.filter((g) => {
-    if (filtroStatus !== "Todas" && g.status !== filtroStatus) return false;
-    if (busca.trim()) {
-      const q = busca.toLowerCase();
-      if (!`${g.clienteNome} ${g.equipamento} ${g.origemNumero || ""}`.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
-
-  const STATUS_LABEL_CURTO = { "PRÓXIMA DO VENCIMENTO": "VENCENDO" };
+  const OFERTA_TXT = { "NÃO ENVIADA": "Oferta pendente", "ENVIADA": "Oferta enviada", "RESPONDEU": "Cliente respondeu", "INTERESSADO": "Cliente interessado", "CONTRATOU": "Contratada", "RECUSOU": "Recusada", "SEM RESPOSTA": "Sem resposta", "CANCELADA": "Cancelada" };
+  const STATUS_TXT = { "ATIVA": "Garantia ativa", "PRÓXIMA DO VENCIMENTO": "Garantia vencendo", "VENCIDA": "Garantia encerrada", "ESTENDIDA": "Garantia estendida", "CANCELADA": "Cancelada" };
+  const fmt = (d) => new Date((String(d).length === 10 ? d + "T12:00:00" : d)).toLocaleDateString("pt-BR");
+  const rotCel = { fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#6A6A6A", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 3 };
+  const valCel = { fontFamily: "'Roboto',sans-serif", fontSize: 12.5, color: "#F2F2F2", lineHeight: 1.3, wordBreak: "break-word" };
 
   return (
-    <div style={{ padding: "12px 14px", paddingBottom: 40 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-        <button onClick={() => setMostrarConfig(true)} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 9, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", color: "#C7C9CE", cursor: "pointer", flexShrink: 0 }}>
-          <IconeCaneta size={13} />
-        </button>
+    <div className="gar-root" style={{ padding: "14px 14px 40px", background: "#000" }}>
+      <style>{`.gar-root button{transition:opacity .15s ease}.gar-root button:active{opacity:.6}.gar-root input::placeholder{color:#5A5A5A}`}</style>
+
+      {/* cabeçalho: subtítulo + ações discretas */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <span style={{ fontSize: 12.5, color: "#9A9A9A", lineHeight: 1.3 }}>Gestão de pós-venda e oportunidades</span>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button onClick={load} title="Atualizar" aria-label="Atualizar" style={{ background: "transparent", border: "1px solid #222222", borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#B5B5B5", cursor: "pointer" }}>
+            <RefreshCw size={14} strokeWidth={1.7} />
+          </button>
+          <button onClick={() => setMostrarConfig(true)} title="Configurações" aria-label="Configurações" style={{ background: "transparent", border: "1px solid #222222", borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#B5B5B5", cursor: "pointer" }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></svg>
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: 9.5, color: "#555555", marginBottom: 18 }}>
+        {ultimaVarredura ? `Última verificação: ${new Date(ultimaVarredura.data).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · ${lista.length} registros analisados` : `${lista.length} registros analisados`}
       </div>
 
-      {/* resumo compacto 2x3 */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
-        {[
-          ["ELEGÍVEIS", contagem.elegiveis, "#E9C878"],
-          ["OFERTAS PENDENTES", contagem.ofertasPendentes, "#8A8A90"],
-          ["EM NEGOCIAÇÃO", contagem.emNegociacao, "#4681DF"],
-          ["CONTRATADAS", contagem.contratadas, "#4ADE80"],
-          ["RECUSADAS", contagem.recusadas, "#F0605A"],
-          ["EXPIRADAS", contagem.expiradas, "#6E6E73"],
-        ].map(([label, valor, cor]) => (
-          <div key={label} style={{ background: "#141416", border: "1px solid #232326", borderRadius: 9, padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 0.3 }}>{label}</span>
-            <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 16, color: cor }}>{valor}</span>
+      {/* indicadores: mesma identidade para todos, sem cor por indicador */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", background: "#0D0D0D", border: "1px solid #222222", borderRadius: 12 }}>
+        {[["Clientes elegíveis", contagem.elegiveis], ["Ofertas pendentes", contagem.pendentes], ["Enviadas", contagem.enviadas], ["Contratadas", contagem.contratados]].map(([label, valor], i) => (
+          <div key={label} style={{ padding: "14px 6px 12px", textAlign: "center", borderLeft: i ? "1px solid #1A1A1A" : "none", minWidth: 0 }}>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 24, color: "#FFFFFF", lineHeight: 1 }}>{valor}</div>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 7.5, color: "#7A7A7A", letterSpacing: 0.5, textTransform: "uppercase", marginTop: 7, lineHeight: 1.35 }}>{label}</div>
           </div>
         ))}
       </div>
-
-      {/* receita e conversao como uma linha so, sem virar mais cards */}
-      <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 2px 12px", fontSize: 11 }}>
-        <span style={{ color: "#8A8A90" }}>Receita gerada: <b style={{ color: "#E9C878" }}>R$ {receitaGerada.toFixed(2)}</b></span>
-        <span style={{ color: "#8A8A90" }}>Conversão: <b style={{ color: "#4ADE80" }}>{taxaConversao}%</b></span>
+      <div style={{ padding: "10px 2px 20px", fontSize: 11, color: "#7A7A7A", lineHeight: 1.7 }}>
+        Interessados <b style={{ color: "#DADADA", fontWeight: 600 }}>{contagem.interessados}</b> · Próx. vencimento <b style={{ color: "#DADADA", fontWeight: 600 }}>{contagem.proximas}</b>
+        <br />
+        Oportunidade <b style={{ color: "#DADADA", fontWeight: 600 }}>R$ {potencial.toFixed(2)}</b> · Receita <b style={{ color: "#DADADA", fontWeight: 600 }}>R$ {receitaGerada.toFixed(2)}</b> · Conversão <b style={{ color: "#DADADA", fontWeight: 600 }}>{taxaConversao}%</b>
       </div>
 
-      <div style={{ position: "relative", marginBottom: 8 }}>
-        <Search size={13} color="#5A5A5F" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
+      {/* busca */}
+      <div style={{ position: "relative", marginBottom: 16 }}>
+        <Search size={15} strokeWidth={1.7} color="#6A6A6A" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar cliente, equipamento ou OS..."
-          style={{ width: "100%", boxSizing: "border-box", background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 9, padding: "8px 10px 8px 30px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 12.5, outline: "none" }}
+          placeholder="Buscar cliente, telefone, OS ou equipamento"
+          style={{ width: "100%", boxSizing: "border-box", height: 46, background: "#0D0D0D", border: "1px solid #222222", borderRadius: 12, padding: "0 14px 0 40px", color: "#FFFFFF", fontFamily: "'Roboto',sans-serif", fontSize: 13.5, outline: "none" }}
         />
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-        {["Todas", "ATIVA", "PRÓXIMA DO VENCIMENTO", "VENCIDA", "ESTENDIDA"].map((f) => {
-          const ativo = filtroStatus === f;
+      {/* filtros em texto */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 18px", marginBottom: 14 }}>
+        {GAR_FILTROS.map(([id, rotulo]) => {
+          const ativo = filtro === id;
           return (
-            <button
-              key={f}
-              onClick={() => setFiltroStatus(f)}
-              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
-            >
-              <span style={{ fontSize: 11, fontFamily: "'Roboto',sans-serif", fontWeight: ativo ? 600 : 400, color: ativo ? "#F3F3F1" : "#6E6E73", whiteSpace: "nowrap" }}>
-                {f === "Todas" ? "Todas" : STATUS_LABEL_CURTO[f] || (f.charAt(0) + f.slice(1).toLowerCase())}
-              </span>
-              <span style={{ width: 14, height: 2, borderRadius: 2, background: ativo ? "#C9A24B" : "transparent" }} />
+            <button key={id} onClick={() => setFiltro(id)} style={{ background: "none", border: "none", padding: "2px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
+              <span style={{ fontSize: 12, fontFamily: "'Roboto',sans-serif", fontWeight: ativo ? 600 : 400, color: ativo ? "#FFFFFF" : "#6A6A6A", whiteSpace: "nowrap" }}>{rotulo}</span>
+              <span style={{ width: 14, height: 1.5, borderRadius: 2, background: ativo ? "#C9A24B" : "transparent" }} />
             </button>
           );
         })}
       </div>
 
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontSize: 11, color: "#6A6A6A" }}>
+        <span>Serviço de</span>
+        <input type="date" value={de} onChange={(e) => setDe(e.target.value)} style={{ flex: 1, minWidth: 0, background: "#0D0D0D", border: "1px solid #222222", borderRadius: 8, padding: "6px 8px", color: "#DADADA", fontSize: 11, outline: "none" }} />
+        <span>até</span>
+        <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} style={{ flex: 1, minWidth: 0, background: "#0D0D0D", border: "1px solid #222222", borderRadius: 8, padding: "6px 8px", color: "#DADADA", fontSize: 11, outline: "none" }} />
+        {(de || ate) && <button onClick={() => { setDe(""); setAte(""); }} style={{ background: "none", border: "none", color: "#C9A24B", fontSize: 11, cursor: "pointer", padding: 0 }}>limpar</button>}
+      </div>
+
+      <div style={{ fontSize: 10.5, color: "#5A5A5A", marginBottom: 12 }}>{filtradas.length} de {lista.length} garantias</div>
+
       {filtradas.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "36px 20px", color: "#6E6E73" }}>
-          <ClipboardCheck size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
-          <div style={{ fontSize: 12.5 }}>{lista.length === 0 ? "Nenhuma garantia encontrada em OS ou vendas ainda." : "Nenhuma garantia para esse filtro."}</div>
+        <div style={{ textAlign: "center", padding: "44px 20px", color: "#6A6A6A" }}>
+          <ClipboardCheck size={24} strokeWidth={1.5} style={{ marginBottom: 10, opacity: 0.6 }} />
+          <div style={{ fontSize: 12.5 }}>{lista.length === 0 ? "Nenhuma OS finalizada ou venda encontrada ainda." : "Nenhuma garantia para essa busca/filtro."}</div>
         </div>
       ) : (
-        filtradas.map((g) => {
-          const cor = GARANTIA_STATUS_COR[g.status] || "#6E6E73";
-          const dias = g.fimAtual ? Math.ceil((new Date(g.fimAtual) - new Date()) / 86400000) : null;
-          const statusExibido = g.extensao?.oferta?.status === "ATIVADA" ? "EXTENSÃO ATIVA" : g.extensao?.oferta?.criada && !g.extensao?.oferta?.enviada ? "OFERTA PENDENTE" : (STATUS_LABEL_CURTO[g.status] || g.status);
+        visiveis.map((g) => {
+          const rot = garantiaOfertaRotulo(g, config);
+          const dias = g.fimAtual ? garDiasAte(g.fimAtual) : null;
+          const statusTxt = rot !== "NÃO ENVIADA" ? OFERTA_TXT[rot] || rot : STATUS_TXT[g.status] || g.status;
+          const garantiaTxt = g.periodoOriginal || (g.garantiaPadrao ? `${config.garantiaPadraoDias ?? 90} dias` : "—");
           return (
-            <button
-              key={g.chave}
-              onClick={() => setSelecionada(g)}
-              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #232326", borderRadius: 11, padding: "11px 12px", marginBottom: 7, cursor: "pointer" }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 13, color: "#F3F3F1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {(g.clienteNome || "Cliente").toUpperCase()}
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: cor }} />
-                  <span style={{ fontSize: 9, color: cor, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.3 }}>{statusExibido}</span>
-                </span>
-              </div>
+            <div key={g.chave} style={{ background: "#111111", border: "1px solid #222222", borderRadius: 14, padding: 16, marginBottom: 12 }}>
+              <button onClick={() => setSelecionada(g)} style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", display: "block" }}>
+                <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14.5, color: "#FFFFFF", letterSpacing: 0.3, lineHeight: 1.25, wordBreak: "break-word" }}>{(g.clienteNome || "Cliente").toUpperCase()}</div>
+                {g.equipamento && <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, lineHeight: 1.35 }}>{g.equipamento}</div>}
+                <div style={{ fontSize: 11, color: "#6A6A6A", marginTop: 3 }}>{g.clienteTelefone ? g.clienteTelefone : "Sem WhatsApp cadastrado"}{g.origemNumero ? ` · ${g.origemNumero}` : " · Venda"}</div>
 
-              {g.origemNumero && (
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", marginTop: 4 }}>{g.origemNumero}</div>
-              )}
-              {(g.equipamento || g.descricao) && (
-                <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 3 }}>{g.equipamento || g.descricao}</div>
-              )}
-              {(g.dataInicio || g.fimAtual) && (
-                <div style={{ fontSize: 11, color: "#C7C9CE", marginTop: 3 }}>
-                  {g.dataInicio ? new Date(g.dataInicio).toLocaleDateString("pt-BR") : "-"} → {g.fimAtual ? new Date(g.fimAtual + "T00:00:00").toLocaleDateString("pt-BR") : "-"}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 16px", marginTop: 16, paddingTop: 14, borderTop: "1px solid #1A1A1A" }}>
+                  <div style={{ minWidth: 0 }}><div style={rotCel}>Serviço</div><div style={valCel}>{g.descricao}</div><div style={{ fontSize: 11, color: "#7A7A7A", marginTop: 2 }}>{fmt(g.dataServico)}</div></div>
+                  <div style={{ minWidth: 0 }}><div style={rotCel}>Garantia original</div><div style={valCel}>{garantiaTxt}</div></div>
+                  <div style={{ minWidth: 0 }}><div style={rotCel}>Tempo decorrido</div><div style={valCel}>{g.diasDesdeServico} dias</div></div>
+                  <div style={{ minWidth: 0 }}><div style={rotCel}>Status</div><div style={{ ...valCel, fontWeight: 600 }}>● {statusTxt}</div></div>
                 </div>
-              )}
-              {dias !== null && (
-                <div style={{ fontSize: 11, color: dias < 0 ? "#F0605A" : dias <= 30 ? "#E9C878" : "#4ADE80", marginTop: 3, fontWeight: 600 }}>
-                  {dias >= 0 ? `${dias} dias restantes` : `vencida há ${-dias} dias`}
-                </div>
-              )}
-              {g.extensao?.oferta?.enviada && (
-                <div style={{ fontSize: 10, color: "#4681DF", marginTop: 4 }}>Oferta enviada em {new Date(g.extensao.oferta.enviadaEm).toLocaleDateString("pt-BR")}</div>
-              )}
 
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-                <span style={{ fontSize: 10.5, color: "#E9C878", fontFamily: "'Roboto',sans-serif", fontWeight: 600 }}>Ver detalhes →</span>
-              </div>
-            </button>
+                {(dias !== null || g.extensao?.oferta?.enviadaEm) && (
+                  <div style={{ fontSize: 10.5, color: "#666666", marginTop: 12, lineHeight: 1.5 }}>
+                    {dias !== null && (dias >= 0 ? `${dias} dias de garantia restantes` : `Garantia encerrada há ${-dias} dias`)}
+                    {g.fimAtual ? ` · vence ${fmt(g.fimAtual)}` : ""}
+                    {g.extensao?.oferta?.enviadaEm ? ` · oferta enviada em ${fmt(g.extensao.oferta.enviadaEm)}` : ""}
+                  </div>
+                )}
+              </button>
+              <button
+                onClick={() => setSelecionada(g)}
+                style={{ width: "100%", marginTop: 14, background: "transparent", border: "1px solid rgba(201,162,75,0.5)", borderRadius: 10, padding: "12px 0", color: "#E9C878", fontSize: 11.5, fontWeight: 600, fontFamily: "'Roboto',sans-serif", letterSpacing: 1, textTransform: "uppercase", cursor: "pointer" }}
+              >
+                {rot === "NÃO ENVIADA" ? "Oferecer garantia" : "Ver oferta"}
+              </button>
+            </div>
           );
         })
+      )}
+      {filtradas.length > limite && (
+        <button onClick={() => setLimite((l) => l + 50)} style={{ width: "100%", background: "transparent", border: "1px solid #222222", borderRadius: 10, padding: "12px 0", color: "#B5B5B5", fontSize: 12, fontWeight: 500, cursor: "pointer", marginTop: 4 }}>
+          Mostrar mais ({filtradas.length - limite} restantes)
+        </button>
       )}
     </div>
   );
@@ -17937,7 +18143,7 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "tool-alla-venda" && <AllaVendaModule />}
         {telaVisivel === "tool-agenda-cortes" && <AgendaCortesModule />}
         {telaVisivel === "tool-visita-tecnica" && <VisitaTecnicaModule />}
-        {telaVisivel === "tool-garantias" && <GarantiasModule onNavigate={navigate} />}
+        {telaVisivel === "tool-garantias" && <GarantiasModule onNavigate={navigate} usuario={usuario} />}
         {telaVisivel === "tool-assinaturas" && <AssinaturasModule />}
         {telaVisivel === "tool-rastreio-tecnico" && <RastreioTecnico />}
         {telaVisivel === "tool-historico-equipamento" && <HistoricoEquipamento />}
