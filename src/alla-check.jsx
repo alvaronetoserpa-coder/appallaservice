@@ -16521,21 +16521,54 @@ async function garantiasVarrer() {
 /* Configuração da oferta — editável, nunca fixa no código. */
 async function garantiaConfigLer() {
   const r = await window.storage.get("garantia-config:padrao").catch(() => null);
-  const padrao = { antecedenciaDias: 30, extensaoMeses: 3, extensaoValor: 100, automacaoAtiva: true, mensagem: "" };
+  const padrao = {
+    antecedenciaDias: 30,
+    extensaoMeses: 3,
+    extensaoValor: 100,
+    automacaoAtiva: true,
+    intervaloFollowupDias: 3,
+    maxTentativas: 3,
+    modelos: [
+      { nome: "Primeira oferta", texto: "" },
+      { nome: "Lembrete", texto: "" },
+      { nome: "Última oportunidade", texto: "" },
+    ],
+  };
   if (!r) return padrao;
-  try { return { ...padrao, ...JSON.parse(r.value) }; } catch { return padrao; }
+  try {
+    const salvo = JSON.parse(r.value);
+    // migra o campo antigo "mensagem" (modelo único) para o novo formato
+    // de vários modelos, sem perder o que o técnico já tinha configurado.
+    if (salvo.mensagem && !salvo.modelos) {
+      salvo.modelos = [{ nome: "Primeira oferta", texto: salvo.mensagem }, ...padrao.modelos.slice(1)];
+    }
+    return { ...padrao, ...salvo };
+  } catch {
+    return padrao;
+  }
 }
 
 const GARANTIA_MSG_PADRAO =
-  "Olá, [NOME]! 👋\n\nA garantia do seu [EQUIPAMENTO] realizado pela ALLA SERVICE está próxima do vencimento.\n\nPara continuar contando com a proteção da ALLA SERVICE, disponibilizamos uma extensão da garantia por mais [PERIODO].\n\n🛡️ EXTENSÃO DE GARANTIA\nPeríodo adicional: +[PERIODO]\nValor: R$ [VALOR]\n\nCaso tenha interesse, responda SIM e nossa equipe dará continuidade à ativação.\n\nALLA SERVICE\nClimatização • Elétrica • Manutenção";
+  "Olá, [NOME]! 👋\n\nA garantia do seu [EQUIPAMENTO] referente à OS {OS} está próxima do vencimento.\n\nPara continuar protegido, a ALLA SERVICE disponibiliza uma extensão de garantia por mais [PERIODO].\n\n🛡️ EXTENSÃO DE GARANTIA\nPeríodo adicional: +[PERIODO]\nValor: R$ [VALOR]\n\nSe tiver interesse, responda esta mensagem e nossa equipe dará continuidade ao atendimento.\n\nALLA SERVICE\nClimatização • Elétrica • Manutenção";
 
+/* Escolhe o modelo pelo número de tentativas já feitas (0 = primeira
+   oferta, 1 = lembrete, 2 = última oportunidade...) — nunca passa do
+   último modelo cadastrado, mesmo que o número de tentativas seja maior. */
 function garantiaMontarMensagemOferta(g, config) {
-  const template = config.mensagem || GARANTIA_MSG_PADRAO;
+  const tentativas = g.extensao?.oferta?.count || 0;
+  const modelos = config.modelos?.length ? config.modelos : [{ nome: "Padrão", texto: "" }];
+  const modelo = modelos[Math.min(tentativas, modelos.length - 1)];
+  const template = modelo?.texto || GARANTIA_MSG_PADRAO;
   return template
     .replaceAll("[NOME]", g.clienteNome || "cliente")
+    .replaceAll("{NOME}", g.clienteNome || "cliente")
     .replaceAll("[EQUIPAMENTO]", g.equipamento || g.descricao || "equipamento/serviço")
+    .replaceAll("{EQUIPAMENTO}", g.equipamento || g.descricao || "equipamento/serviço")
+    .replaceAll("{OS}", g.origemNumero || "-")
     .replaceAll("[PERIODO]", `${config.extensaoMeses} meses`)
-    .replaceAll("[VALOR]", Number(config.extensaoValor).toFixed(2));
+    .replaceAll("{MESES}", `${config.extensaoMeses}`)
+    .replaceAll("[VALOR]", Number(config.extensaoValor).toFixed(2))
+    .replaceAll("{VALOR}", Number(config.extensaoValor).toFixed(2));
 }
 
 function garantiaMontarMensagemCertificado(g, novaFim) {
@@ -16578,9 +16611,28 @@ function GarantiaConfigForm({ onBack }) {
         <Field label="Extensão (meses)"><input style={inputStyle} value={cfg.extensaoMeses} onChange={(e) => setCfg((c) => ({ ...c, extensaoMeses: e.target.value }))} inputMode="numeric" /></Field>
       </LinhaDupla>
       <Field label="Valor da extensão (R$)"><input style={inputStyle} value={cfg.extensaoValor} onChange={(e) => setCfg((c) => ({ ...c, extensaoValor: e.target.value }))} inputMode="decimal" /></Field>
-      <Field label="Mensagem do WhatsApp (use [NOME], [EQUIPAMENTO], [PERIODO], [VALOR])">
-        <textarea style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} value={cfg.mensagem || GARANTIA_MSG_PADRAO} onChange={(e) => setCfg((c) => ({ ...c, mensagem: e.target.value }))} />
-      </Field>
+
+      <LinhaDupla>
+        <Field label="Intervalo entre follow-ups (dias)"><input style={inputStyle} value={cfg.intervaloFollowupDias} onChange={(e) => setCfg((c) => ({ ...c, intervaloFollowupDias: e.target.value }))} inputMode="numeric" /></Field>
+        <Field label="Máximo de tentativas"><input style={inputStyle} value={cfg.maxTentativas} onChange={(e) => setCfg((c) => ({ ...c, maxTentativas: e.target.value }))} inputMode="numeric" /></Field>
+      </LinhaDupla>
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>
+        Modelos de mensagem (usados em ordem, a cada follow-up)
+      </div>
+      <div style={{ fontSize: 11, color: "#6E6E73", marginBottom: 10 }}>
+        Use [NOME], [EQUIPAMENTO], [PERIODO], [VALOR] ou {"{OS}"}, {"{MESES}"} — os dois formatos funcionam.
+      </div>
+      {(cfg.modelos || []).map((m, i) => (
+        <Field key={i} label={`Modelo ${i + 1} — ${m.nome}`}>
+          <textarea
+            style={{ ...inputStyle, minHeight: 110, resize: "vertical" }}
+            value={m.texto || (i === 0 ? GARANTIA_MSG_PADRAO : "")}
+            onChange={(e) => setCfg((c) => ({ ...c, modelos: c.modelos.map((mm, ii) => (ii === i ? { ...mm, texto: e.target.value } : mm)) }))}
+          />
+        </Field>
+      ))}
+
       <Field label="Criar ofertas automaticamente ao abrir esta ferramenta">
         <select style={{ ...inputStyle, appearance: "none" }} value={cfg.automacaoAtiva ? "sim" : "nao"} onChange={(e) => setCfg((c) => ({ ...c, automacaoAtiva: e.target.value === "sim" }))}>
           <option value="sim">Sim</option>
@@ -16712,20 +16764,22 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
     const { header, footer } = pdfCabecalhoRodape(LOGO_DATA_URI);
     const ultimaExt = (g.extensao?.extensoes || []).slice(-1)[0];
     win.document.write(`
-      <html><head><title>Certificado de Extensão — ALLA SERVICE</title>
+      <html><head><title>Termo de Extensão de Garantia — ALLA SERVICE</title>
       <style>${PDF_ESTILO_CORPORATIVO}</style></head><body>
       <div class="pdf-page">
         ${header}
-        <div class="pdf-doctitle">Certificado de Extensão de Garantia</div>
+        <div class="pdf-doctitle">Termo de Extensão de Garantia</div>
         <div class="pdf-body">
           <div class="pdf-card">
             <h4>Cliente</h4>
             <div><b>${g.clienteNome || "-"}</b></div>
-            <div>${[g.clienteTelefone, g.clienteDocumento].filter(Boolean).join(" · ")}</div>
+            <div>${[g.clienteDocumento ? `CPF/CNPJ: ${g.clienteDocumento}` : "", g.clienteTelefone].filter(Boolean).join(" · ")}</div>
           </div>
           <div class="pdf-card">
             <h4>Equipamento/Serviço</h4>
+            ${g.origemNumero ? `<div>OS: ${g.origemNumero}</div>` : ""}
             <div>${g.equipamento || g.descricao}</div>
+            ${[g.marca, g.modelo].filter(Boolean).length ? `<div>${[g.marca, g.modelo].filter(Boolean).join(" ")}</div>` : ""}
             ${g.serie ? `<div>Nº de série: ${g.serie}</div>` : ""}
           </div>
           <div class="pdf-card">
@@ -16738,9 +16792,14 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
             <div>Período adicional: ${ultimaExt?.periodoMeses || "-"} meses</div>
             <div>Valor: R$ ${(ultimaExt?.valor || 0).toFixed(2)}</div>
             <div>Nova data de vencimento: <b>${ultimaExt?.novaFim ? new Date(ultimaExt.novaFim + "T00:00:00").toLocaleDateString("pt-BR") : "-"}</b></div>
-            <div style="margin-top:6px;">Responsável pela ativação: ${ultimaExt?.responsavel || "-"}</div>
+            <div style="margin-top:6px;">Data da contratação: ${ultimaExt?.dataAtivacao ? new Date(ultimaExt.dataAtivacao).toLocaleDateString("pt-BR") : "-"}</div>
+            <div>Responsável pela ativação: ${ultimaExt?.responsavel || "-"}</div>
           </div>
           ${GARANTIA_CLAUSULA_HTML}
+          <div class="pdf-sig-row">
+            <div class="pdf-sig">Cliente<br/>${g.clienteNome || ""}</div>
+            <div class="pdf-sig">ALLA SERVICE<br/>${ultimaExt?.responsavel || ""}</div>
+          </div>
         </div>
         ${footer}
       </div>
@@ -16762,8 +16821,49 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
     window.open(`https://wa.me/55${telefone}?text=${encodeURIComponent(garantiaMontarMensagemCertificado(g, ultimaExt.novaFim))}`, "_blank");
   };
 
+  const [motivo, setMotivo] = useState("");
+  const [pedindoMotivo, setPedindoMotivo] = useState(null); // "recusa" | "cancelamento" | null
+
+  const recusarOferta = async () => {
+    if (!motivo.trim()) return;
+    const doc = extensaoAtual();
+    await salvarExtensao({
+      ...doc,
+      oferta: { ...doc.oferta, status: "RECUSADA", motivoRecusa: motivo },
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: `Cliente recusou a oferta — motivo: ${motivo}` }],
+    });
+    setPedindoMotivo(null);
+    setMotivo("");
+  };
+
+  const cancelarExtensao = async () => {
+    if (!motivo.trim()) return;
+    const doc = extensaoAtual();
+    await salvarExtensao({
+      ...doc,
+      cancelada: true,
+      motivoCancelamento: motivo,
+      historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: `Extensão cancelada — motivo: ${motivo}` }],
+    });
+    setPedindoMotivo(null);
+    setMotivo("");
+  };
+
+  const alternarFollowup = async () => {
+    const doc = extensaoAtual();
+    await salvarExtensao({ ...doc, followupDesativado: !doc.followupDesativado, historico: [...(doc.historico || []), { data: new Date().toISOString(), evento: doc.followupDesativado ? "Follow-up reativado" : "Follow-up desativado para esta garantia" }] });
+  };
+
   const st = GARANTIA_STATUS_COR[g.status] || "#6E6E73";
   const oferta = g.extensao?.oferta || {};
+
+  // controle real de follow-up: só libera reenvio depois do intervalo
+  // configurado, e nunca depois do máximo de tentativas.
+  const diasDesdeUltimoEnvio = oferta.enviadaEm ? Math.floor((Date.now() - new Date(oferta.enviadaEm).getTime()) / 86400000) : Infinity;
+  const intervaloConfigurado = config.intervaloFollowupDias !== undefined && config.intervaloFollowupDias !== "" ? Number(config.intervaloFollowupDias) : 3;
+  const maxTentativasConfigurado = config.maxTentativas !== undefined && config.maxTentativas !== "" ? Number(config.maxTentativas) : 3;
+  const podeReenviar = diasDesdeUltimoEnvio >= intervaloConfigurado && (oferta.count || 0) < maxTentativasConfigurado && !g.extensao?.followupDesativado;
+  const followupEsgotado = (oferta.count || 0) >= maxTentativasConfigurado;
 
   return (
     <div style={{ padding: 16, paddingBottom: 40 }}>
@@ -16836,11 +16936,48 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS }) {
         {oferta.enviada && oferta.status === "ENVIADA" && (
           <>
             <div style={{ fontSize: 11.5, color: "#6E6E73", textAlign: "center" }}>
-              Oferta enviada em {new Date(oferta.enviadaEm).toLocaleDateString("pt-BR")} — aguardando resposta do cliente.
+              {oferta.count > 1 ? `${oferta.count}ª tentativa` : "Oferta enviada"} em {new Date(oferta.enviadaEm).toLocaleDateString("pt-BR")} — aguardando resposta do cliente.
             </div>
             <button onClick={clienteAceitou} style={{ ...btnPrincipal, width: "100%" }}>Cliente aceitou</button>
-            <button onClick={enviarOferta} style={{ ...btnSecundario, width: "100%", fontSize: 11 }}>Reenviar oferta manualmente</button>
+
+            {podeReenviar && <button onClick={enviarOferta} style={{ ...btnSecundario, width: "100%", fontSize: 11 }}>Enviar follow-up ({oferta.count}/{config.maxTentativas})</button>}
+            {!podeReenviar && !followupEsgotado && !g.extensao?.followupDesativado && (
+              <div style={{ fontSize: 10.5, color: "#6E6E73", textAlign: "center" }}>
+                Próximo follow-up disponível em {intervaloConfigurado - diasDesdeUltimoEnvio} dia(s)
+              </div>
+            )}
+            {followupEsgotado && <div style={{ fontSize: 10.5, color: "#6E6E73", textAlign: "center" }}>Follow-up encerrado (máximo de tentativas atingido)</div>}
+
+            <button onClick={alternarFollowup} style={{ ...btnSecundario, width: "100%", fontSize: 10.5 }}>
+              {g.extensao?.followupDesativado ? "Reativar follow-up" : "Desativar follow-up desta garantia"}
+            </button>
+
+            {pedindoMotivo === "recusa" ? (
+              <div style={{ display: "flex", gap: 6 }}>
+                <input style={{ ...inputStyle, flex: 1, fontSize: 11.5 }} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo da recusa" autoFocus />
+                <button onClick={recusarOferta} disabled={!motivo.trim()} style={{ ...btnSecundario, padding: "0 14px", opacity: motivo.trim() ? 1 : 0.5 }}>OK</button>
+              </div>
+            ) : (
+              <button onClick={() => setPedindoMotivo("recusa")} style={{ ...btnSecundario, width: "100%", fontSize: 11, color: "#F0605A" }}>Cliente recusou</button>
+            )}
           </>
+        )}
+        {oferta.status === "RECUSADA" && (
+          <div style={{ fontSize: 11.5, color: "#F0605A", textAlign: "center" }}>
+            Cliente recusou{oferta.motivoRecusa ? ` — ${oferta.motivoRecusa}` : ""}.
+          </div>
+        )}
+        {oferta.criada && !g.extensao?.cancelada && oferta.status !== "ATIVADA" && (
+          pedindoMotivo === "cancelamento" ? (
+            <div style={{ display: "flex", gap: 6 }}>
+              <input style={{ ...inputStyle, flex: 1, fontSize: 11.5 }} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo do cancelamento" autoFocus />
+              <button onClick={cancelarExtensao} disabled={!motivo.trim()} style={{ ...btnSecundario, padding: "0 14px", opacity: motivo.trim() ? 1 : 0.5 }}>OK</button>
+            </div>
+          ) : (
+            <button onClick={() => setPedindoMotivo("cancelamento")} style={{ background: "none", border: "none", color: "#5A5A5F", fontSize: 10.5, textDecoration: "underline", cursor: "pointer", marginTop: 2 }}>
+              Cancelar esta extensão
+            </button>
+          )
         )}
         {oferta.status === "ACEITA" && (
           <button onClick={confirmarPagamento} style={{ ...btnPrincipal, width: "100%" }}>Confirmar pagamento (R$ {Number(config.extensaoValor).toFixed(2)})</button>
@@ -16927,14 +17064,19 @@ function GarantiasModule({ onNavigate }) {
   }
 
   const contagem = {
-    ativas: lista.filter((g) => g.status === "ATIVA").length,
-    vencendo30: lista.filter((g) => g.status === "PRÓXIMA DO VENCIMENTO").length,
-    vencendo15: lista.filter((g) => g.status === "PRÓXIMA DO VENCIMENTO" && Math.ceil((new Date(g.fimAtual) - new Date()) / 86400000) <= 15).length,
-    vencidas: lista.filter((g) => g.status === "VENCIDA").length,
-    estendidas: lista.filter((g) => g.status === "ESTENDIDA" || g.extensao?.oferta?.status === "ATIVADA").length,
-    ofertasEnviadas: lista.filter((g) => g.extensao?.oferta?.enviada).length,
+    // "Elegíveis" = dentro da janela configurada e ainda sem contratação
+    elegiveis: lista.filter((g) => g.status === "PRÓXIMA DO VENCIMENTO" && g.extensao?.oferta?.status !== "ATIVADA").length,
     ofertasPendentes: lista.filter((g) => g.extensao?.oferta?.criada && !g.extensao?.oferta?.enviada).length,
+    ofertasEnviadas: lista.filter((g) => g.extensao?.oferta?.enviada).length,
+    emNegociacao: lista.filter((g) => g.extensao?.oferta?.status === "ENVIADA").length,
+    contratadas: lista.filter((g) => g.extensao?.oferta?.status === "ATIVADA").length,
+    recusadas: lista.filter((g) => g.extensao?.oferta?.status === "RECUSADA").length,
+    expiradas: lista.filter((g) => g.status === "VENCIDA" && g.extensao?.oferta?.status !== "ATIVADA").length,
   };
+  // receita real — soma dos valores das extensões já ativadas, sem estimar nada
+  const receitaGerada = lista.reduce((soma, g) => soma + (g.extensao?.extensoes || []).reduce((s, e) => s + (Number(e.valor) || 0), 0), 0);
+  const baseConversao = contagem.contratadas + contagem.recusadas + contagem.emNegociacao;
+  const taxaConversao = baseConversao > 0 ? Math.round((contagem.contratadas / baseConversao) * 100) : 0;
 
   const filtradas = lista.filter((g) => {
     if (filtroStatus !== "Todas" && g.status !== filtroStatus) return false;
@@ -16956,20 +17098,26 @@ function GarantiasModule({ onNavigate }) {
       </div>
 
       {/* resumo compacto 2x3 */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
         {[
-          ["ATIVAS", contagem.ativas, "#4ADE80"],
-          ["VENCEM 30D", contagem.vencendo30, "#E9C878"],
-          ["VENCEM 15D", contagem.vencendo15, "#E9C878"],
-          ["VENCIDAS", contagem.vencidas, "#F0605A"],
-          ["EXTENSÕES", contagem.estendidas, "#4681DF"],
-          ["OFERTAS", contagem.ofertasPendentes, "#8A8A90"],
+          ["ELEGÍVEIS", contagem.elegiveis, "#E9C878"],
+          ["OFERTAS PENDENTES", contagem.ofertasPendentes, "#8A8A90"],
+          ["EM NEGOCIAÇÃO", contagem.emNegociacao, "#4681DF"],
+          ["CONTRATADAS", contagem.contratadas, "#4ADE80"],
+          ["RECUSADAS", contagem.recusadas, "#F0605A"],
+          ["EXPIRADAS", contagem.expiradas, "#6E6E73"],
         ].map(([label, valor, cor]) => (
           <div key={label} style={{ background: "#141416", border: "1px solid #232326", borderRadius: 9, padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 0.3 }}>{label}</span>
             <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 16, color: cor }}>{valor}</span>
           </div>
         ))}
+      </div>
+
+      {/* receita e conversao como uma linha so, sem virar mais cards */}
+      <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 2px 12px", fontSize: 11 }}>
+        <span style={{ color: "#8A8A90" }}>Receita gerada: <b style={{ color: "#E9C878" }}>R$ {receitaGerada.toFixed(2)}</b></span>
+        <span style={{ color: "#8A8A90" }}>Conversão: <b style={{ color: "#4ADE80" }}>{taxaConversao}%</b></span>
       </div>
 
       <div style={{ position: "relative", marginBottom: 8 }}>
