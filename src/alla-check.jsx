@@ -2970,7 +2970,7 @@ function OrcamentoIAAssistente({ onRefreshApp }) {
         diagnostico: "",
         materiaisUtilizados: (o.itens || []).map((it) => it.descricao).filter(Boolean).join("; "),
         observacoes: `Origem: Orçamento ${o.numero} (gerado pelo Assistente IA).`,
-        data: new Date().toISOString().slice(0, 10),
+        data: hojeLocal(),
         maoDeObra: String(o.maoDeObra?.valor || 0),
         deslocamento: String(o.deslocamento?.valor || 0),
         desconto: String(o.descontoValor || 0),
@@ -4040,7 +4040,7 @@ function OrcamentosModule({ onRefreshApp }) {
         pecasUtilizadas: "",
         observacoes: `Origem: Orçamento ${o.numero}. ${o.observacoesCliente || ""}`.trim(),
         tecnico: "",
-        data: new Date().toISOString().slice(0, 10),
+        data: hojeLocal(),
         horaEntrada: "",
         horaSaida: "",
         maoDeObra: String(o.maoDeObra?.valor || 0),
@@ -4631,10 +4631,32 @@ function pmocStatus(proximaManutencao) {
   return { label: "EM DIA", color: "#4ADE80" };
 }
 
+/* Datas SEMPRE no calendário local (Brasil). Antes o app usava
+   toISOString().slice(0,10), que devolve a data em UTC: à noite (depois das
+   ~21h) "hoje" virava "amanhã". Estes helpers evitam isso. */
+function dataLocalISO(d) {
+  const x = d instanceof Date ? d : new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
+function hojeLocal() {
+  return dataLocalISO(new Date());
+}
+/* Data só (AAAA-MM-DD) de um texto que pode ser data pura ou ISO com hora. */
+function dataSoLocal(str) {
+  const t = String(str || "");
+  return t.length === 10 ? t : dataLocalISO(new Date(t));
+}
+
+/* Soma meses pelo calendário (ex.: 01/03 + 3 meses = 01/06; 31/01 + 1 mês =
+   28/02). Antes misturava UTC com horário local e errava 1–3 dias em várias
+   datas. */
 function addMeses(dataStr, meses) {
-  const d = dataStr ? new Date(dataStr) : new Date();
-  d.setMonth(d.getMonth() + meses);
-  return d.toISOString().slice(0, 10);
+  const iso = dataStr ? dataSoLocal(dataStr) : hojeLocal();
+  const [y, m, d] = iso.split("-").map(Number);
+  const alvo = new Date(y, m - 1 + Number(meses || 0), 1, 12);
+  const ultimoDia = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  alvo.setDate(Math.min(d, ultimoDia));
+  return dataLocalISO(alvo);
 }
 
 /* Checklist organizado por seção do equipamento, com 4 estados (o "N/A"
@@ -4656,7 +4678,7 @@ function PmocChecklistForm({ onSubmit, onCancel }) {
   const [medicoes, setMedicoes] = useState({ temperatura: "", corrente: "", pressao: "" });
   const [observacoes, setObservacoes] = useState("");
   const [fotos, setFotos] = useState([]);
-  const [dataExecucao, setDataExecucao] = useState(new Date().toISOString().slice(0, 10));
+  const [dataExecucao, setDataExecucao] = useState(hojeLocal());
   const [responsavelNome, setResponsavelNome] = useState("");
   const [assinatura, setAssinatura] = useState(null);
   const fileInputRef = useRef(null);
@@ -5218,7 +5240,7 @@ function PmocCadastroForm({ onSaved, onCancel }) {
     frequencia: "Trimestral",
     atividades: "",
     responsavel: "",
-    dataInicio: new Date().toISOString().slice(0, 10),
+    dataInicio: hojeLocal(),
   });
   const [equipamentos, setEquipamentos] = useState([
     { id: uid(), tipo: "", marca: "", modelo: "", serie: "", btu: "", gas: "", tensao: "", ambiente: "", quantidade: 1, codigo: "" },
@@ -5477,7 +5499,7 @@ function ReciboForm({ editingRecibo, onDone }) {
       documento: "",
       telefone: "",
       descricao: "",
-      data: new Date().toISOString().slice(0, 10),
+      data: hojeLocal(),
       formaPagamento: "PIX",
       valor: "",
       observacoes: "",
@@ -5991,6 +6013,25 @@ function OSFotos({ fotos, setFotos, label }) {
   );
 }
 
+/* Consulta automaticamente a remuneração de quem atendeu a OS: comissão só
+   para técnico configurado como COMISSÃO; salário e ajudante nunca geram. */
+function montarRemuneracaoOS(funcs, form, status, valorTotal) {
+  const fT = (funcs || []).find((f) => f.nome === form.tecnico);
+  const fA = (funcs || []).find((f) => f.nome === form.ajudante);
+  const osRef = { tipoServico: form.tipoServico, valorTotal };
+  const concluida = status === "FINALIZADA";
+  const tecnico = fT
+    ? {
+        nome: fT.nome,
+        forma: funcRemuneracao(fT).forma,
+        geraComissao: funcRemuneracao(fT).geraComissao && funcServicoGeraComissao(fT, osRef),
+        comissao: concluida ? Math.round(funcComissaoDaOS(fT, osRef) * 100) / 100 : 0,
+      }
+    : null;
+  const ajudante = fA ? { nome: fA.nome, forma: "Salário", geraComissao: false, comissao: 0 } : null;
+  return { tecnico, ajudante };
+}
+
 function OSForm({ editingOS, onDone, onCancel }) {
   const [form, setForm] = useState(
     editingOS || {
@@ -6011,7 +6052,8 @@ function OSForm({ editingOS, onDone, onCancel }) {
       pecasUtilizadas: "",
       observacoes: "",
       tecnico: "",
-      data: new Date().toISOString().slice(0, 10),
+      ajudante: "",
+      data: hojeLocal(),
       horaEntrada: "",
       horaSaida: "",
       maoDeObra: "0",
@@ -6032,6 +6074,8 @@ function OSForm({ editingOS, onDone, onCancel }) {
   const [saving, setSaving] = useState(false);
 
   const [tecnicos, setTecnicos] = useState([]);
+  const [ajudantes, setAjudantes] = useState([]);
+  const [funcsTodos, setFuncsTodos] = useState([]);
 
   // técnicos já cadastrados em Funcionários, para escolher em vez de digitar
   useEffect(() => {
@@ -6039,17 +6083,26 @@ function OSForm({ editingOS, onDone, onCancel }) {
       try {
         const lista = await window.storage.list("funcionarios:");
         const nomes = [];
+        const nomesAjudantes = [];
+        const objetos = [];
         for (const chave of (lista && lista.keys) || []) {
           const doc = await window.storage.get(chave).catch(() => null);
           if (!doc) continue;
           try {
             const f = JSON.parse(doc.value);
-            if (f.nome && f.status !== "Inativo") nomes.push(f.nome);
+            if (f.nome && f.status !== "Inativo") {
+              objetos.push(f);
+              // ajudantes aparecem só no campo Ajudante; o resto pode ser técnico responsável
+              if (funcEhAjudante(f)) nomesAjudantes.push(f.nome);
+              else nomes.push(f.nome);
+            }
           } catch {
             /* registro ilegível: ignora */
           }
         }
         setTecnicos(nomes.sort((a, b) => a.localeCompare(b)));
+        setAjudantes(nomesAjudantes.sort((a, b) => a.localeCompare(b)));
+        setFuncsTodos(objetos);
       } catch {
         setTecnicos([]); // sem lista: o campo continua aceitando digitação
       }
@@ -6076,6 +6129,7 @@ function OSForm({ editingOS, onDone, onCancel }) {
         assinatura,
         createdAt: form.createdAt || new Date().toISOString(),
         finalizedAt: status === "FINALIZADA" ? new Date().toISOString() : form.finalizedAt || null,
+        remuneracao: montarRemuneracaoOS(funcsTodos, form, status, valorTotal),
       };
       await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
 
@@ -6174,6 +6228,34 @@ function OSForm({ editingOS, onDone, onCancel }) {
           <input style={inputStyle} value={form.tecnico} onChange={set("tecnico")} placeholder="Nome do técnico" />
         )}
       </Field>
+      {(() => {
+        const fT = funcsTodos.find((f) => f.nome === form.tecnico);
+        if (!fT) return null;
+        const r = funcRemuneracao(fT);
+        return (
+          <div style={{ fontSize: 11, color: "#7A7A7A", marginTop: -6, marginBottom: 12 }}>
+            Remuneração do técnico: <b style={{ color: "#DADADA" }}>{r.forma}</b>
+            {r.geraComissao ? " — esta OS gera comissão" : " — esta OS não gera comissão"}
+          </div>
+        );
+      })()}
+
+      <Field label="Ajudante (opcional)">
+        {ajudantes.length > 0 ? (
+          <select style={{ ...inputStyle, appearance: "none" }} value={form.ajudante || ""} onChange={set("ajudante")}>
+            <option value="">Sem ajudante</option>
+            {ajudantes.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        ) : (
+          <div style={{ fontSize: 11.5, color: "#6E6E73", padding: "10px 2px" }}>Nenhum ajudante cadastrado em Funcionários.</div>
+        )}
+      </Field>
+      {form.ajudante && (
+        <div style={{ fontSize: 11, color: "#7A7A7A", marginTop: -6, marginBottom: 12 }}>
+          Remuneração do ajudante: <b style={{ color: "#DADADA" }}>Salário</b> — não gera comissão
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}><Field label="Data"><input type="date" style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} value={form.data} onChange={set("data")} /></Field></div>
         <div style={{ flex: 1, minWidth: 0 }}><Field label="Entrada"><input type="time" style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} value={form.horaEntrada} onChange={set("horaEntrada")} /></Field></div>
@@ -6278,6 +6360,7 @@ function osPDF(os) {
           ${card("Atendimento", `
             <div><b>Tipo de serviço:</b> ${os.tipoServico || "-"}</div>
             <div><b>Técnico responsável:</b> ${os.tecnico || "-"}</div>
+            ${os.ajudante ? `<div><b>Ajudante:</b> ${os.ajudante}</div>` : ""}
             <div><b>Data:</b> ${os.data ? new Date(os.data).toLocaleDateString("pt-BR") : "-"}${os.horaEntrada ? ` · Início ${os.horaEntrada}` : ""}${os.horaSaida ? ` · Término ${os.horaSaida}` : ""}</div>`)}
 
           ${[os.problemaRelatado, os.diagnostico, os.procedimentosRealizados].some(Boolean)
@@ -6674,6 +6757,7 @@ function OrdensServicoModule({ onNavigate }) {
         <OsSecaoDetalhe titulo="Atendimento">
           <OsLinhaDetalhe label="Tipo de serviço" valor={os.tipoServico} />
           <OsLinhaDetalhe label="Técnico responsável" valor={os.tecnico} />
+          <OsLinhaDetalhe label="Ajudante" valor={os.ajudante} />
           <OsLinhaDetalhe label="Data de abertura" valor={os.data ? new Date(os.data).toLocaleDateString("pt-BR") : ""} />
           <OsLinhaDetalhe label="Data de fechamento" valor={os.finalizedAt ? new Date(os.finalizedAt).toLocaleDateString("pt-BR") : ""} />
         </OsSecaoDetalhe>
@@ -7370,7 +7454,7 @@ function ReceitaForm({ onDone, onCancel }) {
   const [form, setForm] = useState({
     servico: "",
     cliente: "",
-    data: new Date().toISOString().slice(0, 10),
+    data: hojeLocal(),
     valor: "",
     formaPagamento: "PIX",
     status: "pago",
@@ -7436,7 +7520,7 @@ function DespesaForm({ onDone, onCancel }) {
     categoria: "Material",
     descricao: "",
     fornecedor: "",
-    data: new Date().toISOString().slice(0, 10),
+    data: hojeLocal(),
     valor: "",
     formaPagamento: "PIX",
   });
@@ -8031,7 +8115,7 @@ function OSFrioForm({ editingOS, onDone, onCancel }) {
             cliente: form.clienteNome,
             osId: id,
             osNumero: numero,
-            data: new Date().toISOString().slice(0, 10),
+            data: hojeLocal(),
             valor: valorTotal,
             formaPagamento: "A definir",
             status: "pendente",
@@ -8940,7 +9024,9 @@ async function carregarTudoStorage(prefix) {
 
 function diasDesde(dataStr) {
   if (!dataStr) return Infinity;
-  return Math.floor((new Date() - new Date(dataStr)) / (1000 * 60 * 60 * 24));
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const d = new Date(dataSoLocal(dataStr) + "T00:00:00");
+  return Math.round((hoje - d) / 86400000);
 }
 
 function GestaoInteligente({ onBack }) {
@@ -9390,7 +9476,7 @@ function VendaForm({ produtos, onDone, onCancel }) {
           cliente: cliente.nome,
           osId: null,
           osNumero: null,
-          data: new Date().toISOString().slice(0, 10),
+          data: hojeLocal(),
           valor: total,
           formaPagamento: pagamento,
           status: "pago",
@@ -9801,13 +9887,14 @@ function VendasCervejeiraModule() {
 }
 
 /* ---------------- Módulo: Funcionários ---------------- */
-const CARGOS = ["Técnico", "Auxiliar", "Administrativo", "Vendedor", "Gestor", "Outro"];
+const CARGOS = ["Técnico", "Ajudante", "Auxiliar", "Administrativo", "Vendedor", "Gestor", "Outro"];
 const STATUS_FUNCIONARIO = ["Ativo", "Férias", "Afastado", "Inativo"];
 const PERMISSOES_POR_CARGO = {
   Gestor: ["OS", "Serviços", "Clientes", "Orçamentos", "Vendas", "Financeiro", "Documentos"],
   Técnico: ["OS", "Serviços"],
   Vendedor: ["Clientes", "Orçamentos", "Vendas"],
   Administrativo: ["Clientes", "Financeiro", "Documentos"],
+  Ajudante: ["OS"],
   Auxiliar: ["OS"],
   Outro: [],
 };
@@ -10346,6 +10433,268 @@ function statusOperacional(func, ordens, rastreios) {
   return emOS ? "Em atendimento" : "Disponível";
 }
 
+
+/* ================= Remuneração de funcionários (Salário x Comissão) =================
+   Tudo guardado no próprio cadastro do funcionário (mesma coleção), sem
+   módulo novo. Cadastros antigos (sem "formaRemuneracao") continuam
+   funcionando como sempre: técnico = comissão. */
+const COMISSAO_SERVICOS_OPCOES = ["Instalação", "Manutenção", "Higienização", "Infraestrutura", "Reparo", "Elétrica"];
+
+function numBR(v) {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return isFinite(n) ? n : 0;
+}
+function funcEhAjudante(f) {
+  return f?.cargo === "Ajudante" || f?.cargo === "Auxiliar";
+}
+/* Identifica sozinho como o funcionário é remunerado. Ajudante: SEMPRE salário. */
+function funcRemuneracao(f) {
+  if (funcEhAjudante(f)) return { tipo: "Ajudante", forma: "Salário", geraComissao: false };
+  if (f?.cargo === "Técnico") {
+    const forma = f.formaRemuneracao === "Salário" ? "Salário" : "Comissão";
+    return { tipo: "Técnico", forma, geraComissao: forma === "Comissão" };
+  }
+  // demais cargos: comportamento anterior preservado
+  const forma = f?.formaRemuneracao === "Salário" ? "Salário" : "Comissão";
+  return { tipo: f?.cargo || "", forma, geraComissao: forma === "Comissão" };
+}
+function funcServicoGeraComissao(f, os) {
+  const lista = f?.comissaoServicos || [];
+  if (!lista.length) return true; // vazio = todos os serviços
+  const alvo = garNormalizar(os?.tipoServico || "");
+  return lista.some((t) => alvo.includes(garNormalizar(t)));
+}
+/* Comissão de UMA OS. Salário e ajudante nunca geram comissão. */
+function funcComissaoDaOS(f, os) {
+  const reg = funcRemuneracao(f);
+  if (!reg.geraComissao) return 0;
+  if (!funcServicoGeraComissao(f, os)) return 0;
+  const valor = Number(os?.valorTotal) || 0;
+  if (f?.comissaoTipo === "Valor fixo") return numBR(f.comissaoValorFixo);
+  const pct = Number(f?.comissaoPercent) || COMISSAO_PADRAO;
+  return valor * (pct / 100);
+}
+function funcComissaoResumo(f, osFinalizadas) {
+  const mapa = {};
+  let produzido = 0;
+  let comissao = 0;
+  (osFinalizadas || []).forEach((o) => {
+    if (!funcRemuneracao(f).geraComissao || !funcServicoGeraComissao(f, o)) return;
+    const c = funcComissaoDaOS(f, o);
+    produzido += Number(o.valorTotal) || 0;
+    comissao += c;
+    const d = new Date(o.finalizedAt || o.data || o.createdAt);
+    if (isNaN(d)) return;
+    const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    (mapa[chave] = mapa[chave] || { chave, qtd: 0, produzido: 0, comissao: 0 });
+    mapa[chave].qtd++; mapa[chave].produzido += Number(o.valorTotal) || 0; mapa[chave].comissao += c;
+  });
+  return { produzido, comissao, porMes: Object.values(mapa).sort((a, b) => (a.chave < b.chave ? 1 : -1)) };
+}
+
+function folhaMesAtual() {
+  return hojeLocal().slice(0, 7);
+}
+function folhaRotuloMes(chave) {
+  const [y, m] = String(chave).split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+}
+function folhaMesDeslocar(chave, delta) {
+  const [y, m] = chave.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+/* Regra: valor diário = salário ÷ 30; desconto = valor diário × faltas NÃO justificadas. */
+function folhaCalcular(salarioMensal, dados) {
+  const salario = numBR(salarioMensal);
+  const fJust = Math.max(0, Math.floor(numBR(dados?.faltasJustificadas)));
+  const fNaoJust = Math.max(0, Math.floor(numBR(dados?.faltasNaoJustificadas)));
+  const valorDiario = salario / 30;
+  const descontoFaltas = Math.round(valorDiario * fNaoJust * 100) / 100;
+  const adiantamentos = numBR(dados?.adiantamentos);
+  const outros = numBR(dados?.outrosDescontos);
+  const liquido = Math.round((salario - descontoFaltas - adiantamentos - outros) * 100) / 100;
+  const faltas = fJust + fNaoJust;
+  return { salario, valorDiario, fJust, fNaoJust, faltas, diasTrabalhados: Math.max(0, 30 - faltas), descontoFaltas, adiantamentos, outros, liquido };
+}
+function folhaDiaPagamento(mes, dia) {
+  const [y, m] = mes.split("-").map(Number);
+  const ultimo = new Date(y, m, 0).getDate();
+  const d = Math.min(Math.max(1, Math.floor(numBR(dia)) || 5), ultimo);
+  return `${mes}-${String(d).padStart(2, "0")}`;
+}
+const fmtMoeda = (v) => `R$ ${(Number(v) || 0).toFixed(2)}`;
+
+/* Painel de salário: faltas, descontos, líquido, pagamento (gera despesa
+   no Financeiro existente) e histórico mensal. */
+function FolhaSalarioPainel({ func, onFuncAtualizado }) {
+  const [mes, setMes] = useState(folhaMesAtual());
+  const registro = func.folha?.[mes] || {};
+  const [campos, setCampos] = useState({ faltasJustificadas: "", faltasNaoJustificadas: "", adiantamentos: "", outrosDescontos: "" });
+  const [dataPag, setDataPag] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+
+  useEffect(() => {
+    const r = func.folha?.[mes] || {};
+    setCampos({
+      faltasJustificadas: r.faltasJustificadas ?? "",
+      faltasNaoJustificadas: r.faltasNaoJustificadas ?? "",
+      adiantamentos: r.adiantamentos ?? "",
+      outrosDescontos: r.outrosDescontos ?? "",
+    });
+    setDataPag(r.dataPagamento || folhaDiaPagamento(mes, func.diaPagamento));
+  }, [mes, func.id]); // eslint-disable-line
+
+  const calc = folhaCalcular(func.salarioMensal, campos);
+  const pago = !!registro.pago;
+
+  const gravar = async (mutacao) => {
+    setOcupado(true);
+    try {
+      // relê o cadastro para nunca sobrescrever alterações feitas em outra tela
+      const r = await window.storage.get(`funcionarios:${func.id}`).catch(() => null);
+      const base = r ? JSON.parse(r.value) : func;
+      const folha = { ...(base.folha || {}) };
+      folha[mes] = mutacao(folha[mes] || {});
+      const atualizado = { ...base, folha };
+      await window.storage.set(`funcionarios:${func.id}`, JSON.stringify(atualizado));
+      onFuncAtualizado(atualizado);
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar folha"));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const salvarAjustes = () =>
+    gravar((r) => ({ ...r, ...campos, liquido: calc.liquido, salarioBase: calc.salario }));
+
+  const registrarPagamento = async () => {
+    if (pago || ocupado) return;
+    if (calc.salario <= 0) return notificarErroBanco("Cadastre o salário mensal do funcionário antes de registrar o pagamento.");
+    if (calc.liquido <= 0) return notificarErroBanco("O salário líquido está zerado ou negativo — revise os descontos.");
+    setOcupado(true);
+    try {
+      // id FIXO por funcionário+mês: gravar duas vezes sobrescreve, nunca duplica a despesa
+      const despId = `sal-${func.id}-${mes}`;
+      await window.storage.set(
+        `fin-despesas:${despId}`,
+        JSON.stringify({
+          id: despId,
+          categoria: "Funcionários",
+          descricao: `Salário ${folhaRotuloMes(mes)} — ${func.nome}`,
+          fornecedor: func.nome,
+          data: dataPag,
+          valor: calc.liquido,
+          formaPagamento: "PIX",
+          funcionarioId: func.id,
+          competencia: mes,
+          origem: "folha-salario",
+          createdAt: new Date().toISOString(),
+        })
+      );
+    } catch (err) {
+      setOcupado(false);
+      return notificarErroBanco(diagnosticarErroFirestore(err, "lançar despesa de salário"));
+    }
+    setOcupado(false);
+    await gravar((r) => ({ ...r, ...campos, liquido: calc.liquido, salarioBase: calc.salario, pago: true, dataPagamento: dataPag, despesaId: `sal-${func.id}-${mes}` }));
+  };
+
+  const estornar = async () => {
+    if (!pago || ocupado) return;
+    try { await window.storage.delete(`fin-despesas:${registro.despesaId || `sal-${func.id}-${mes}`}`); } catch {}
+    await gravar((r) => ({ ...r, pago: false, dataPagamento: null, despesaId: null }));
+  };
+
+  const inputNum = (k, rotulo) => (
+    <Field label={rotulo}>
+      <input style={{ ...inputStyle, opacity: pago ? 0.6 : 1 }} disabled={pago} value={campos[k]} inputMode="decimal" onChange={(e) => setCampos((c) => ({ ...c, [k]: e.target.value }))} />
+    </Field>
+  );
+
+  const linhaVal = (r, v, forte) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid #17171A" }}>
+      <span style={{ fontSize: 12.5, color: "#8A8A90" }}>{r}</span>
+      <span style={{ fontSize: forte ? 15 : 13, fontWeight: forte ? 700 : 400, color: forte ? "#E9C878" : "#F3F3F1", textAlign: "right" }}>{v}</span>
+    </div>
+  );
+
+  const meses = Object.keys(func.folha || {}).sort().reverse();
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <button onClick={() => setMes(folhaMesDeslocar(mes, -1))} style={{ background: "none", border: "1px solid #222", borderRadius: 9, width: 34, height: 34, color: "#B5B5B5", cursor: "pointer" }} aria-label="Mês anterior"><ChevronLeft size={15} /></button>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#F3F3F1", textTransform: "capitalize" }}>{folhaRotuloMes(mes)}</div>
+          <div style={{ fontSize: 10.5, color: pago ? "#4ADE80" : "#8A8A90" }}>{pago ? `Pago em ${new Date(registro.dataPagamento + "T12:00:00").toLocaleDateString("pt-BR")}` : "Pagamento pendente"}</div>
+        </div>
+        <button onClick={() => setMes(folhaMesDeslocar(mes, 1))} style={{ background: "none", border: "1px solid #222", borderRadius: 9, width: 34, height: 34, color: "#B5B5B5", cursor: "pointer", transform: "rotate(180deg)" }} aria-label="Próximo mês"><ChevronLeft size={15} /></button>
+      </div>
+
+      {calc.salario <= 0 && (
+        <div style={{ fontSize: 11.5, color: "#E9C878", background: "rgba(233,200,120,0.08)", border: "1px solid rgba(233,200,120,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 14 }}>
+          Salário mensal não cadastrado — edite o funcionário para informar o valor.
+        </div>
+      )}
+
+      <LinhaDupla>
+        {inputNum("faltasJustificadas", "Faltas justificadas")}
+        {inputNum("faltasNaoJustificadas", "Faltas não justificadas")}
+      </LinhaDupla>
+      <LinhaDupla>
+        {inputNum("adiantamentos", "Adiantamentos (R$)")}
+        {inputNum("outrosDescontos", "Outros descontos (R$)")}
+      </LinhaDupla>
+
+      <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: "6px 16px", marginBottom: 14 }}>
+        {linhaVal("Salário mensal", fmtMoeda(calc.salario))}
+        {linhaVal("Data de pagamento", func.diaPagamento ? `dia ${func.diaPagamento}` : "não definida")}
+        {linhaVal("Dias trabalhados", `${calc.diasTrabalhados} de 30`)}
+        {linhaVal("Dias de falta", `${calc.faltas} (${calc.fJust} just. · ${calc.fNaoJust} não just.)`)}
+        {linhaVal(`Desconto por falta (${fmtMoeda(calc.valorDiario)}/dia × ${calc.fNaoJust})`, `− ${fmtMoeda(calc.descontoFaltas)}`)}
+        {linhaVal("Adiantamentos", `− ${fmtMoeda(calc.adiantamentos)}`)}
+        {linhaVal("Outros descontos", `− ${fmtMoeda(calc.outros)}`)}
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0 8px" }}>
+          <span style={{ fontSize: 13, color: "#F3F3F1", fontWeight: 600 }}>Salário líquido</span>
+          <span style={{ fontSize: 20, fontWeight: 700, color: "#E9C878" }}>{fmtMoeda(calc.liquido)}</span>
+        </div>
+      </div>
+
+      {!pago && (
+        <Field label="Data do pagamento"><input type="date" style={inputStyle} value={dataPag} onChange={(e) => setDataPag(e.target.value)} /></Field>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {!pago && <button onClick={salvarAjustes} disabled={ocupado} style={{ ...btnSecundario, width: "100%", padding: "12px 0" }}>Salvar ajustes do mês</button>}
+        {!pago ? (
+          <button onClick={registrarPagamento} disabled={ocupado} style={{ ...btnPrincipal, width: "100%", opacity: ocupado ? 0.6 : 1 }}>Registrar pagamento (gera despesa)</button>
+        ) : (
+          <button onClick={estornar} disabled={ocupado} style={{ ...btnSecundario, width: "100%", padding: "12px 0" }}>Estornar pagamento</button>
+        )}
+      </div>
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", margin: "24px 0 8px" }}>Histórico mensal</div>
+      {meses.length === 0 ? (
+        <div style={{ fontSize: 12, color: "#6E6E73" }}>Nenhum mês registrado ainda.</div>
+      ) : (
+        <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "4px 14px" }}>
+          {meses.map((m, i) => {
+            const r = func.folha[m];
+            return (
+              <button key={m} onClick={() => setMes(m)} style={{ width: "100%", textAlign: "left", background: "none", border: "none", borderTop: i ? "1px solid #17171A" : "none", padding: "11px 0", display: "flex", justifyContent: "space-between", gap: 10, cursor: "pointer" }}>
+                <span style={{ fontSize: 12.5, color: "#C8C8C8", textTransform: "capitalize" }}>{folhaRotuloMes(m)}</span>
+                <span style={{ fontSize: 12.5, color: "#F3F3F1" }}>{fmtMoeda(r.liquido)} <span style={{ color: r.pago ? "#4ADE80" : "#8A8A90", fontSize: 10.5 }}>· {r.pago ? "pago" : "pendente"}</span></span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FuncionarioForm({ editing, onDone, onCancel }) {
   const [form, setForm] = useState(
     editing || {
@@ -10357,10 +10706,16 @@ function FuncionarioForm({ editing, onDone, onCancel }) {
       endereco: "",
       regiao: "",
       cargo: "Técnico",
-      dataEntrada: new Date().toISOString().slice(0, 10),
+      dataEntrada: hojeLocal(),
       status: "Ativo",
       metaMensal: "",
       comissaoPercent: String(COMISSAO_PADRAO),
+      formaRemuneracao: "Comissão",
+      salarioMensal: "",
+      diaPagamento: "5",
+      comissaoTipo: "Percentual",
+      comissaoValorFixo: "",
+      comissaoServicos: [],
       observacoes: "",
     }
   );
@@ -10400,7 +10755,16 @@ function FuncionarioForm({ editing, onDone, onCancel }) {
     setSaving(true);
     try {
       const id = editing?.id || uid();
-      const func = { ...form, id, foto, permissoes, createdAt: editing?.createdAt || new Date().toISOString() };
+      const reg = funcRemuneracao(form);
+      const func = {
+        ...form,
+        // Ajudante: SEMPRE salário e NUNCA comissão
+        formaRemuneracao: funcEhAjudante(form) ? "Salário" : form.formaRemuneracao || "Comissão",
+        ...(funcEhAjudante(form) ? { comissaoPercent: "", comissaoValorFixo: "", comissaoServicos: [] } : {}),
+        id, foto, permissoes,
+        createdAt: editing?.createdAt || new Date().toISOString(),
+      };
+      void reg;
       await window.storage.set(`funcionarios:${id}`, JSON.stringify(func));
       onDone(func);
     } catch (err) {
@@ -10466,10 +10830,63 @@ function FuncionarioForm({ editing, onDone, onCancel }) {
         </Field>
       </LinhaDupla>
       <Field label="Região de atendimento"><input style={inputStyle} value={form.regiao || ""} onChange={set("regiao")} placeholder="Ex: Sorocaba e região" /></Field>
-      <LinhaDupla>
-        <Field label="Meta mensal (R$)"><input style={inputStyle} value={form.metaMensal || ""} onChange={set("metaMensal")} inputMode="decimal" placeholder="opcional" /></Field>
+      <Field label="Meta mensal (R$)"><input style={inputStyle} value={form.metaMensal || ""} onChange={set("metaMensal")} inputMode="decimal" placeholder="opcional" /></Field>
+
+      {(form.cargo === "Técnico" || funcEhAjudante(form)) && (
+        <>
+          <SecaoTitulo>Remuneração</SecaoTitulo>
+          <div style={{ fontSize: 11.5, color: "#7A7A7A", marginBottom: 10, lineHeight: 1.5 }}>
+            Tipo: <b style={{ color: "#DADADA" }}>{funcEhAjudante(form) ? "Ajudante" : "Técnico"}</b>
+            {funcEhAjudante(form) ? " — remuneração obrigatoriamente por salário (nunca recebe comissão)." : ""}
+          </div>
+
+          {!funcEhAjudante(form) && (
+            <Field label="Forma de remuneração">
+              <select style={{ ...inputStyle, appearance: "none" }} value={form.formaRemuneracao === "Salário" ? "Salário" : "Comissão"} onChange={set("formaRemuneracao")}>
+                <option>Salário</option>
+                <option>Comissão</option>
+              </select>
+            </Field>
+          )}
+
+          {funcRemuneracao(form).forma === "Salário" ? (
+            <LinhaDupla>
+              <Field label="Salário mensal (R$)"><input style={inputStyle} value={form.salarioMensal ?? ""} onChange={set("salarioMensal")} inputMode="decimal" /></Field>
+              <Field label="Dia de pagamento"><input style={inputStyle} value={form.diaPagamento ?? ""} onChange={set("diaPagamento")} inputMode="numeric" placeholder="1 a 31" /></Field>
+            </LinhaDupla>
+          ) : (
+            <>
+              <Field label="Tipo de comissão">
+                <select style={{ ...inputStyle, appearance: "none" }} value={form.comissaoTipo === "Valor fixo" ? "Valor fixo" : "Percentual"} onChange={set("comissaoTipo")}>
+                  <option value="Percentual">Percentual sobre o serviço</option>
+                  <option value="Valor fixo">Valor fixo por serviço</option>
+                </select>
+              </Field>
+              {form.comissaoTipo === "Valor fixo" ? (
+                <Field label="Valor por serviço (R$)"><input style={inputStyle} value={form.comissaoValorFixo ?? ""} onChange={set("comissaoValorFixo")} inputMode="decimal" /></Field>
+              ) : (
+                <Field label="Comissão (%)"><input style={inputStyle} value={form.comissaoPercent ?? ""} onChange={set("comissaoPercent")} inputMode="decimal" /></Field>
+              )}
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#8A8A90", letterSpacing: 1.2, textTransform: "uppercase", margin: "4px 0 8px" }}>Serviços que geram comissão</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+                {COMISSAO_SERVICOS_OPCOES.map((t) => {
+                  const on = (form.comissaoServicos || []).includes(t);
+                  return (
+                    <button key={t} onClick={() => setForm((f) => ({ ...f, comissaoServicos: on ? (f.comissaoServicos || []).filter((x) => x !== t) : [...(f.comissaoServicos || []), t] }))}
+                      style={{ fontSize: 12, padding: "7px 12px", borderRadius: 9, border: `1px solid ${on ? "#C9A24B" : "#2A2A2E"}`, background: on ? "rgba(201,162,75,0.12)" : "transparent", color: on ? "#E9C878" : "#8A8A90", cursor: "pointer" }}>
+                      {on ? "✓ " : ""}{t}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: "#6E6E73", marginBottom: 14 }}>Nenhum marcado = todos os serviços geram comissão.</div>
+            </>
+          )}
+        </>
+      )}
+      {form.cargo !== "Técnico" && !funcEhAjudante(form) && (
         <Field label="Comissão (%)"><input style={inputStyle} value={form.comissaoPercent ?? ""} onChange={set("comissaoPercent")} inputMode="decimal" /></Field>
-      </LinhaDupla>
+      )}
 
       <SecaoTitulo>Permissões</SecaoTitulo>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
@@ -10513,7 +10930,8 @@ function FuncionarioForm({ editing, onDone, onCancel }) {
   );
 }
 
-function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perfil" }) {
+function FuncionarioPerfil({ func: funcInicial, onBack, onEdit, onDeleted, abaInicial = "perfil" }) {
+  const [func, setFunc] = useState(funcInicial);
   const [aba, setAba] = useState(abaInicial);
   const [stats, setStats] = useState(null);
   const [confirmar, setConfirmar] = useState(false);
@@ -10545,7 +10963,7 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
           if (m) { m.qtd++; m.valor += Number(o.valorTotal) || 0; }
         });
         const mesAtual = meses[meses.length - 1];
-        setStats({ total: todasOS.length, finalizadas: finalizadas.length, emAndamento: emAndamento.length, clientes: clientes.size, faturamento, meses, mesAtual });
+        setStats({ total: todasOS.length, finalizadas: finalizadas.length, emAndamento: emAndamento.length, clientes: clientes.size, faturamento, meses, mesAtual, osFinalizadas: finalizadas });
       } catch (err) {
         notificarErroBanco(diagnosticarErroFirestore(err, "carregar desempenho"));
         setStats({ total: 0, finalizadas: 0, emAndamento: 0, clientes: 0, faturamento: 0, meses: [], mesAtual: null });
@@ -10563,8 +10981,11 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
   };
 
   const nivel = nivelPorConcluidas(stats?.finalizadas || 0);
+  const reg = funcRemuneracao(func);
   const pctComissao = Number(func.comissaoPercent) || COMISSAO_PADRAO;
-  const comissao = (stats?.faturamento || 0) * (pctComissao / 100);
+  const resumoCom = funcComissaoResumo(func, stats?.osFinalizadas || []);
+  const comissao = resumoCom.comissao;
+  const abaEf = aba === "comissao" && reg.forma === "Salário" ? "salario" : aba === "salario" && reg.forma !== "Salário" ? "comissao" : aba;
   const meta = Number(func.metaMensal) || 0;
   const realizadoMes = stats?.mesAtual?.valor || 0;
   const pctMeta = meta > 0 ? (realizadoMes / meta) * 100 : 0;
@@ -10572,7 +10993,7 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
   const ABAS = [
     ["perfil", "Perfil"],
     ["performance", "Performance"],
-    ["comissao", "Comissão"],
+    reg.forma === "Salário" ? ["salario", "Salário"] : ["comissao", "Comissão"],
   ];
 
   const linha = (rotulo, valor) => (
@@ -10595,7 +11016,7 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 18, fontWeight: 700, color: "#F3F3F1", lineHeight: 1.2, wordBreak: "break-word" }}>{func.nome}</div>
-          <div style={{ fontSize: 12.5, color: "#8A8A90", marginTop: 2 }}>{func.cargo}</div>
+          <div style={{ fontSize: 12.5, color: "#8A8A90", marginTop: 2 }}>{func.cargo}{func.cargo === "Técnico" || funcEhAjudante(func) ? ` · ${reg.forma}` : ""}</div>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
             <Etiqueta texto={func.status} cor={func.status === "Ativo" ? "#4ADE80" : func.status === "Inativo" ? "#F0605A" : "#E9C878"} />
             <span style={{ fontSize: 11, color: nivel.atual.cor, border: `1px solid ${nivel.atual.cor}44`, background: `${nivel.atual.cor}14`, borderRadius: 20, padding: "4px 9px", whiteSpace: "nowrap" }}>
@@ -10608,7 +11029,7 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
       {/* abas */}
       <div style={{ display: "flex", borderBottom: "1px solid #1C1C1F", marginBottom: 18 }}>
         {ABAS.map(([id, nome]) => {
-          const on = aba === id;
+          const on = abaEf === id;
           return (
             <button
               key={id}
@@ -10636,7 +11057,7 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
       </div>
 
       <div key={aba} className="alla-tela">
-        {aba === "perfil" && (
+        {abaEf === "perfil" && (
           <>
             <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16 }}>
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "14px 12px" }}>
@@ -10689,7 +11110,7 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
           </>
         )}
 
-        {aba === "performance" && (
+        {abaEf === "performance" && (
           !stats ? (
             <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
           ) : stats.total === 0 ? (
@@ -10768,7 +11189,9 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
           )
         )}
 
-        {aba === "comissao" && (
+        {abaEf === "salario" && <FolhaSalarioPainel func={func} onFuncAtualizado={setFunc} />}
+
+        {abaEf === "comissao" && (
           !stats ? (
             <div style={{ textAlign: "center", padding: 30 }}><Loader2 size={20} className="spin" /></div>
           ) : (
@@ -10781,15 +11204,17 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
                   R$ {comissao.toFixed(2)}
                 </div>
                 <div style={{ fontSize: 12, color: "#8A8A90", marginTop: 8 }}>
-                  {pctComissao}% sobre serviços executados
+                  {func.comissaoTipo === "Valor fixo" ? `${fmtMoeda(numBR(func.comissaoValorFixo))} por serviço` : `${pctComissao}% sobre serviços executados`}
                 </div>
               </div>
 
               <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: 16 }}>
                 {[
-                  ["Faturamento total", `R$ ${(stats.faturamento || 0).toFixed(2)}`],
-                  ["Comissão calculada", `R$ ${comissao.toFixed(2)}`],
-                  ["Percentual de comissão", `${pctComissao}%`],
+                  ["Tipo de comissão", func.comissaoTipo === "Valor fixo" ? "Valor fixo por serviço" : "Percentual sobre o serviço"],
+                  [func.comissaoTipo === "Valor fixo" ? "Valor por serviço" : "Percentual de comissão", func.comissaoTipo === "Valor fixo" ? fmtMoeda(numBR(func.comissaoValorFixo)) : `${pctComissao}%`],
+                  ["Serviços que geram comissão", (func.comissaoServicos || []).length ? func.comissaoServicos.join(", ") : "Todos"],
+                  ["Total produzido", fmtMoeda(resumoCom.produzido)],
+                  ["Total de comissão", fmtMoeda(comissao)],
                   ["Meta mensal", meta > 0 ? `R$ ${meta.toFixed(2)}` : "não definida"],
                 ].map(([r, v], i, arr) => (
                   <div key={r} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderBottom: i < arr.length - 1 ? "1px solid #17171A" : "none" }}>
@@ -10799,8 +11224,22 @@ function FuncionarioPerfil({ func, onBack, onEdit, onDeleted, abaInicial = "perf
                 ))}
               </div>
 
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", margin: "22px 0 8px" }}>Histórico de comissões</div>
+              {resumoCom.porMes.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#6E6E73" }}>Nenhuma comissão gerada ainda.</div>
+              ) : (
+                <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "4px 14px" }}>
+                  {resumoCom.porMes.map((m, i) => (
+                    <div key={m.chave} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "11px 0", borderTop: i ? "1px solid #17171A" : "none" }}>
+                      <span style={{ fontSize: 12.5, color: "#C8C8C8", textTransform: "capitalize" }}>{folhaRotuloMes(m.chave)} <span style={{ color: "#6E6E73", fontSize: 11 }}>· {m.qtd} OS</span></span>
+                      <span style={{ fontSize: 12.5, color: "#F3F3F1" }}>{fmtMoeda(m.comissao)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div style={{ marginTop: 14, fontSize: 11.5, color: "#6E6E73", lineHeight: 1.5 }}>
-                Cálculo feito sobre as OS finalizadas registradas para este técnico. Ajuste o percentual no cadastro se necessário.
+                Cálculo feito sobre as OS finalizadas registradas para este técnico. Ajuste as regras no cadastro se necessário.
               </div>
             </>
           )
@@ -10841,6 +11280,7 @@ function FuncionariosModule() {
         mapa[f.nome] = {
           concluidas: finalizadas.length,
           faturamento: finalizadas.reduce((a, o) => a + (Number(o.valorTotal) || 0), 0),
+          comissao: funcComissaoResumo(f, finalizadas).comissao,
         };
       });
       setStatsPorTecnico(mapa);
@@ -10998,7 +11438,9 @@ function FuncionariosModule() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, margin: "14px 0 12px" }}>
                 {[
                   ["OS concl.", String(st.concluidas)],
-                  ["Comissão", `R$ ${(st.faturamento * (pct / 100)).toFixed(0)}`],
+                  funcRemuneracao(f).forma === "Salário"
+                    ? ["Salário", numBR(f.salarioMensal) > 0 ? `R$ ${numBR(f.salarioMensal).toFixed(0)}` : "—"]
+                    : ["Comissão", `R$ ${(st.comissao ?? st.faturamento * (pct / 100)).toFixed(0)}`],
                   ["Avaliação", "—"],
                 ].map(([r, v]) => (
                   <div key={r} style={{ background: "#111114", borderRadius: 10, padding: "9px 8px", minWidth: 0, textAlign: "center" }}>
@@ -11714,7 +12156,7 @@ function AssinaturaForm({ editing, onDone, onCancel }) {
       servico: "Manutenção Preventiva",
       valor: "",
       periodicidade: "Mensal",
-      dataInicio: new Date().toISOString().slice(0, 10),
+      dataInicio: hojeLocal(),
       vencimento: "",
       status: "ATIVA",
       observacoes: "",
@@ -11731,9 +12173,8 @@ function AssinaturaForm({ editing, onDone, onCancel }) {
   useEffect(() => {
     if (form.vencimento) return;
     const meses = ASSINATURA_PERIODICIDADE[form.periodicidade] || 1;
-    const d = new Date(form.dataInicio || Date.now());
-    d.setMonth(d.getMonth() + meses);
-    setForm((f) => (f.vencimento ? f : { ...f, vencimento: d.toISOString().slice(0, 10) }));
+    const novoVenc = addMeses(form.dataInicio || hojeLocal(), meses);
+    setForm((f) => (f.vencimento ? f : { ...f, vencimento: novoVenc }));
   }, [form.dataInicio, form.periodicidade, form.vencimento]);
 
   const salvar = async () => {
@@ -13514,7 +13955,7 @@ function AvCotacaoForm({ editing, produtos, onDone, onCancel }) {
           ...form,
           id,
           numero,
-          validade: editing?.validade || validade.toISOString().slice(0, 10),
+          validade: editing?.validade || dataLocalISO(validade),
           createdAt: editing?.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         })
@@ -13859,7 +14300,7 @@ function AvCotacaoDetalhe({ cot, onBack, onEditar, onMudou }) {
           valorTotal: calc.total,
           status: "ABERTA",
           origemCotacaoId: cot.id,
-          data: new Date().toISOString().slice(0, 10),
+          data: hojeLocal(),
           createdAt: new Date().toISOString(),
         })
       );
@@ -13873,7 +14314,7 @@ function AvCotacaoDetalhe({ cot, onBack, onEditar, onMudou }) {
           categoria: "Venda de equipamento",
           valor: calc.total,
           status: "pendente",
-          data: new Date().toISOString().slice(0, 10),
+          data: hojeLocal(),
           origemCotacaoId: cot.id,
           createdAt: new Date().toISOString(),
         })
@@ -16442,13 +16883,30 @@ const GARANTIA_STATUS_COR = {
    134 dependendo do horário em que a tela era aberta. */
 function garDiasDesde(dataStr) {
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  const d = new Date(String(dataStr).slice(0, 10) + "T00:00:00");
+  const d = new Date(dataSoLocal(dataStr) + "T00:00:00");
   return Math.max(0, Math.round((hoje - d) / 86400000));
 }
 function garDiasAte(dataStr) {
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  const d = new Date(String(dataStr).slice(0, 10) + "T00:00:00");
+  const d = new Date(dataSoLocal(dataStr) + "T00:00:00");
   return Math.round((d - hoje) / 86400000);
+}
+
+/* Vencimento a partir de um período escrito na OS ("90 dias", "6 meses", "1 ano"). */
+function garFimPorPeriodo(inicio, txt) {
+  const m = String(txt || "").toLowerCase().match(/(\d+)\s*(dias?|m[eê]s(?:es)?|anos?)/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (m[2].startsWith("dia")) return garantiaAddDias(inicio, n);
+  if (m[2].startsWith("m")) return addMeses(inicio, n);
+  return addMeses(inicio, n * 12);
+}
+function garDiasTxt(n) { return Math.abs(n) === 1 ? "1 dia" : `${n} dias`; }
+/* Rótulos conforme a origem: instalação, serviço ou venda. */
+function garRotuloData(g) {
+  if (g.origemTipo === "Venda") return { rot: "Data da venda", tempo: "desde a venda" };
+  if (/instala/i.test(g.descricao || "")) return { rot: "Data da instalação", tempo: "desde a instalação" };
+  return { rot: "Data do serviço", tempo: "desde o serviço" };
 }
 
 function garantiaCalcularStatus(fimAtual, cancelada) {
@@ -16463,9 +16921,9 @@ function garantiaCalcularStatus(fimAtual, cancelada) {
 /* Varre OS e vendas de cervejeira e devolve uma lista única e normalizada
    de garantias — sem gravar nada novo, só juntando o que já existe. */
 function garantiaAddDias(dataStr, dias) {
-  const d = new Date(dataStr + "T12:00:00");
+  const d = new Date(dataSoLocal(dataStr) + "T12:00:00");
   d.setDate(d.getDate() + dias);
-  return d.toISOString().slice(0, 10);
+  return dataLocalISO(d);
 }
 
 /* Varre TODAS as ordens de serviço finalizadas e TODAS as vendas — não só
@@ -16500,15 +16958,37 @@ async function garantiasVarrer(config) {
     };
   };
 
+  let semData = 0;
+
   const daOS = oss
     .filter((os) => {
       const st = (os.status || "").toUpperCase();
       const temGarantiaPropria = os.garantiaPeriodo || os.garantiaInicio || os.garantiaFim;
-      return st !== "CANCELADA" && (os.data || os.createdAt) && (st === "FINALIZADA" || temGarantiaPropria);
+      return st !== "CANCELADA" && (st === "FINALIZADA" || temGarantiaPropria);
     })
     .map((os) => {
       const chave = `os-${os.id}`;
-      const dataServico = String(os.garantiaInicio || os.finalizedAt || os.data || os.createdAt).slice(0, 10);
+      // DATA REAL DO SERVIÇO — nunca a data em que o registro foi cadastrado.
+      // "data" é o dia da execução informado na OS. "finalizedAt" só serve
+      // quando difere de "createdAt": nas OS importadas os dois são o dia da
+      // importação (23/05/2026), que NÃO é o dia do serviço.
+      const criadoDia = os.createdAt ? dataSoLocal(os.createdAt) : null;
+      const fechadoDia = os.finalizedAt ? dataSoLocal(os.finalizedAt) : null;
+      let dataServico = null;
+      let dataFonte = "";
+      if (os.data) { dataServico = dataSoLocal(os.data); dataFonte = "Data de realização informada na OS"; }
+      else if (fechadoDia && fechadoDia !== criadoDia) { dataServico = fechadoDia; dataFonte = "Data de conclusão da OS"; }
+      else if (os.garantiaInicio) { dataServico = dataSoLocal(os.garantiaInicio); dataFonte = "Início da garantia informado na OS"; }
+      if (!dataServico) { semData++; return null; }
+
+      const dataInicio = os.garantiaInicio ? dataSoLocal(os.garantiaInicio) : dataServico;
+      let explicitoFim = os.garantiaFim ? dataSoLocal(os.garantiaFim) : null;
+      let regra = explicitoFim ? "Vencimento informado na OS" : "";
+      if (!explicitoFim) {
+        const porPeriodo = garFimPorPeriodo(dataInicio, os.garantiaPeriodo);
+        if (porPeriodo) { explicitoFim = porPeriodo; regra = `Período da OS (${os.garantiaPeriodo}) somado à data de início`; }
+        else regra = `Prazo padrão configurado (${cfgDias} dias) somado à data de início`;
+      }
       return montar(
         {
           chave,
@@ -16525,20 +17005,24 @@ async function garantiasVarrer(config) {
           marca: os.eqMarca, modelo: os.eqModelo, serie: os.eqSerie,
           valor: os.valorTotal,
           dataServico,
-          dataInicio: os.garantiaInicio || dataServico,
+          dataFonte,
+          regra,
+          dataInicio,
           periodoOriginal: os.garantiaPeriodo || "",
           condicoes: os.garantiaCondicoes,
         },
         extMap[chave],
-        os.garantiaFim
+        explicitoFim
       );
-    });
+    })
+    .filter(Boolean);
 
   const daVenda = vendas
     .filter((v) => v.createdAt)
     .map((v) => {
       const chave = `venda-${v.id}`;
-      const dataServico = String(v.createdAt).slice(0, 10);
+      const dataServico = dataSoLocal(v.createdAt);
+      const explicito = v.garantiaFim ? dataSoLocal(v.garantiaFim) : null;
       return montar(
         {
           chave,
@@ -16555,16 +17039,27 @@ async function garantiasVarrer(config) {
           marca: v.produtoMarca, modelo: v.produtoModelo, serie: v.produtoSerie,
           valor: v.total,
           dataServico,
+          dataFonte: "Data da venda registrada",
+          regra: explicito ? "Vencimento informado na venda" : `Prazo padrão configurado (${cfgDias} dias) somado à data da venda`,
           dataInicio: dataServico,
           periodoOriginal: v.garantiaMeses ? `${v.garantiaMeses} meses` : "",
           condicoes: "",
         },
         extMap[chave],
-        v.garantiaFim
+        explicito
       );
     });
 
-  return [...daOS, ...daVenda];
+  // Data futura NUNCA vira serviço já realizado: fica fora das oportunidades
+  // e é apenas listada num aviso para o técnico corrigir a data.
+  const hoje = hojeLocal();
+  const todos = [...daOS, ...daVenda];
+  const resultado = todos.filter((g) => g.dataServico <= hoje);
+  resultado.ignoradas = {
+    futuras: todos.filter((g) => g.dataServico > hoje).map((g) => ({ numero: g.origemNumero, tipo: g.origemTipo, cliente: g.clienteNome, data: g.dataServico })),
+    semData,
+  };
+  return resultado;
 }
 
 /* Rótulo da oferta usando o vocabulário pedido:
@@ -16801,7 +17296,7 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS, usuario }) {
         cliente: g.clienteNome,
         osId: g.origemTipo === "OS" ? g.origemId : null,
         osNumero: g.origemNumero,
-        data: new Date().toISOString().slice(0, 10),
+        data: hojeLocal(),
         valor: Number(config.extensaoValor),
         formaPagamento: "",
         status: "pendente",
@@ -16992,7 +17487,7 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS, usuario }) {
   const secoes = [
     ["Cliente", [["WhatsApp", g.clienteTelefone], ["Endereço", g.clienteEndereco]]],
     ["Equipamento", [["Marca", g.marca], ["Modelo", g.modelo], ["Número de série", g.serie], ...(!g.marca && !g.modelo ? [["Equipamento", g.equipamento]] : [])]],
-    ["Serviço", [["Serviço", g.descricao], ["OS", g.origemNumero], ["Técnico", g.tecnico], ["Data da instalação", fd(g.dataServico)]]],
+    ["Serviço", [["Serviço", g.descricao], ["OS", g.origemNumero], ["Técnico", g.tecnico], [garRotuloData(g).rot, fd(g.dataServico)]]],
     ["Garantia", [
       ["Garantia original", g.periodoOriginal || (g.garantiaPadrao ? `${config.garantiaPadraoDias ?? 90} dias (prazo padrão)` : null)],
       ["Início", fd(g.dataInicio)],
@@ -17000,6 +17495,15 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS, usuario }) {
       ["Dias decorridos", g.diasDesdeServico !== undefined ? `${g.diasDesdeServico} dias` : null],
       ["Situação", diasRest === null ? null : diasRest >= 0 ? `${diasRest} dias restantes` : `encerrada há ${-diasRest} dias`],
       ...(ultimaExt ? [["Extensão contratada", `+${ultimaExt.periodoMeses} meses`], ["Nova validade", fd(ultimaExt.novaFim)]] : []),
+    ]],
+    ["Como a garantia foi calculada", [
+      ["Origem da data", g.dataFonte],
+      ["Data considerada", fd(g.dataServico)],
+      ["Conclusão da OS", g.dataConclusao ? fd(g.dataConclusao) : null],
+      ["Regra do prazo", g.regra],
+      ["Vencimento resultante", fd(g.fimOriginal)],
+      ["Tempo decorrido", g.diasDesdeServico !== undefined ? `${garDiasTxt(g.diasDesdeServico)} ${garRotuloData(g).tempo}` : null],
+      ["Situação hoje", diasRest === null ? null : diasRest > 0 ? `${garDiasTxt(diasRest)} restantes` : diasRest === 0 ? "vence hoje" : `vencida há ${garDiasTxt(-diasRest)}`],
     ]],
     ["Oferta de extensão", [["Extensão", `+${config.extensaoMeses} meses`], ["Valor", `R$ ${Number(config.extensaoValor).toFixed(2)}`], ["Status", OFERTA_TXT[rotulo] || rotulo]]],
   ];
@@ -17145,10 +17649,19 @@ function GarantiaDetail({ garantia, config, onBack, onVerOS, usuario }) {
 
 /* ---------------- Módulo principal: Garantias / Pós-venda ---------------- */
 const GAR_FILTROS = [
-  ["todos", "Todos"], ["30", "30+ dias"], ["60", "60+ dias"], ["90", "90+ dias"], ["120", "120+ dias"],
-  ["180", "180+ dias"], ["365", "1 ano+"], ["proxima", "Próx. vencimento"], ["vencida", "Vencida"],
-  ["enviada", "Oferta enviada"], ["naoEnviada", "Não enviada"], ["estendida", "Estendida"],
+  ["todos", "Todos"], ["30", "+30 dias"], ["60", "+60 dias"], ["90", "+90 dias"],
+  ["vencida", "Garantia vencida"], ["enviada", "Oferta enviada"], ["contratada", "Extensão contratada"],
 ];
+
+/* Grupos de oportunidade (na ordem em que aparecem na tela). */
+const GAR_GRUPOS = ["GARANTIA VENCIDA", "+90 DIAS", "+60 DIAS", "+30 DIAS", "RECENTES"];
+function garGrupo(g) {
+  if (g.status === "VENCIDA") return 0;
+  if (g.diasDesdeServico >= 90) return 1;
+  if (g.diasDesdeServico >= 60) return 2;
+  if (g.diasDesdeServico >= 30) return 3;
+  return 4;
+}
 
 function garNormalizar(t) {
   return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -17215,6 +17728,7 @@ function GarantiasModule({ onNavigate, usuario }) {
       case "enviada": return !!g.extensao?.oferta?.enviada;
       case "naoEnviada": return rot === "NÃO ENVIADA";
       case "estendida": return g.status === "ESTENDIDA";
+      case "contratada": return rot === "CONTRATOU" || g.status === "ESTENDIDA";
       default: return g.diasDesdeServico >= Number(filtro);
     }
   }, [filtro, config]);
@@ -17239,7 +17753,13 @@ function GarantiasModule({ onNavigate, usuario }) {
         }
         return false;
       })
-      .sort((a, b) => (a.dataServico < b.dataServico ? 1 : -1));
+      .sort((a, b) => {
+        const ga = garGrupo(a), gb = garGrupo(b);
+        if (ga !== gb) return ga - gb;
+        // vencidas: as que venceram há menos tempo primeiro; demais: as que vencem antes primeiro
+        const da = a.fimAtual ? garDiasAte(a.fimAtual) : 9999, db = b.fimAtual ? garDiasAte(b.fimAtual) : 9999;
+        return ga === 0 ? db - da : da - db;
+      });
   }, [lista, aplicaFiltro, busca, de, ate]);
 
   // Exibição paginada (50 por vez + "Mostrar mais"): a busca e os filtros
@@ -17331,7 +17851,7 @@ function GarantiasModule({ onNavigate, usuario }) {
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar cliente, telefone, OS ou equipamento"
+          placeholder="Buscar cliente, telefone, OS, equipamento ou modelo"
           style={{ width: "100%", boxSizing: "border-box", height: 46, background: "#0D0D0D", border: "1px solid #222222", borderRadius: 12, padding: "0 14px 0 40px", color: "#FFFFFF", fontFamily: "'Roboto',sans-serif", fontSize: 13.5, outline: "none" }}
         />
       </div>
@@ -17358,6 +17878,13 @@ function GarantiasModule({ onNavigate, usuario }) {
       </div>
 
       <div style={{ fontSize: 10.5, color: "#5A5A5A", marginBottom: 12 }}>{filtradas.length} de {lista.length} garantias</div>
+      {(lista.ignoradas?.futuras || []).length > 0 && (
+        <div style={{ fontSize: 10.5, color: "#8A8A8A", background: "#0D0D0D", border: "1px solid #222222", borderRadius: 10, padding: "9px 12px", marginBottom: 14, lineHeight: 1.5 }}>
+          {lista.ignoradas.futuras.length} serviço(s) com data futura não entram na análise (ainda não foram realizados):{" "}
+          {lista.ignoradas.futuras.slice(0, 4).map((f) => `${f.numero || f.tipo} — ${fmt(f.data)}`).join(" · ")}
+          {lista.ignoradas.futuras.length > 4 ? " …" : ""}
+        </div>
+      )}
 
       {filtradas.length === 0 ? (
         <div style={{ textAlign: "center", padding: "44px 20px", color: "#6A6A6A" }}>
@@ -17365,40 +17892,75 @@ function GarantiasModule({ onNavigate, usuario }) {
           <div style={{ fontSize: 12.5 }}>{lista.length === 0 ? "Nenhuma OS finalizada ou venda encontrada ainda." : "Nenhuma garantia para essa busca/filtro."}</div>
         </div>
       ) : (
-        visiveis.map((g) => {
+        visiveis.map((g, idx) => {
           const rot = garantiaOfertaRotulo(g, config);
           const dias = g.fimAtual ? garDiasAte(g.fimAtual) : null;
-          const statusTxt = rot !== "NÃO ENVIADA" ? OFERTA_TXT[rot] || rot : STATUS_TXT[g.status] || g.status;
+          const grupo = garGrupo(g);
+          const primeiroDoGrupo = idx === 0 || garGrupo(visiveis[idx - 1]) !== grupo;
+          const totalGrupo = filtradas.filter((x) => garGrupo(x) === grupo).length;
+          const { rot: rotData, tempo: tempoTxt } = garRotuloData(g);
+          // STATUS: Garantia ativa · Próximo do vencimento · Garantia vencida · Oferta enviada · Extensão contratada
+          const statusTxt =
+            rot === "CONTRATOU" ? "Extensão contratada"
+            : ["ENVIADA", "RESPONDEU", "INTERESSADO", "SEM RESPOSTA"].includes(rot) ? "Oferta enviada"
+            : g.status === "VENCIDA" ? "Garantia vencida"
+            : g.status === "PRÓXIMA DO VENCIMENTO" ? "Próximo do vencimento"
+            : g.status === "ESTENDIDA" ? "Extensão contratada"
+            : "Garantia ativa";
           const garantiaTxt = g.periodoOriginal || (g.garantiaPadrao ? `${config.garantiaPadraoDias ?? 90} dias` : "—");
+          const restanteTxt = dias === null ? "—" : dias > 0 ? `${garDiasTxt(dias)} restantes` : dias === 0 ? "vence hoje" : `vencida há ${garDiasTxt(-dias)}`;
+          const elegivelAgora = garantiaEhElegivel(g, config) && rot === "NÃO ENVIADA";
           return (
-            <div key={g.chave} style={{ background: "#111111", border: "1px solid #222222", borderRadius: 14, padding: 16, marginBottom: 12 }}>
-              <button onClick={() => setSelecionada(g)} style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", display: "block" }}>
-                <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14.5, color: "#FFFFFF", letterSpacing: 0.3, lineHeight: 1.25, wordBreak: "break-word" }}>{(g.clienteNome || "Cliente").toUpperCase()}</div>
-                {g.equipamento && <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, lineHeight: 1.35 }}>{g.equipamento}</div>}
-                <div style={{ fontSize: 11, color: "#6A6A6A", marginTop: 3 }}>{g.clienteTelefone ? g.clienteTelefone : "Sem WhatsApp cadastrado"}{g.origemNumero ? ` · ${g.origemNumero}` : " · Venda"}</div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 16px", marginTop: 16, paddingTop: 14, borderTop: "1px solid #1A1A1A" }}>
-                  <div style={{ minWidth: 0 }}><div style={rotCel}>Serviço</div><div style={valCel}>{g.descricao}</div><div style={{ fontSize: 11, color: "#7A7A7A", marginTop: 2 }}>{fmt(g.dataServico)}</div></div>
-                  <div style={{ minWidth: 0 }}><div style={rotCel}>Garantia original</div><div style={valCel}>{garantiaTxt}</div></div>
-                  <div style={{ minWidth: 0 }}><div style={rotCel}>Tempo decorrido</div><div style={valCel}>{g.diasDesdeServico} dias</div></div>
-                  <div style={{ minWidth: 0 }}><div style={rotCel}>Status</div><div style={{ ...valCel, fontWeight: 600 }}>● {statusTxt}</div></div>
+            <React.Fragment key={g.chave}>
+              {primeiroDoGrupo && (
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: idx === 0 ? "4px 0 10px" : "22px 0 10px" }}>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: 1.2, color: "#C9A24B" }}>{GAR_GRUPOS[grupo]}</span>
+                  <span style={{ fontSize: 10.5, color: "#5A5A5A" }}>{totalGrupo}</span>
+                  <span style={{ flex: 1, height: 1, background: "#1A1A1A" }} />
                 </div>
+              )}
+              <div style={{ background: "#111111", border: "1px solid #222222", borderRadius: 14, padding: 16, marginBottom: 12 }}>
+                <button onClick={() => setSelecionada(g)} style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", display: "block" }}>
+                  <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 14.5, color: "#FFFFFF", letterSpacing: 0.3, lineHeight: 1.25, wordBreak: "break-word" }}>{(g.clienteNome || "Cliente").toUpperCase()}</div>
+                  <div style={{ fontSize: 11.5, color: "#8A8A8A", marginTop: 5, lineHeight: 1.5 }}>
+                    {[g.marca && `Marca: ${g.marca}`, g.modelo && `Modelo: ${g.modelo}`].filter(Boolean).join(" · ") || (g.equipamento ? `Equipamento: ${g.equipamento}` : "Equipamento não informado")}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#8A8A8A", lineHeight: 1.5 }}>
+                    Serviço: {g.descricao}{g.origemNumero ? ` · OS: ${g.origemNumero}` : " · Venda"}
+                  </div>
 
-                {(dias !== null || g.extensao?.oferta?.enviadaEm) && (
-                  <div style={{ fontSize: 10.5, color: "#666666", marginTop: 12, lineHeight: 1.5 }}>
-                    {dias !== null && (dias >= 0 ? `${dias} dias de garantia restantes` : `Garantia encerrada há ${-dias} dias`)}
-                    {g.fimAtual ? ` · vence ${fmt(g.fimAtual)}` : ""}
+                  {/* a informação mais importante: QUANDO foi feito */}
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #1A1A1A" }}>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: 0.9, color: "#6A6A6A", textTransform: "uppercase" }}>{rotData}</div>
+                    <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 24, color: "#FFFFFF", lineHeight: 1.15, marginTop: 3 }}>{fmt(g.dataServico)}</div>
+                    <div style={{ fontSize: 12.5, color: "#C8C8C8", marginTop: 3 }}>{garDiasTxt(g.diasDesdeServico)} {tempoTxt}</div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px", marginTop: 14 }}>
+                    <div style={{ minWidth: 0 }}><div style={rotCel}>Garantia original</div><div style={valCel}>{garantiaTxt}</div></div>
+                    <div style={{ minWidth: 0 }}><div style={rotCel}>Vencimento</div><div style={valCel}>{g.fimAtual ? fmt(g.fimAtual) : "—"}</div></div>
+                    <div style={{ minWidth: 0 }}><div style={rotCel}>Garantia restante</div><div style={{ ...valCel, fontWeight: 600 }}>{restanteTxt}</div></div>
+                    <div style={{ minWidth: 0 }}><div style={rotCel}>Status</div><div style={{ ...valCel, fontWeight: 600 }}>● {statusTxt}</div></div>
+                  </div>
+
+                  <div style={{ fontSize: 11, color: "#7A7A7A", marginTop: 12 }}>
+                    {g.clienteTelefone ? `WhatsApp: ${g.clienteTelefone}` : "Sem WhatsApp cadastrado"}
                     {g.extensao?.oferta?.enviadaEm ? ` · oferta enviada em ${fmt(g.extensao.oferta.enviadaEm)}` : ""}
                   </div>
-                )}
-              </button>
-              <button
-                onClick={() => setSelecionada(g)}
-                style={{ width: "100%", marginTop: 14, background: "transparent", border: "1px solid rgba(201,162,75,0.5)", borderRadius: 10, padding: "12px 0", color: "#E9C878", fontSize: 11.5, fontWeight: 600, fontFamily: "'Roboto',sans-serif", letterSpacing: 1, textTransform: "uppercase", cursor: "pointer" }}
-              >
-                {rot === "NÃO ENVIADA" ? "Oferecer garantia" : "Ver oferta"}
-              </button>
-            </div>
+                </button>
+
+                <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                  <button onClick={() => setSelecionada(g)} style={{ flex: 1, background: "transparent", border: "1px solid #222222", borderRadius: 10, padding: "12px 0", color: "#B5B5B5", fontSize: 11, fontWeight: 600, fontFamily: "'Roboto',sans-serif", letterSpacing: 1, textTransform: "uppercase", cursor: "pointer" }}>
+                    Ver detalhes
+                  </button>
+                  {elegivelAgora && (
+                    <button onClick={() => setSelecionada(g)} style={{ flex: 1.3, background: "transparent", border: "1px solid rgba(201,162,75,0.55)", borderRadius: 10, padding: "12px 0", color: "#E9C878", fontSize: 11, fontWeight: 600, fontFamily: "'Roboto',sans-serif", letterSpacing: 1, textTransform: "uppercase", cursor: "pointer" }}>
+                      Oferecer garantia
+                    </button>
+                  )}
+                </div>
+              </div>
+            </React.Fragment>
           );
         })
       )}
@@ -17535,7 +18097,7 @@ function proximoSabado() {
   const d = new Date();
   const dias = (6 - d.getDay() + 7) % 7 || 7;
   d.setDate(d.getDate() + dias);
-  return d.toISOString().slice(0, 10);
+  return dataLocalISO(d);
 }
 
 /* ---------------- Módulo principal ---------------- */
