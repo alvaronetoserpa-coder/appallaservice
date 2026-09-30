@@ -5,7 +5,7 @@ import {
   Trash2, Snowflake, Zap, Receipt, BarChart3, Eraser, Loader2, RefreshCw, Menu,
   CheckCircle2, Beer, TrendingUp, TrendingDown, Search, Calculator, Sparkles, PackageSearch,
   ClipboardCheck, History, BookOpen, Navigation, LineChart, FileCheck2,
-  CalendarClock, Ruler, MessageSquareText, Bot, Mic
+  CalendarClock, Ruler, MessageSquareText, Bot
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import {
@@ -68,7 +68,6 @@ const FIRESTORE_COLLECTION_MAP = {
   "visitas-tecnicas": "visitas_tecnicas",
   "pmoc-config": "pmoc_config",
   "garantias-extensoes": "garantias_extensoes",
-  "os-ia-historico": "os_ia_historico",
   "garantia-config": "garantia_config",
   manuais: "manuais",
 };
@@ -1411,7 +1410,6 @@ const TOOLS = [
   { key: "agenda-cortes", label: "Agenda de Cortes", desc: "Agenda provisória de sábado — Barbearia Serpas", icon: CalendarClock, active: true },
   { key: "visita-tecnica", label: "Visita Técnica", desc: "Vistoria completa com relatório em PDF", icon: ClipboardCheck, active: true },
   { key: "garantias", label: "Garantia Estendida", desc: "Gestão de pós-venda e oportunidades", icon: FileCheck2, active: true },
-  { key: "os-ia", label: "Gerador de OS por IA", desc: "Descreva o atendimento e a IA monta a OS", icon: Bot, active: true },
   { key: "assinaturas", label: "Assinaturas", desc: "Contratos recorrentes, vencimentos e cobrança", icon: CalendarClock, active: true },
   { key: "btu", label: "Calculadora de BTU", desc: "Dimensionamento de ar-condicionado por ambiente", icon: Calculator, active: true },
   { key: "conversor", label: "Conversor Técnico", desc: "BTU, pressão, temperatura, potência e medidas", icon: Ruler, active: true },
@@ -1514,7 +1512,7 @@ const TOOL_CATEGORIAS = [
   { titulo: "Operação", chaves: ["rastreio-tecnico", "laudo-tecnico"] },
   { titulo: "Equipamentos", chaves: ["historico-equipamento", "manuais"] },
   { titulo: "Financeiro", chaves: ["relatorios-financeiros"] },
-  { titulo: "Inteligência Artificial", chaves: ["orcamento-ia", "pecas-ia", "checklist-ia", "assistente-ia", "os-ia"] },
+  { titulo: "Inteligência Artificial", chaves: ["orcamento-ia", "pecas-ia", "checklist-ia", "assistente-ia"] },
   { titulo: "Comunicação", chaves: ["mensagens-whatsapp"] },
   { titulo: "Utilidades", chaves: ["btu", "conversor"] },
 ];
@@ -1525,7 +1523,6 @@ const TOOL_CORES = {
   "agenda-cortes": "#E9C878",
   "visita-tecnica": "#3FBCD1",
   "garantias": "#4681DF",
-  "os-ia": "#C9A24B",
   assinaturas: "#C9A24B",
   "pmoc-tool": "#9B8AFB",
   "rastreio-tecnico": "#4681DF",
@@ -5973,548 +5970,6 @@ const OS_STATUS_COLOR = {
   CANCELADA: "#F0605A",
 };
 
-/* Caminho ÚNICO de gravação de uma OS — usado pelo formulário manual E
-   pelo Gerador de OS por IA. Isso garante que uma OS criada pela IA
-   funcione em tudo exatamente como uma criada à mão: mesma coleção,
-   mesmo cálculo de remuneração, mesma geração de receita no
-   Financeiro — nunca um sistema paralelo. */
-async function persistirOS(form, { funcsTodos = [], fotosAntes = [], fotosDepois = [], assinatura = null, statusOverride, extras = {} } = {}) {
-  const id = form.id || uid();
-  const numero = form.numero || (await proximoNumero("OS", "ordens-servico:"));
-  const status = statusOverride || form.status;
-  const valorTotal = osValorTotal(form);
-  const os = {
-    ...form,
-    ...extras,
-    id,
-    numero,
-    status,
-    valorTotal,
-    fotosAntes,
-    fotosDepois,
-    assinatura,
-    createdAt: form.createdAt || new Date().toISOString(),
-    finalizedAt: status === "FINALIZADA" ? new Date().toISOString() : form.finalizedAt || null,
-    remuneracao: montarRemuneracaoOS(funcsTodos, form, status, valorTotal),
-  };
-  await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
-
-  if (status === "FINALIZADA" && valorTotal > 0 && !form.receitaGerada) {
-    const recId = uid();
-    await window.storage.set(
-      `fin-receitas:${recId}`,
-      JSON.stringify({
-        id: recId,
-        servico: form.tipoServico,
-        cliente: form.clienteNome,
-        osId: id,
-        osNumero: numero,
-        data: form.data,
-        valor: valorTotal,
-        formaPagamento: "A definir",
-        status: "pendente",
-        createdAt: new Date().toISOString(),
-      })
-    );
-    os.receitaGerada = true;
-    await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
-  }
-  return os;
-}
-
-/* ================= Gerador de OS por IA ================= */
-
-const IA_OS_CAMPOS_VAZIOS = {
-  clienteNome: "", clienteDocumento: "", clienteTelefone: "", clienteEndereco: "",
-  eqTipo: "", eqMarca: "", eqModelo: "", eqBtus: "", eqSerie: "",
-  tipoServico: "", problemaRelatado: "", diagnostico: "", procedimentosRealizados: "",
-  materiaisUtilizados: "", pecasUtilizadas: "", observacoes: "",
-  medicoes: "", tecnico: "", ajudante: "", data: "",
-  maoDeObra: "", pecas: "", desconto: "",
-  pagamento: "", garantiaPeriodo: "",
-};
-
-/* Procura, no histórico REAL de OS já salvas, clientes com nome
-   parecido — nunca inventa um cadastro, só reaproveita o que já
-   existe (regra do pedido: reconhecer antes de criar). */
-async function iaOsBuscarClientes(nomeDigitado) {
-  if (!nomeDigitado || !nomeDigitado.trim()) return [];
-  const alvo = nomeDigitado.trim().toLowerCase();
-  const lista = await window.storage.list("ordens-servico:").catch(() => null);
-  if (!lista || !lista.keys) return [];
-  const porCliente = new Map();
-  for (const chave of lista.keys) {
-    const doc = await window.storage.get(chave).catch(() => null);
-    if (!doc) continue;
-    let os;
-    try { os = JSON.parse(doc.value); } catch { continue; }
-    if (!os.clienteNome) continue;
-    const nomeNorm = os.clienteNome.trim().toLowerCase();
-    if (!nomeNorm.includes(alvo) && !alvo.includes(nomeNorm)) continue;
-    const chaveCliente = nomeNorm;
-    if (!porCliente.has(chaveCliente)) {
-      porCliente.set(chaveCliente, { nome: os.clienteNome, telefone: "", documento: "", endereco: "", equipamentos: [], ultimaData: "" });
-    }
-    const c = porCliente.get(chaveCliente);
-    // fica com os dados de contato da OS mais recente daquele cliente
-    if (!c.ultimaData || (os.data || "") > c.ultimaData) {
-      c.telefone = os.clienteTelefone || c.telefone;
-      c.documento = os.clienteDocumento || c.documento;
-      c.endereco = os.clienteEndereco || c.endereco;
-      c.ultimaData = os.data || c.ultimaData;
-    }
-    if (os.eqMarca || os.eqModelo || os.eqBtus) {
-      const chaveEq = `${os.eqMarca}|${os.eqModelo}|${os.eqBtus}|${os.eqSerie}`;
-      if (!c.equipamentos.some((e) => `${e.marca}|${e.modelo}|${e.btu}|${e.serie}` === chaveEq)) {
-        c.equipamentos.push({ tipo: os.eqTipo || "", marca: os.eqMarca || "", modelo: os.eqModelo || "", btu: os.eqBtus || "", serie: os.eqSerie || "" });
-      }
-    }
-  }
-  return Array.from(porCliente.values());
-}
-
-const IA_OS_TIPO_SERVICO_OPCOES = ["Instalação", "Manutenção Preventiva", "Manutenção Corretiva", "Higienização", "Manutenção", "Visita Técnica", "Outro"];
-
-function IaOsCampoLinha({ label, valor }) {
-  if (!valor) return null;
-  return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 10.5, color: "#8A8A90", textTransform: "uppercase", letterSpacing: 0.6, fontFamily: "'JetBrains Mono',monospace" }}>{label}</div>
-      <div style={{ fontSize: 13, color: "#F3F3F1", marginTop: 2, whiteSpace: "pre-wrap" }}>{valor}</div>
-    </div>
-  );
-}
-
-function GeradorOsIaModule({ onNavigate }) {
-  const [mensagens, setMensagens] = useState([
-    { autor: "ia", texto: "Oi! Me conta como foi o atendimento — pode escrever ou falar naturalmente, tipo:\n\n\"Fui atender o João Silva hoje. Fiz manutenção em um Split LG Dual Inverter de 12.000 BTUs, filtro muito sujo. Fiz limpeza completa, higienização e teste. Cobrei R$ 250 no Pix. Garantia de 90 dias.\"" },
-  ]);
-  const [entrada, setEntrada] = useState("");
-  const [rascunho, setRascunho] = useState(null);
-  const [clientesEncontrados, setClientesEncontrados] = useState(null);
-  const [equipamentosCliente, setEquipamentosCliente] = useState([]);
-  const [carregando, setCarregando] = useState(false);
-  const [erroApi, setErroApi] = useState(null);
-  const [fase, setFase] = useState("chat"); // chat | preview | editar
-  const [osConfirmada, setOsConfirmada] = useState(null);
-  const [statusEscolhido, setStatusEscolhido] = useState("ABERTA");
-  const [ultimasGeradas, setUltimasGeradas] = useState([]);
-  const [ouvindo, setOuvindo] = useState(false);
-  const scrollRef = useRef(null);
-  const reconhecimentoRef = useRef(null);
-
-  useEffect(() => {
-    (async () => {
-      const lista = await window.storage.list("ordens-servico:").catch(() => null);
-      if (!lista || !lista.keys) return;
-      const itens = [];
-      for (const chave of lista.keys) {
-        const doc = await window.storage.get(chave).catch(() => null);
-        if (!doc) continue;
-        try {
-          const os = JSON.parse(doc.value);
-          if (os.geradaPorIA) itens.push(os);
-        } catch {}
-      }
-      itens.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-      setUltimasGeradas(itens.slice(0, 8));
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [mensagens, carregando]);
-
-  const addMsg = (m) => setMensagens((ms) => [...ms, m]);
-  const algumCampoPreenchido = (r) => r && Object.values(r).some((v) => v && String(v).trim());
-
-  const enviarMensagem = async (textoForcado) => {
-    const texto = (textoForcado ?? entrada).trim();
-    if (!texto || carregando) return;
-    addMsg({ autor: "tecnico", texto });
-    setEntrada("");
-    setCarregando(true);
-    setErroApi(null);
-    try {
-      const resp = await fetch("/api/gerar-os-ia", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mensagem: texto,
-          osAtual: algumCampoPreenchido(rascunho) ? rascunho : null,
-          equipamentosCliente: equipamentosCliente.length ? equipamentosCliente : undefined,
-        }),
-      });
-      const data = await resp.json().catch(() => ({}));
-
-      if (resp.status === 501) {
-        setErroApi(data.mensagem || "O Gerador de OS por IA ainda não está configurado.");
-        addMsg({ autor: "ia", texto: data.mensagem || "O Gerador de OS por IA ainda não está configurado neste servidor. Fale com quem administra o sistema." });
-        return;
-      }
-      if (!resp.ok) {
-        addMsg({ autor: "ia", texto: "Não consegui interpretar essa mensagem agora. Pode tentar de novo?" });
-        return;
-      }
-
-      const novoRascunho = { ...IA_OS_CAMPOS_VAZIOS, ...rascunho, ...data.campos };
-      setRascunho(novoRascunho);
-
-      if (data.pergunta) {
-        addMsg({ autor: "ia", texto: data.pergunta });
-      } else {
-        addMsg({ autor: "ia", texto: "Entendi. Pode me contar mais algum detalhe, ou tocar em \"Gerar prévia da OS\" quando estiver pronto." });
-      }
-
-      // reconhecimento de cliente — só na primeira vez que um nome aparece
-      if (novoRascunho.clienteNome && clientesEncontrados === null) {
-        const achados = await iaOsBuscarClientes(novoRascunho.clienteNome);
-        setClientesEncontrados(achados);
-        if (achados.length === 1) {
-          const c = achados[0];
-          addMsg({
-            autor: "ia",
-            texto: `Cliente encontrado: ${c.nome} — deseja usar este cadastro?`,
-            opcoes: [
-              { label: "Usar este cadastro", onClick: () => usarCadastroCliente(c) },
-              { label: "É outro cliente", onClick: () => addMsg({ autor: "ia", texto: "Combinado, vou tratar como um cliente novo." }) },
-            ],
-          });
-        } else if (achados.length > 1) {
-          addMsg({
-            autor: "ia",
-            texto: "Encontrei mais de um cliente parecido. Qual deles é?",
-            opcoes: achados.map((c) => ({ label: c.nome + (c.telefone ? ` — ${c.telefone}` : ""), onClick: () => usarCadastroCliente(c) })),
-          });
-        } else {
-          addMsg({ autor: "ia", texto: "Não encontrei esse cliente no histórico. Vou cadastrar como novo — pode me passar telefone e endereço se tiver." });
-        }
-      }
-    } catch (err) {
-      addMsg({ autor: "ia", texto: "Tive um problema para me conectar agora. Confira sua internet e tente de novo." });
-    } finally {
-      setCarregando(false);
-    }
-  };
-
-  const usarCadastroCliente = (c) => {
-    setRascunho((r) => ({
-      ...r,
-      clienteTelefone: r.clienteTelefone || c.telefone,
-      clienteDocumento: r.clienteDocumento || c.documento,
-      clienteEndereco: r.clienteEndereco || c.endereco,
-    }));
-    setEquipamentosCliente(c.equipamentos || []);
-    if ((c.equipamentos || []).length > 0 && !rascunho?.eqMarca) {
-      addMsg({
-        autor: "ia",
-        texto: `Certo! Este cliente já tem ${c.equipamentos.length > 1 ? "estes equipamentos" : "este equipamento"} no histórico. Algum deles é o de hoje?`,
-        opcoes: [
-          ...c.equipamentos.map((eq) => ({
-            label: [eq.marca, eq.modelo].filter(Boolean).join(" ") + (eq.btu ? ` — ${eq.btu} BTUs` : ""),
-            onClick: () => escolherEquipamento(eq),
-          })),
-          { label: "Nenhum, é um equipamento novo", onClick: () => addMsg({ autor: "ia", texto: "Sem problema, mantenho os dados do equipamento que você já descreveu." }) },
-        ],
-      });
-    } else {
-      addMsg({ autor: "ia", texto: "Cadastro vinculado." });
-    }
-  };
-
-  const escolherEquipamento = (eq) => {
-    setRascunho((r) => ({ ...r, eqTipo: eq.tipo || r.eqTipo, eqMarca: eq.marca || r.eqMarca, eqModelo: eq.modelo || r.eqModelo, eqBtus: eq.btu || r.eqBtus, eqSerie: eq.serie || r.eqSerie }));
-    addMsg({ autor: "ia", texto: "Equipamento vinculado ao histórico deste cliente." });
-  };
-
-  const camposEssenciaisOk = () => rascunho && rascunho.clienteNome && (rascunho.procedimentosRealizados || rascunho.diagnostico || rascunho.problemaRelatado);
-
-  const irParaPreview = () => {
-    if (!camposEssenciaisOk()) {
-      addMsg({ autor: "ia", texto: "Ainda preciso pelo menos do nome do cliente e do que foi feito no atendimento antes de montar a prévia." });
-      return;
-    }
-    setStatusEscolhido(rascunho.procedimentosRealizados ? "FINALIZADA" : "ABERTA");
-    setFase("preview");
-  };
-
-  const toggleMic = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      addMsg({ autor: "ia", texto: "Este navegador não tem suporte a reconhecimento de voz. Pode digitar normalmente." });
-      return;
-    }
-    if (ouvindo) {
-      reconhecimentoRef.current?.stop();
-      return;
-    }
-    const rec = new SR();
-    rec.lang = "pt-BR";
-    rec.interimResults = false;
-    rec.onresult = (e) => {
-      const texto = Array.from(e.results).map((r) => r[0].transcript).join(" ");
-      setEntrada((atual) => (atual ? atual + " " + texto : texto));
-    };
-    rec.onend = () => setOuvindo(false);
-    rec.onerror = () => setOuvindo(false);
-    reconhecimentoRef.current = rec;
-    rec.start();
-    setOuvindo(true);
-  };  const [funcsTodos, setFuncsTodos] = useState([]);
-  useEffect(() => {
-    (async () => {
-      const lista = await window.storage.list("funcionarios:").catch(() => null);
-      if (!lista || !lista.keys) return;
-      const objs = [];
-      for (const chave of lista.keys) {
-        const doc = await window.storage.get(chave).catch(() => null);
-        if (doc) { try { objs.push(JSON.parse(doc.value)); } catch {} }
-      }
-      setFuncsTodos(objs);
-    })();
-  }, []);
-
-  const iaOsMontarParaForm = (r, status) => ({
-    clienteNome: r.clienteNome || "", clienteTelefone: r.clienteTelefone || "", clienteDocumento: r.clienteDocumento || "", clienteEndereco: r.clienteEndereco || "",
-    eqTipo: r.eqTipo || "", eqMarca: r.eqMarca || "", eqModelo: r.eqModelo || "", eqBtus: r.eqBtus || "", eqSerie: r.eqSerie || "",
-    tipoServico: IA_OS_TIPO_SERVICO_OPCOES.includes(r.tipoServico) ? r.tipoServico : "Manutenção",
-    problemaRelatado: r.problemaRelatado || "", diagnostico: r.diagnostico || "",
-    procedimentosRealizados: [r.procedimentosRealizados, r.medicoes ? `Medições: ${r.medicoes}` : ""].filter(Boolean).join("\n"),
-    materiaisUtilizados: r.materiaisUtilizados || "", pecasUtilizadas: r.pecasUtilizadas || "",
-    observacoes: r.observacoes || "",
-    tecnico: r.tecnico || "", ajudante: r.ajudante || "",
-    data: r.data || hojeLocal(), horaEntrada: "", horaSaida: "",
-    maoDeObra: r.maoDeObra || "0", materiais: "0", pecas: r.pecas || "0", deslocamento: "0", desconto: r.desconto || "0",
-    status: status || "ABERTA",
-    garantiaPeriodo: r.garantiaPeriodo || "", garantiaInicio: r.garantiaPeriodo ? (r.data || hojeLocal()) : "", garantiaFim: "", garantiaCondicoes: "",
-    geradaPorIA: true,
-  });
-
-  const registrarHistoricoIA = async (os) => {
-    const id = uid();
-    await window.storage.set(
-      `os-ia-historico:${id}`,
-      JSON.stringify({
-        id,
-        osId: os.id,
-        osNumero: os.numero,
-        mensagens: mensagens.map((m) => ({ autor: m.autor, texto: m.texto })),
-        dadosExtraidos: rascunho,
-        criadoEm: new Date().toISOString(),
-      })
-    ).catch(() => {});
-  };
-
-  const confirmarOS = async () => {
-    setCarregando(true);
-    try {
-      const form = iaOsMontarParaForm(rascunho, statusEscolhido);
-      const os = await persistirOS(form, { funcsTodos, statusOverride: statusEscolhido });
-      setOsConfirmada(os);
-      await registrarHistoricoIA(os);
-      setUltimasGeradas((l) => [os, ...l].slice(0, 8));
-      addMsg({ autor: "ia", texto: `Pronto! OS nº ${os.numero} criada com sucesso.` });
-    } catch (err) {
-      notificarErroBanco(diagnosticarErroFirestore(err, "criar a OS"));
-    } finally {
-      setCarregando(false);
-    }
-  };
-
-  const salvarEdicao = async (os) => {
-    setOsConfirmada(os);
-    await registrarHistoricoIA(os);
-    setUltimasGeradas((l) => [os, ...l.filter((x) => x.id !== os.id)].slice(0, 8));
-    setFase("preview");
-  };
-
-  // ---------------- fase: editar (reaproveita o formulário normal de OS) ----------------
-  if (fase === "editar") {
-    return (
-      <OSForm
-        editingOS={iaOsMontarParaForm(rascunho, statusEscolhido)}
-        onDone={salvarEdicao}
-        onCancel={() => setFase("preview")}
-      />
-    );
-  }
-
-  // ---------------- fase: prévia ----------------
-  if (fase === "preview" && rascunho) {
-    const r = rascunho;
-    const valorTotal = osValorTotal(iaOsMontarParaForm(r, statusEscolhido));
-    return (
-      <div style={{ padding: 16, paddingBottom: 40 }}>
-        <button onClick={() => setFase("chat")} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-          <ChevronLeft size={15} /> voltar ao chat
-        </button>
-
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 4 }}>
-          {osConfirmada ? `OS Nº ${osConfirmada.numero}` : "Prévia da Ordem de Serviço"}
-        </div>
-        <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 18, fontWeight: 700, color: "#F3F3F1", marginBottom: 16 }}>{r.clienteNome || "Cliente não identificado"}</div>
-
-        <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
-          <IaOsCampoLinha label="Equipamento" valor={[r.eqTipo, r.eqMarca, r.eqModelo].filter(Boolean).join(" ") + (r.eqBtus ? ` — ${r.eqBtus} BTUs` : "")} />
-          <IaOsCampoLinha label="Número de série" valor={r.eqSerie} />
-          <IaOsCampoLinha label="Defeito/Reclamação" valor={r.problemaRelatado} />
-          <IaOsCampoLinha label="Diagnóstico" valor={r.diagnostico} />
-          <IaOsCampoLinha label="Serviços realizados" valor={r.procedimentosRealizados} />
-          <IaOsCampoLinha label="Materiais utilizados" valor={r.materiaisUtilizados} />
-          <IaOsCampoLinha label="Peças utilizadas" valor={r.pecasUtilizadas} />
-          <IaOsCampoLinha label="Medições" valor={r.medicoes} />
-          <IaOsCampoLinha label="Observações" valor={r.observacoes} />
-          <IaOsCampoLinha label="Técnico responsável" valor={r.tecnico} />
-          <IaOsCampoLinha label="Ajudante" valor={r.ajudante} />
-          <IaOsCampoLinha label="Forma de pagamento" valor={r.pagamento} />
-          <IaOsCampoLinha label="Garantia" valor={r.garantiaPeriodo} />
-
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 10, paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "#F3F3F1", fontSize: 14, fontWeight: 600 }}>Valor total</span>
-            <span style={{ color: "#E9C878", fontSize: 18, fontWeight: 700 }}>R$ {valorTotal.toFixed(2)}</span>
-          </div>
-        </div>
-
-        {!osConfirmada && (
-          <Field label="Status da OS">
-            <select style={{ ...inputStyle, appearance: "none" }} value={statusEscolhido} onChange={(e) => setStatusEscolhido(e.target.value)}>
-              <option value="ABERTA">Aberta</option>
-              <option value="EM ANDAMENTO">Em andamento</option>
-              <option value="FINALIZADA">Finalizada</option>
-            </select>
-          </Field>
-        )}
-
-        <div style={{ display: "flex", gap: 10, marginTop: 6, marginBottom: 10 }}>
-          <button onClick={() => setFase("editar")} style={{ flex: 1, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", color: "#C7C9CE", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer" }}>
-            Editar
-          </button>
-          {!osConfirmada ? (
-            <button onClick={confirmarOS} disabled={carregando} style={{ flex: 1.4, background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "12px 0", color: "#0A0A0B", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer", opacity: carregando ? 0.6 : 1 }}>
-              {carregando ? "Salvando..." : "Confirmar OS"}
-            </button>
-          ) : (
-            <button onClick={() => onNavigate && onNavigate("os")} style={{ flex: 1.4, background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "12px 0", color: "#0A0A0B", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer" }}>
-              Ver na lista de OS
-            </button>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={() => osConfirmada && osPDF(osConfirmada)} disabled={!osConfirmada} style={{ flex: 1, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", color: osConfirmada ? "#C7C9CE" : "#4A4A4D", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: osConfirmada ? "pointer" : "default" }}>
-            Gerar PDF
-          </button>
-          <button onClick={() => osConfirmada && osWhatsapp(osConfirmada)} disabled={!osConfirmada} style={{ flex: 1, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", color: osConfirmada ? "#C7C9CE" : "#4A4A4D", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: osConfirmada ? "pointer" : "default" }}>
-            Enviar WhatsApp
-          </button>
-        </div>
-        {!osConfirmada && <div style={{ fontSize: 10.5, color: "#6E6E73", marginTop: 8, textAlign: "center" }}>PDF e WhatsApp ficam disponíveis depois de confirmar a OS.</div>}
-      </div>
-    );
-  }
-
-  // ---------------- fase: chat ----------------
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 64px)" }}>
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px" }}>
-        <div style={{ textAlign: "center", marginBottom: 16 }}>
-          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase" }}>Gerador de OS por IA</div>
-          <div style={{ fontSize: 11, color: "#6E6E73", marginTop: 2 }}>Descreva o atendimento realizado</div>
-        </div>
-
-        {mensagens.map((m, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: m.autor === "tecnico" ? "flex-end" : "flex-start", marginBottom: 10 }}>
-            <div style={{ maxWidth: "84%" }}>
-              <div
-                style={{
-                  background: m.autor === "tecnico" ? "linear-gradient(135deg,#C9A24B,#E9C878)" : "#141416",
-                  border: m.autor === "tecnico" ? "none" : "1px solid #2A2A2E",
-                  color: m.autor === "tecnico" ? "#0A0A0B" : "#F3F3F1",
-                  borderRadius: 14,
-                  padding: "10px 14px",
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {m.texto}
-              </div>
-              {m.opcoes && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-                  {m.opcoes.map((op, oi) => (
-                    <button
-                      key={oi}
-                      onClick={() => { op.onClick(); setMensagens((ms) => ms.map((mm) => (mm === m ? { ...mm, opcoes: null } : mm))); }}
-                      style={{ background: "transparent", border: "1px solid rgba(201,162,75,0.5)", borderRadius: 10, padding: "9px 12px", color: "#E9C878", fontSize: 12, fontFamily: "'Roboto',sans-serif", textAlign: "left", cursor: "pointer" }}
-                    >
-                      {op.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {carregando && (
-          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 10 }}>
-            <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: "10px 14px" }}>
-              <Loader2 size={14} className="spin" color="#8A8A90" />
-            </div>
-          </div>
-        )}
-
-        {ultimasGeradas.length > 0 && (
-          <div style={{ marginTop: 26 }}>
-            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#6E6E73", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
-              Últimas OS geradas pela IA
-            </div>
-            {ultimasGeradas.map((os) => (
-              <div key={os.id} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: "10px 12px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 12, color: "#F3F3F1" }}>{os.numero} · {os.clienteNome}</div>
-                  <div style={{ fontSize: 10.5, color: "#8A8A90", marginTop: 2 }}>{[os.eqMarca, os.eqModelo].filter(Boolean).join(" ")} · {os.data ? new Date(os.data).toLocaleDateString("pt-BR") : ""}</div>
-                </div>
-                <span style={{ fontSize: 9.5, color: OS_STATUS_COLOR?.[os.status] || "#8A8A90", fontFamily: "'JetBrains Mono',monospace" }}>{os.status}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {camposEssenciaisOk() && (
-        <div style={{ padding: "0 16px 8px" }}>
-          <button onClick={irParaPreview} style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "11px 0", color: "#0A0A0B", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer" }}>
-            Gerar prévia da OS
-          </button>
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 8, padding: "10px 16px 16px", borderTop: "1px solid #1C1C1F" }}>
-        <button
-          onClick={toggleMic}
-          style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12, border: `1px solid ${ouvindo ? "#C9A24B" : "#2A2A2E"}`, background: ouvindo ? "rgba(201,162,75,0.15)" : "transparent", color: ouvindo ? "#E9C878" : "#8A8A90", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-        >
-          <Mic size={17} />
-        </button>
-        <input
-          value={entrada}
-          onChange={(e) => setEntrada(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && enviarMensagem()}
-          placeholder={erroApi ? "IA indisponível no momento..." : "Descreva o atendimento..."}
-          disabled={!!erroApi}
-          style={{ flex: 1, minWidth: 0, background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "0 14px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 13.5, outline: "none" }}
-        />
-        <button
-          onClick={() => enviarMensagem()}
-          disabled={!entrada.trim() || carregando || !!erroApi}
-          style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12, border: "none", background: "linear-gradient(135deg,#C9A24B,#E9C878)", color: "#0A0A0B", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: !entrada.trim() || carregando || erroApi ? 0.5 : 1 }}
-        >
-          <Send size={16} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function osValorTotal(v) {
   const soma =
     (Number(v.maoDeObra) || 0) + (Number(v.materiais) || 0) + (Number(v.pecas) || 0) + (Number(v.deslocamento) || 0);
@@ -6660,7 +6115,45 @@ function OSForm({ editingOS, onDone, onCancel }) {
   const salvar = async (statusOverride) => {
     setSaving(true);
     try {
-      const os = await persistirOS(form, { funcsTodos, fotosAntes, fotosDepois, assinatura, statusOverride });
+      const id = form.id || uid();
+      const numero = form.numero || (await proximoNumero("OS", "ordens-servico:"));
+      const status = statusOverride || form.status;
+      const os = {
+        ...form,
+        id,
+        numero,
+        status,
+        valorTotal,
+        fotosAntes,
+        fotosDepois,
+        assinatura,
+        createdAt: form.createdAt || new Date().toISOString(),
+        finalizedAt: status === "FINALIZADA" ? new Date().toISOString() : form.finalizedAt || null,
+        remuneracao: montarRemuneracaoOS(funcsTodos, form, status, valorTotal),
+      };
+      await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
+
+      if (status === "FINALIZADA" && valorTotal > 0 && !form.receitaGerada) {
+        const recId = uid();
+        await window.storage.set(
+          `fin-receitas:${recId}`,
+          JSON.stringify({
+            id: recId,
+            servico: form.tipoServico,
+            cliente: form.clienteNome,
+            osId: id,
+            osNumero: numero,
+            data: form.data,
+            valor: valorTotal,
+            formaPagamento: "A definir",
+            status: "pendente",
+            createdAt: new Date().toISOString(),
+          })
+        );
+        os.receitaGerada = true;
+        await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
+      }
+
       onDone(os);
     } catch (err) {
       console.error("Erro ao salvar OS", err);
@@ -19213,7 +18706,6 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "tool-agenda-cortes" && <AgendaCortesModule />}
         {telaVisivel === "tool-visita-tecnica" && <VisitaTecnicaModule />}
         {telaVisivel === "tool-garantias" && <GarantiasModule onNavigate={navigate} usuario={usuario} />}
-        {telaVisivel === "tool-os-ia" && <GeradorOsIaModule onNavigate={navigate} />}
         {telaVisivel === "tool-assinaturas" && <AssinaturasModule />}
         {telaVisivel === "tool-rastreio-tecnico" && <RastreioTecnico />}
         {telaVisivel === "tool-historico-equipamento" && <HistoricoEquipamento />}
