@@ -5,7 +5,7 @@ import {
   Trash2, Snowflake, Zap, Receipt, BarChart3, Eraser, Loader2, RefreshCw, Menu,
   CheckCircle2, Beer, TrendingUp, TrendingDown, Search, Calculator, Sparkles, PackageSearch,
   ClipboardCheck, History, BookOpen, Navigation, LineChart, FileCheck2,
-  CalendarClock, Ruler, MessageSquareText, Bot
+  CalendarClock, Ruler, MessageSquareText, Bot, Mic
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import {
@@ -68,6 +68,8 @@ const FIRESTORE_COLLECTION_MAP = {
   "visitas-tecnicas": "visitas_tecnicas",
   "pmoc-config": "pmoc_config",
   "garantias-extensoes": "garantias_extensoes",
+  "os-ia-historico": "os_ia_historico",
+  "visitas-orcamento": "visitas_orcamento",
   "garantia-config": "garantia_config",
   manuais: "manuais",
 };
@@ -1409,7 +1411,9 @@ const TOOLS = [
   { key: "alla-venda", label: "ALLA VENDA", desc: "Venda de ar-condicionado: catálogo, cotações e propostas", icon: Snowflake, active: true },
   { key: "agenda-cortes", label: "Agenda de Cortes", desc: "Agenda provisória de sábado — Barbearia Serpas", icon: CalendarClock, active: true },
   { key: "visita-tecnica", label: "Visita Técnica", desc: "Vistoria completa com relatório em PDF", icon: ClipboardCheck, active: true },
+  { key: "visita-orcamento", label: "Visita de Orçamento", desc: "Agendamento, confirmação por WhatsApp e orçamento", icon: CalendarClock, active: true },
   { key: "garantias", label: "Garantia Estendida", desc: "Gestão de pós-venda e oportunidades", icon: FileCheck2, active: true },
+  { key: "os-ia", label: "Gerador de OS por IA", desc: "Descreva o atendimento e a IA monta a OS", icon: Bot, active: true },
   { key: "assinaturas", label: "Assinaturas", desc: "Contratos recorrentes, vencimentos e cobrança", icon: CalendarClock, active: true },
   { key: "btu", label: "Calculadora de BTU", desc: "Dimensionamento de ar-condicionado por ambiente", icon: Calculator, active: true },
   { key: "conversor", label: "Conversor Técnico", desc: "BTU, pressão, temperatura, potência e medidas", icon: Ruler, active: true },
@@ -1508,11 +1512,11 @@ function ToolCard({ tool, onClick }) {
 /* Agrupamento visual das ferramentas. Nenhuma ferramenta é removida:
    o que não estiver listado aqui cai automaticamente em "Utilidades". */
 const TOOL_CATEGORIAS = [
-  { titulo: "Gestão", chaves: ["alla-venda", "agenda-cortes", "visita-tecnica", "garantias", "assinaturas", "pmoc-tool"] },
+  { titulo: "Gestão", chaves: ["alla-venda", "agenda-cortes", "visita-tecnica", "visita-orcamento", "garantias", "assinaturas", "pmoc-tool"] },
   { titulo: "Operação", chaves: ["rastreio-tecnico", "laudo-tecnico"] },
   { titulo: "Equipamentos", chaves: ["historico-equipamento", "manuais"] },
   { titulo: "Financeiro", chaves: ["relatorios-financeiros"] },
-  { titulo: "Inteligência Artificial", chaves: ["orcamento-ia", "pecas-ia", "checklist-ia", "assistente-ia"] },
+  { titulo: "Inteligência Artificial", chaves: ["orcamento-ia", "pecas-ia", "checklist-ia", "assistente-ia", "os-ia"] },
   { titulo: "Comunicação", chaves: ["mensagens-whatsapp"] },
   { titulo: "Utilidades", chaves: ["btu", "conversor"] },
 ];
@@ -1522,7 +1526,9 @@ const TOOL_CORES = {
   "alla-venda": "#3FBCD1",
   "agenda-cortes": "#E9C878",
   "visita-tecnica": "#3FBCD1",
+  "visita-orcamento": "#C9A24B",
   "garantias": "#4681DF",
+  "os-ia": "#C9A24B",
   assinaturas: "#C9A24B",
   "pmoc-tool": "#9B8AFB",
   "rastreio-tecnico": "#4681DF",
@@ -5970,6 +5976,1336 @@ const OS_STATUS_COLOR = {
   CANCELADA: "#F0605A",
 };
 
+/* Caminho ÚNICO de gravação de uma OS — usado pelo formulário manual E
+   pelo Gerador de OS por IA. Isso garante que uma OS criada pela IA
+   funcione em tudo exatamente como uma criada à mão: mesma coleção,
+   mesmo cálculo de remuneração, mesma geração de receita no
+   Financeiro — nunca um sistema paralelo. */
+async function persistirOS(form, { funcsTodos = [], fotosAntes = [], fotosDepois = [], assinatura = null, statusOverride, extras = {} } = {}) {
+  const id = form.id || uid();
+  const numero = form.numero || (await proximoNumero("OS", "ordens-servico:"));
+  const status = statusOverride || form.status;
+  const valorTotal = osValorTotal(form);
+  const os = {
+    ...form,
+    ...extras,
+    id,
+    numero,
+    status,
+    valorTotal,
+    fotosAntes,
+    fotosDepois,
+    assinatura,
+    createdAt: form.createdAt || new Date().toISOString(),
+    finalizedAt: status === "FINALIZADA" ? new Date().toISOString() : form.finalizedAt || null,
+    remuneracao: montarRemuneracaoOS(funcsTodos, form, status, valorTotal),
+  };
+  await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
+
+  if (status === "FINALIZADA" && valorTotal > 0 && !form.receitaGerada) {
+    const recId = uid();
+    await window.storage.set(
+      `fin-receitas:${recId}`,
+      JSON.stringify({
+        id: recId,
+        servico: form.tipoServico,
+        cliente: form.clienteNome,
+        osId: id,
+        osNumero: numero,
+        data: form.data,
+        valor: valorTotal,
+        formaPagamento: "A definir",
+        status: "pendente",
+        createdAt: new Date().toISOString(),
+      })
+    );
+    os.receitaGerada = true;
+    await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
+  }
+  return os;
+}
+
+/* ================= Gerador de OS por IA ================= */
+
+const IA_OS_CAMPOS_VAZIOS = {
+  clienteNome: "", clienteDocumento: "", clienteTelefone: "", clienteEndereco: "",
+  eqTipo: "", eqMarca: "", eqModelo: "", eqBtus: "", eqSerie: "",
+  tipoServico: "", problemaRelatado: "", diagnostico: "", procedimentosRealizados: "",
+  materiaisUtilizados: "", pecasUtilizadas: "", observacoes: "",
+  medicoes: "", tecnico: "", ajudante: "", data: "",
+  maoDeObra: "", pecas: "", desconto: "",
+  pagamento: "", garantiaPeriodo: "",
+};
+
+/* Procura, no histórico REAL de OS já salvas, clientes com nome
+   parecido — nunca inventa um cadastro, só reaproveita o que já
+   existe (regra do pedido: reconhecer antes de criar). */
+async function iaOsBuscarClientes(nomeDigitado) {
+  if (!nomeDigitado || !nomeDigitado.trim()) return [];
+  const alvo = nomeDigitado.trim().toLowerCase();
+  const lista = await window.storage.list("ordens-servico:").catch(() => null);
+  if (!lista || !lista.keys) return [];
+  const porCliente = new Map();
+  for (const chave of lista.keys) {
+    const doc = await window.storage.get(chave).catch(() => null);
+    if (!doc) continue;
+    let os;
+    try { os = JSON.parse(doc.value); } catch { continue; }
+    if (!os.clienteNome) continue;
+    const nomeNorm = os.clienteNome.trim().toLowerCase();
+    if (!nomeNorm.includes(alvo) && !alvo.includes(nomeNorm)) continue;
+    const chaveCliente = nomeNorm;
+    if (!porCliente.has(chaveCliente)) {
+      porCliente.set(chaveCliente, { nome: os.clienteNome, telefone: "", documento: "", endereco: "", equipamentos: [], ultimaData: "" });
+    }
+    const c = porCliente.get(chaveCliente);
+    // fica com os dados de contato da OS mais recente daquele cliente
+    if (!c.ultimaData || (os.data || "") > c.ultimaData) {
+      c.telefone = os.clienteTelefone || c.telefone;
+      c.documento = os.clienteDocumento || c.documento;
+      c.endereco = os.clienteEndereco || c.endereco;
+      c.ultimaData = os.data || c.ultimaData;
+    }
+    if (os.eqMarca || os.eqModelo || os.eqBtus) {
+      const chaveEq = `${os.eqMarca}|${os.eqModelo}|${os.eqBtus}|${os.eqSerie}`;
+      if (!c.equipamentos.some((e) => `${e.marca}|${e.modelo}|${e.btu}|${e.serie}` === chaveEq)) {
+        c.equipamentos.push({ tipo: os.eqTipo || "", marca: os.eqMarca || "", modelo: os.eqModelo || "", btu: os.eqBtus || "", serie: os.eqSerie || "" });
+      }
+    }
+  }
+  return Array.from(porCliente.values());
+}
+
+const IA_OS_TIPO_SERVICO_OPCOES = ["Instalação", "Manutenção Preventiva", "Manutenção Corretiva", "Higienização", "Manutenção", "Visita Técnica", "Outro"];
+
+function IaOsCampoLinha({ label, valor }) {
+  if (!valor) return null;
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ fontSize: 10.5, color: "#8A8A90", textTransform: "uppercase", letterSpacing: 0.6, fontFamily: "'JetBrains Mono',monospace" }}>{label}</div>
+      <div style={{ fontSize: 13, color: "#F3F3F1", marginTop: 2, whiteSpace: "pre-wrap" }}>{valor}</div>
+    </div>
+  );
+}
+
+function GeradorOsIaModule({ onNavigate }) {
+  const [mensagens, setMensagens] = useState([
+    { autor: "ia", texto: "Oi! Me conta como foi o atendimento — pode escrever ou falar naturalmente, tipo:\n\n\"Fui atender o João Silva hoje. Fiz manutenção em um Split LG Dual Inverter de 12.000 BTUs, filtro muito sujo. Fiz limpeza completa, higienização e teste. Cobrei R$ 250 no Pix. Garantia de 90 dias.\"" },
+  ]);
+  const [entrada, setEntrada] = useState("");
+  const [rascunho, setRascunho] = useState(null);
+  const [clientesEncontrados, setClientesEncontrados] = useState(null);
+  const [equipamentosCliente, setEquipamentosCliente] = useState([]);
+  const [carregando, setCarregando] = useState(false);
+  const [erroApi, setErroApi] = useState(null);
+  const [fase, setFase] = useState("chat"); // chat | preview | editar
+  const [osConfirmada, setOsConfirmada] = useState(null);
+  const [statusEscolhido, setStatusEscolhido] = useState("ABERTA");
+  const [ultimasGeradas, setUltimasGeradas] = useState([]);
+  const [ouvindo, setOuvindo] = useState(false);
+  const scrollRef = useRef(null);
+  const reconhecimentoRef = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      const lista = await window.storage.list("ordens-servico:").catch(() => null);
+      if (!lista || !lista.keys) return;
+      const itens = [];
+      for (const chave of lista.keys) {
+        const doc = await window.storage.get(chave).catch(() => null);
+        if (!doc) continue;
+        try {
+          const os = JSON.parse(doc.value);
+          if (os.geradaPorIA) itens.push(os);
+        } catch {}
+      }
+      itens.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      setUltimasGeradas(itens.slice(0, 8));
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [mensagens, carregando]);
+
+  const addMsg = (m) => setMensagens((ms) => [...ms, m]);
+  const algumCampoPreenchido = (r) => r && Object.values(r).some((v) => v && String(v).trim());
+
+  const enviarMensagem = async (textoForcado) => {
+    const texto = (textoForcado ?? entrada).trim();
+    if (!texto || carregando) return;
+    addMsg({ autor: "tecnico", texto });
+    setEntrada("");
+    setCarregando(true);
+    setErroApi(null);
+    try {
+      const resp = await fetch("/api/gerar-os-ia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mensagem: texto,
+          osAtual: algumCampoPreenchido(rascunho) ? rascunho : null,
+          equipamentosCliente: equipamentosCliente.length ? equipamentosCliente : undefined,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+
+      if (resp.status === 501) {
+        setErroApi(data.mensagem || "O Gerador de OS por IA ainda não está configurado.");
+        addMsg({ autor: "ia", texto: data.mensagem || "O Gerador de OS por IA ainda não está configurado neste servidor. Fale com quem administra o sistema." });
+        return;
+      }
+      if (!resp.ok) {
+        addMsg({ autor: "ia", texto: "Não consegui interpretar essa mensagem agora. Pode tentar de novo?" });
+        return;
+      }
+
+      const novoRascunho = { ...IA_OS_CAMPOS_VAZIOS, ...rascunho, ...data.campos };
+      setRascunho(novoRascunho);
+
+      if (data.pergunta) {
+        addMsg({ autor: "ia", texto: data.pergunta });
+      } else {
+        addMsg({ autor: "ia", texto: "Entendi. Pode me contar mais algum detalhe, ou tocar em \"Gerar prévia da OS\" quando estiver pronto." });
+      }
+
+      // reconhecimento de cliente — só na primeira vez que um nome aparece
+      if (novoRascunho.clienteNome && clientesEncontrados === null) {
+        const achados = await iaOsBuscarClientes(novoRascunho.clienteNome);
+        setClientesEncontrados(achados);
+        if (achados.length === 1) {
+          const c = achados[0];
+          addMsg({
+            autor: "ia",
+            texto: `Cliente encontrado: ${c.nome} — deseja usar este cadastro?`,
+            opcoes: [
+              { label: "Usar este cadastro", onClick: () => usarCadastroCliente(c) },
+              { label: "É outro cliente", onClick: () => addMsg({ autor: "ia", texto: "Combinado, vou tratar como um cliente novo." }) },
+            ],
+          });
+        } else if (achados.length > 1) {
+          addMsg({
+            autor: "ia",
+            texto: "Encontrei mais de um cliente parecido. Qual deles é?",
+            opcoes: achados.map((c) => ({ label: c.nome + (c.telefone ? ` — ${c.telefone}` : ""), onClick: () => usarCadastroCliente(c) })),
+          });
+        } else {
+          addMsg({ autor: "ia", texto: "Não encontrei esse cliente no histórico. Vou cadastrar como novo — pode me passar telefone e endereço se tiver." });
+        }
+      }
+    } catch (err) {
+      addMsg({ autor: "ia", texto: "Tive um problema para me conectar agora. Confira sua internet e tente de novo." });
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  const usarCadastroCliente = (c) => {
+    setRascunho((r) => ({
+      ...r,
+      clienteTelefone: r.clienteTelefone || c.telefone,
+      clienteDocumento: r.clienteDocumento || c.documento,
+      clienteEndereco: r.clienteEndereco || c.endereco,
+    }));
+    setEquipamentosCliente(c.equipamentos || []);
+    if ((c.equipamentos || []).length > 0 && !rascunho?.eqMarca) {
+      addMsg({
+        autor: "ia",
+        texto: `Certo! Este cliente já tem ${c.equipamentos.length > 1 ? "estes equipamentos" : "este equipamento"} no histórico. Algum deles é o de hoje?`,
+        opcoes: [
+          ...c.equipamentos.map((eq) => ({
+            label: [eq.marca, eq.modelo].filter(Boolean).join(" ") + (eq.btu ? ` — ${eq.btu} BTUs` : ""),
+            onClick: () => escolherEquipamento(eq),
+          })),
+          { label: "Nenhum, é um equipamento novo", onClick: () => addMsg({ autor: "ia", texto: "Sem problema, mantenho os dados do equipamento que você já descreveu." }) },
+        ],
+      });
+    } else {
+      addMsg({ autor: "ia", texto: "Cadastro vinculado." });
+    }
+  };
+
+  const escolherEquipamento = (eq) => {
+    setRascunho((r) => ({ ...r, eqTipo: eq.tipo || r.eqTipo, eqMarca: eq.marca || r.eqMarca, eqModelo: eq.modelo || r.eqModelo, eqBtus: eq.btu || r.eqBtus, eqSerie: eq.serie || r.eqSerie }));
+    addMsg({ autor: "ia", texto: "Equipamento vinculado ao histórico deste cliente." });
+  };
+
+  const camposEssenciaisOk = () => rascunho && rascunho.clienteNome && (rascunho.procedimentosRealizados || rascunho.diagnostico || rascunho.problemaRelatado);
+
+  const irParaPreview = () => {
+    if (!camposEssenciaisOk()) {
+      addMsg({ autor: "ia", texto: "Ainda preciso pelo menos do nome do cliente e do que foi feito no atendimento antes de montar a prévia." });
+      return;
+    }
+    setStatusEscolhido(rascunho.procedimentosRealizados ? "FINALIZADA" : "ABERTA");
+    setFase("preview");
+  };
+
+  const toggleMic = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      addMsg({ autor: "ia", texto: "Este navegador não tem suporte a reconhecimento de voz. Pode digitar normalmente." });
+      return;
+    }
+    if (ouvindo) {
+      reconhecimentoRef.current?.stop();
+      return;
+    }
+    const rec = new SR();
+    rec.lang = "pt-BR";
+    rec.interimResults = false;
+    rec.onresult = (e) => {
+      const texto = Array.from(e.results).map((r) => r[0].transcript).join(" ");
+      setEntrada((atual) => (atual ? atual + " " + texto : texto));
+    };
+    rec.onend = () => setOuvindo(false);
+    rec.onerror = () => setOuvindo(false);
+    reconhecimentoRef.current = rec;
+    rec.start();
+    setOuvindo(true);
+  };  const [funcsTodos, setFuncsTodos] = useState([]);
+  useEffect(() => {
+    (async () => {
+      const lista = await window.storage.list("funcionarios:").catch(() => null);
+      if (!lista || !lista.keys) return;
+      const objs = [];
+      for (const chave of lista.keys) {
+        const doc = await window.storage.get(chave).catch(() => null);
+        if (doc) { try { objs.push(JSON.parse(doc.value)); } catch {} }
+      }
+      setFuncsTodos(objs);
+    })();
+  }, []);
+
+  const iaOsMontarParaForm = (r, status) => ({
+    clienteNome: r.clienteNome || "", clienteTelefone: r.clienteTelefone || "", clienteDocumento: r.clienteDocumento || "", clienteEndereco: r.clienteEndereco || "",
+    eqTipo: r.eqTipo || "", eqMarca: r.eqMarca || "", eqModelo: r.eqModelo || "", eqBtus: r.eqBtus || "", eqSerie: r.eqSerie || "",
+    tipoServico: IA_OS_TIPO_SERVICO_OPCOES.includes(r.tipoServico) ? r.tipoServico : "Manutenção",
+    problemaRelatado: r.problemaRelatado || "", diagnostico: r.diagnostico || "",
+    procedimentosRealizados: [r.procedimentosRealizados, r.medicoes ? `Medições: ${r.medicoes}` : ""].filter(Boolean).join("\n"),
+    materiaisUtilizados: r.materiaisUtilizados || "", pecasUtilizadas: r.pecasUtilizadas || "",
+    observacoes: r.observacoes || "",
+    tecnico: r.tecnico || "", ajudante: r.ajudante || "",
+    data: r.data || hojeLocal(), horaEntrada: "", horaSaida: "",
+    maoDeObra: r.maoDeObra || "0", materiais: "0", pecas: r.pecas || "0", deslocamento: "0", desconto: r.desconto || "0",
+    status: status || "ABERTA",
+    garantiaPeriodo: r.garantiaPeriodo || "", garantiaInicio: r.garantiaPeriodo ? (r.data || hojeLocal()) : "", garantiaFim: "", garantiaCondicoes: "",
+    geradaPorIA: true,
+  });
+
+  const registrarHistoricoIA = async (os) => {
+    const id = uid();
+    await window.storage.set(
+      `os-ia-historico:${id}`,
+      JSON.stringify({
+        id,
+        osId: os.id,
+        osNumero: os.numero,
+        mensagens: mensagens.map((m) => ({ autor: m.autor, texto: m.texto })),
+        dadosExtraidos: rascunho,
+        criadoEm: new Date().toISOString(),
+      })
+    ).catch(() => {});
+  };
+
+  const confirmarOS = async () => {
+    setCarregando(true);
+    try {
+      const form = iaOsMontarParaForm(rascunho, statusEscolhido);
+      const os = await persistirOS(form, { funcsTodos, statusOverride: statusEscolhido });
+      setOsConfirmada(os);
+      await registrarHistoricoIA(os);
+      setUltimasGeradas((l) => [os, ...l].slice(0, 8));
+      addMsg({ autor: "ia", texto: `Pronto! OS nº ${os.numero} criada com sucesso.` });
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "criar a OS"));
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  const salvarEdicao = async (os) => {
+    setOsConfirmada(os);
+    await registrarHistoricoIA(os);
+    setUltimasGeradas((l) => [os, ...l.filter((x) => x.id !== os.id)].slice(0, 8));
+    setFase("preview");
+  };
+
+  // ---------------- fase: editar (reaproveita o formulário normal de OS) ----------------
+  if (fase === "editar") {
+    return (
+      <OSForm
+        editingOS={iaOsMontarParaForm(rascunho, statusEscolhido)}
+        onDone={salvarEdicao}
+        onCancel={() => setFase("preview")}
+      />
+    );
+  }
+
+  // ---------------- fase: prévia ----------------
+  if (fase === "preview" && rascunho) {
+    const r = rascunho;
+    const valorTotal = osValorTotal(iaOsMontarParaForm(r, statusEscolhido));
+    return (
+      <div style={{ padding: 16, paddingBottom: 40 }}>
+        <button onClick={() => setFase("chat")} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+          <ChevronLeft size={15} /> voltar ao chat
+        </button>
+
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 4 }}>
+          {osConfirmada ? `OS Nº ${osConfirmada.numero}` : "Prévia da Ordem de Serviço"}
+        </div>
+        <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 18, fontWeight: 700, color: "#F3F3F1", marginBottom: 16 }}>{r.clienteNome || "Cliente não identificado"}</div>
+
+        <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
+          <IaOsCampoLinha label="Equipamento" valor={[r.eqTipo, r.eqMarca, r.eqModelo].filter(Boolean).join(" ") + (r.eqBtus ? ` — ${r.eqBtus} BTUs` : "")} />
+          <IaOsCampoLinha label="Número de série" valor={r.eqSerie} />
+          <IaOsCampoLinha label="Defeito/Reclamação" valor={r.problemaRelatado} />
+          <IaOsCampoLinha label="Diagnóstico" valor={r.diagnostico} />
+          <IaOsCampoLinha label="Serviços realizados" valor={r.procedimentosRealizados} />
+          <IaOsCampoLinha label="Materiais utilizados" valor={r.materiaisUtilizados} />
+          <IaOsCampoLinha label="Peças utilizadas" valor={r.pecasUtilizadas} />
+          <IaOsCampoLinha label="Medições" valor={r.medicoes} />
+          <IaOsCampoLinha label="Observações" valor={r.observacoes} />
+          <IaOsCampoLinha label="Técnico responsável" valor={r.tecnico} />
+          <IaOsCampoLinha label="Ajudante" valor={r.ajudante} />
+          <IaOsCampoLinha label="Forma de pagamento" valor={r.pagamento} />
+          <IaOsCampoLinha label="Garantia" valor={r.garantiaPeriodo} />
+
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 10, paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: "#F3F3F1", fontSize: 14, fontWeight: 600 }}>Valor total</span>
+            <span style={{ color: "#E9C878", fontSize: 18, fontWeight: 700 }}>R$ {valorTotal.toFixed(2)}</span>
+          </div>
+        </div>
+
+        {!osConfirmada && (
+          <Field label="Status da OS">
+            <select style={{ ...inputStyle, appearance: "none" }} value={statusEscolhido} onChange={(e) => setStatusEscolhido(e.target.value)}>
+              <option value="ABERTA">Aberta</option>
+              <option value="EM ANDAMENTO">Em andamento</option>
+              <option value="FINALIZADA">Finalizada</option>
+            </select>
+          </Field>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 6, marginBottom: 10 }}>
+          <button onClick={() => setFase("editar")} style={{ flex: 1, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", color: "#C7C9CE", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer" }}>
+            Editar
+          </button>
+          {!osConfirmada ? (
+            <button onClick={confirmarOS} disabled={carregando} style={{ flex: 1.4, background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "12px 0", color: "#0A0A0B", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer", opacity: carregando ? 0.6 : 1 }}>
+              {carregando ? "Salvando..." : "Confirmar OS"}
+            </button>
+          ) : (
+            <button onClick={() => onNavigate && onNavigate("os")} style={{ flex: 1.4, background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "12px 0", color: "#0A0A0B", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer" }}>
+              Ver na lista de OS
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={() => osConfirmada && osPDF(osConfirmada)} disabled={!osConfirmada} style={{ flex: 1, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", color: osConfirmada ? "#C7C9CE" : "#4A4A4D", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: osConfirmada ? "pointer" : "default" }}>
+            Gerar PDF
+          </button>
+          <button onClick={() => osConfirmada && osWhatsapp(osConfirmada)} disabled={!osConfirmada} style={{ flex: 1, background: "transparent", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 0", color: osConfirmada ? "#C7C9CE" : "#4A4A4D", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: osConfirmada ? "pointer" : "default" }}>
+            Enviar WhatsApp
+          </button>
+        </div>
+        {!osConfirmada && <div style={{ fontSize: 10.5, color: "#6E6E73", marginTop: 8, textAlign: "center" }}>PDF e WhatsApp ficam disponíveis depois de confirmar a OS.</div>}
+      </div>
+    );
+  }
+
+  // ---------------- fase: chat ----------------
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 64px)" }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px" }}>
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase" }}>Gerador de OS por IA</div>
+          <div style={{ fontSize: 11, color: "#6E6E73", marginTop: 2 }}>Descreva o atendimento realizado</div>
+        </div>
+
+        {mensagens.map((m, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: m.autor === "tecnico" ? "flex-end" : "flex-start", marginBottom: 10 }}>
+            <div style={{ maxWidth: "84%" }}>
+              <div
+                style={{
+                  background: m.autor === "tecnico" ? "linear-gradient(135deg,#C9A24B,#E9C878)" : "#141416",
+                  border: m.autor === "tecnico" ? "none" : "1px solid #2A2A2E",
+                  color: m.autor === "tecnico" ? "#0A0A0B" : "#F3F3F1",
+                  borderRadius: 14,
+                  padding: "10px 14px",
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {m.texto}
+              </div>
+              {m.opcoes && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                  {m.opcoes.map((op, oi) => (
+                    <button
+                      key={oi}
+                      onClick={() => { op.onClick(); setMensagens((ms) => ms.map((mm) => (mm === m ? { ...mm, opcoes: null } : mm))); }}
+                      style={{ background: "transparent", border: "1px solid rgba(201,162,75,0.5)", borderRadius: 10, padding: "9px 12px", color: "#E9C878", fontSize: 12, fontFamily: "'Roboto',sans-serif", textAlign: "left", cursor: "pointer" }}
+                    >
+                      {op.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {carregando && (
+          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 10 }}>
+            <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: "10px 14px" }}>
+              <Loader2 size={14} className="spin" color="#8A8A90" />
+            </div>
+          </div>
+        )}
+
+        {ultimasGeradas.length > 0 && (
+          <div style={{ marginTop: 26 }}>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#6E6E73", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
+              Últimas OS geradas pela IA
+            </div>
+            {ultimasGeradas.map((os) => (
+              <div key={os.id} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: "10px 12px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "#F3F3F1" }}>{os.numero} · {os.clienteNome}</div>
+                  <div style={{ fontSize: 10.5, color: "#8A8A90", marginTop: 2 }}>{[os.eqMarca, os.eqModelo].filter(Boolean).join(" ")} · {os.data ? new Date(os.data).toLocaleDateString("pt-BR") : ""}</div>
+                </div>
+                <span style={{ fontSize: 9.5, color: OS_STATUS_COLOR?.[os.status] || "#8A8A90", fontFamily: "'JetBrains Mono',monospace" }}>{os.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {camposEssenciaisOk() && (
+        <div style={{ padding: "0 16px 8px" }}>
+          <button onClick={irParaPreview} style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "11px 0", color: "#0A0A0B", fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", cursor: "pointer" }}>
+            Gerar prévia da OS
+          </button>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, padding: "10px 16px 16px", borderTop: "1px solid #1C1C1F" }}>
+        <button
+          onClick={toggleMic}
+          style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12, border: `1px solid ${ouvindo ? "#C9A24B" : "#2A2A2E"}`, background: ouvindo ? "rgba(201,162,75,0.15)" : "transparent", color: ouvindo ? "#E9C878" : "#8A8A90", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+        >
+          <Mic size={17} />
+        </button>
+        <input
+          value={entrada}
+          onChange={(e) => setEntrada(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && enviarMensagem()}
+          placeholder={erroApi ? "IA indisponível no momento..." : "Descreva o atendimento..."}
+          disabled={!!erroApi}
+          style={{ flex: 1, minWidth: 0, background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "0 14px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 13.5, outline: "none" }}
+        />
+        <button
+          onClick={() => enviarMensagem()}
+          disabled={!entrada.trim() || carregando || !!erroApi}
+          style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12, border: "none", background: "linear-gradient(135deg,#C9A24B,#E9C878)", color: "#0A0A0B", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: !entrada.trim() || carregando || erroApi ? 0.5 : 1 }}
+        >
+          <Send size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ================= Visita de Orçamento ================= */
+
+const VISITA_TIPOS_SERVICO = [
+  "Instalação de ar-condicionado", "Manutenção preventiva", "Manutenção corretiva",
+  "Limpeza e higienização", "Infraestrutura de climatização", "Sistemas comerciais de climatização",
+  "PMOC", "Serviços elétricos", "Instalação de ventiladores", "Outros serviços",
+];
+const VISITA_STATUS = ["Agendada", "Em andamento", "Concluída", "Cancelada"];
+const VISITA_STATUS_COR = { "Agendada": "#E9C878", "Em andamento": "#4681DF", "Concluída": "#4ADE80", "Cancelada": "#F0605A" };
+const VISITA_ORIGEM_OPCOES = ["Telefone", "WhatsApp", "Indicação", "Site", "Instagram/Redes sociais", "Outro"];
+
+/* Nunca mostra "confirmado" sem uma ação explícita do usuário — clicar em
+   enviar só prova que a mensagem foi PREPARADA, não que o cliente recebeu
+   ou confirmou (regra central do pedido). */
+const VISITA_CONF_LABEL = {
+  "nao_preparada": "Confirmação ainda não preparada",
+  "preparada": "Mensagem preparada",
+  "aguardando_envio": "Aguardando confirmação do cliente",
+  "confirmacao_registrada": "Confirmação registrada",
+  "cliente_confirmou": "Cliente confirmou a visita",
+  "reagendada": "Visita reagendada",
+  "cancelada": "Visita cancelada",
+};
+const VISITA_CONF_COR = {
+  "nao_preparada": "#6E6E73", "preparada": "#8A8A90", "aguardando_envio": "#E9C878",
+  "confirmacao_registrada": "#4681DF", "cliente_confirmou": "#4ADE80", "reagendada": "#C9A24B", "cancelada": "#F0605A",
+};
+
+const VISITA_ITENS_INSTALACAO = [
+  "Local da evaporadora", "Local da condensadora", "Distância estimada entre as unidades",
+  "Tubulação de cobre e bitolas previstas", "Isolamento térmico", "Dreno", "Suporte da condensadora",
+  "Infraestrutura elétrica", "Circuito dedicado e disjuntor", "Passagem de tubulação", "Perfurações",
+  "Altura de instalação", "Acesso e necessidade de equipamentos especiais", "Materiais complementares",
+];
+const VISITA_ITENS_MANUTENCAO = [
+  "Quantidade de equipamentos", "Tipo e capacidade", "Condição aparente", "Acesso para manutenção",
+  "Necessidade de desmontagem", "Serviço solicitado", "Peças possivelmente necessárias", "Observações e pendências",
+];
+function visitaItensChecklist(tipoServico) {
+  if (tipoServico === "Instalação de ar-condicionado") return VISITA_ITENS_INSTALACAO;
+  if (tipoServico === "Manutenção preventiva" || tipoServico === "Manutenção corretiva" || tipoServico === "Limpeza e higienização") return VISITA_ITENS_MANUTENCAO;
+  return null; // serviços elétricos e outros: campo livre, sem checklist fixo
+}
+
+/* Telefone brasileiro normalizado pro link do WhatsApp — só dígitos, com
+   código do país 55 na frente (sem duplicar se já tiver). */
+function normalizarTelefoneBR(tel) {
+  let n = (tel || "").replace(/\D/g, "");
+  if (!n) return "";
+  if (n.startsWith("55") && (n.length === 12 || n.length === 13)) return n;
+  return "55" + n;
+}
+
+function visitaDataHoraBR(v) {
+  const data = v.data ? new Date(v.data + "T12:00:00").toLocaleDateString("pt-BR") : "";
+  return { data, horario: v.horario || "" };
+}
+
+/* Gera a mensagem de confirmação — nunca manda linha de campo vazio nem
+   placeholder tipo "[ENDEREÇO]" sem valor real. */
+function visitaMontarMensagemConfirmacao(v) {
+  const { data, horario } = visitaDataHoraBR(v);
+  return [
+    `Olá, ${v.clienteNome || "cliente"}! Tudo bem?`,
+    "",
+    "Aqui é da ALLA SERVICE.",
+    "",
+    "Estamos entrando em contato para confirmar nossa visita presencial para avaliação do serviço solicitado e levantamento das informações necessárias para elaboração do seu orçamento.",
+    "",
+    "CONFIRMAÇÃO DE VISITA",
+    "",
+    data ? `📅 Data: ${data}` : "",
+    horario ? `🕒 Horário: ${horario}` : "",
+    v.endereco ? `📍 Endereço: ${v.endereco}` : "",
+    v.tipoServico ? `🔧 Serviço: ${v.tipoServico}` : "",
+    v.responsavel ? `👨‍🔧 Responsável: ${v.responsavel}` : "",
+    "",
+    "Durante a visita, avaliaremos as condições do local, as necessidades técnicas e os materiais necessários para preparar uma proposta adequada ao seu projeto.",
+    "",
+    "Nosso compromisso é oferecer um atendimento profissional, transparente e uma solução dimensionada de acordo com as necessidades do serviço.",
+    "",
+    "Por gentileza, confirme se a data e o horário estão de acordo.",
+    "",
+    "Agradecemos pela confiança na ALLA SERVICE.",
+    "",
+    "ALLA SERVICE",
+    "Climatização, refrigeração e serviços elétricos.",
+  ].filter((l) => l !== "" || true).join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function visitaMontarMensagemLembrete(v) {
+  const { data, horario } = visitaDataHoraBR(v);
+  return [
+    `Olá, ${v.clienteNome || "cliente"}! Tudo bem?`,
+    "",
+    `Passando para lembrar da nossa visita da ALLA SERVICE${data ? `, agendada para ${data}` : ""}${horario ? `, às ${horario}` : ""}${v.endereco ? `, no endereço ${v.endereco}` : ""}.`,
+    "",
+    "Estaremos realizando a avaliação presencial para entender as necessidades do serviço e preparar seu orçamento.",
+    "",
+    "Caso precise ajustar o horário, por gentileza, entre em contato conosco por aqui.",
+    "",
+    "Agradecemos pela preferência!",
+    "",
+    "ALLA SERVICE",
+  ].join("\n");
+}
+
+function visitaMontarMensagemReagendamento(v) {
+  const { data, horario } = visitaDataHoraBR(v);
+  return [
+    `Olá, ${v.clienteNome || "cliente"}!`,
+    "",
+    "Precisamos reagendar nossa visita da ALLA SERVICE.",
+    "",
+    data ? `📅 Nova data: ${data}` : "",
+    horario ? `🕒 Novo horário: ${horario}` : "",
+    v.endereco ? `📍 Endereço: ${v.endereco}` : "",
+    "",
+    "Por gentileza, confirme se o novo horário está de acordo.",
+    "",
+    "ALLA SERVICE",
+  ].filter(Boolean).join("\n");
+}
+
+function visitaMontarMensagemCancelamento(v, motivo) {
+  return [
+    `Olá, ${v.clienteNome || "cliente"}!`,
+    "",
+    "Precisamos cancelar a visita da ALLA SERVICE que estava agendada" + (visitaDataHoraBR(v).data ? ` para ${visitaDataHoraBR(v).data}` : "") + ".",
+    motivo ? `\nMotivo: ${motivo}` : "",
+    "",
+    "Qualquer dúvida ou para reagendar, estamos à disposição.",
+    "",
+    "ALLA SERVICE",
+  ].filter(Boolean).join("\n");
+}
+
+/* Fotos com legenda — mesmo padrão real de armazenamento do OSFotos
+   (dataURL guardado no próprio documento), com um campo de legenda a
+   mais por imagem. */
+function VisitaFotos({ fotos, setFotos }) {
+  const fileInputRef = useRef(null);
+  const addFotos = async (e) => {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      try {
+        const dataUrl = await resizeImage(file);
+        setFotos((f) => [...f, { id: uid(), src: dataUrl, legenda: "" }]);
+      } catch {
+        /* skip */
+      }
+    }
+    e.target.value = "";
+  };
+  return (
+    <Field label={`Fotos e anexos (${fotos.length})`}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        {fotos.map((f) => (
+          <div key={f.id} style={{ width: 92 }}>
+            <div style={{ position: "relative", width: 92, height: 92 }}>
+              <img src={f.src} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid #2A2A2E" }} />
+              <button
+                onClick={() => setFotos((fs) => fs.filter((x) => x.id !== f.id))}
+                style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#F0605A", border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+              >
+                <X size={10} />
+              </button>
+            </div>
+            <input
+              value={f.legenda}
+              onChange={(e) => setFotos((fs) => fs.map((x) => (x.id === f.id ? { ...x, legenda: e.target.value } : x)))}
+              placeholder="Legenda (ex: Dreno)"
+              style={{ width: "100%", boxSizing: "border-box", marginTop: 4, background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 6, padding: "4px 6px", color: "#C7C9CE", fontSize: 10, outline: "none" }}
+            />
+          </div>
+        ))}
+        <button onClick={() => fileInputRef.current.click()} style={{ width: 92, height: 92, borderRadius: 8, border: "1px dashed #3A3A3E", background: "#141416", display: "flex", alignItems: "center", justifyContent: "center", color: "#8A8A90", cursor: "pointer" }}>
+          <Camera size={18} />
+        </button>
+      </div>
+      <input ref={fileInputRef} type="file" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={addFotos} />
+    </Field>
+  );
+}
+
+function VisitaOrcamentoForm({ editing, onDone, onCancel }) {
+  const [clienteNome, setClienteNome] = useState(editing?.clienteNome || "");
+  const [clienteTelefone, setClienteTelefone] = useState(editing?.clienteTelefone || "");
+  const [clienteEmail, setClienteEmail] = useState(editing?.clienteEmail || "");
+  const [clienteDocumento, setClienteDocumento] = useState(editing?.clienteDocumento || "");
+  const [nomeContato, setNomeContato] = useState(editing?.nomeContato || "");
+  const [endereco, setEndereco] = useState(editing?.endereco || "");
+  const [complemento, setComplemento] = useState(editing?.complemento || "");
+  const [data, setData] = useState(editing?.data || hojeLocal());
+  const [horario, setHorario] = useState(editing?.horario || "");
+  const [tipoServico, setTipoServico] = useState(editing?.tipoServico || VISITA_TIPOS_SERVICO[0]);
+  const [responsavel, setResponsavel] = useState(editing?.responsavel || "");
+  const [origemContato, setOrigemContato] = useState(editing?.origemContato || "");
+  const [observacoesAtendimento, setObservacoesAtendimento] = useState(editing?.observacoesAtendimento || "");
+
+  const [clientesExistentes, setClientesExistentes] = useState(null);
+  const [tecnicos, setTecnicos] = useState([]);
+
+  // avaliação do local — campos gerais, válidos pra qualquer tipo de serviço
+  const [av, setAv] = useState(
+    editing?.avaliacao || {
+      necessidade: "", condicoesLocal: "", qtdEquipamentos: "", marcaModelo: "", capacidadeBtus: "",
+      medidas: "", dificuldadeAcesso: "", infraExistente: "", materiaisNecessarios: "", servicosAdicionais: "",
+      necessidadeAdequacoes: "", pendencias: "", observacoesTecnicas: "",
+    }
+  );
+  const setAvCampo = (k) => (e) => setAv((a) => ({ ...a, [k]: e.target.value }));
+
+  // checklist específico por tipo de serviço (Instalação / Manutenção)
+  const itensChecklist = visitaItensChecklist(tipoServico);
+  const [checklist, setChecklist] = useState(editing?.checklist || {});
+  useEffect(() => {
+    if (!itensChecklist) return;
+    setChecklist((c) => {
+      const novo = { ...c };
+      itensChecklist.forEach((item) => { if (!novo[item]) novo[item] = { status: "PENDENTE", obs: "" }; });
+      return novo;
+    });
+  }, [tipoServico]);
+
+  const [fotos, setFotos] = useState(editing?.fotos || []);
+  const [materiais, setMateriais] = useState(editing?.materiais || []);
+
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    buscarClientesReais().then(setClientesExistentes);
+    (async () => {
+      const lista = await window.storage.list("funcionarios:").catch(() => null);
+      const nomes = [];
+      for (const chave of (lista && lista.keys) || []) {
+        const doc = await window.storage.get(chave).catch(() => null);
+        if (!doc) continue;
+        try { const f = JSON.parse(doc.value); if (f.nome && f.status !== "Inativo") nomes.push(f.nome); } catch {}
+      }
+      setTecnicos(nomes);
+    })();
+  }, []);
+
+  const selecionarClienteExistente = (nome) => {
+    const c = (clientesExistentes || []).find((x) => x.nome === nome);
+    if (c) { setClienteNome(c.nome); setClienteTelefone(c.telefone || ""); }
+  };
+
+  const addMaterial = () => setMateriais((m) => [...m, { id: uid(), descricao: "", categoria: "Material", quantidade: "1", unidade: "un", valorUnitario: "0", observacoes: "" }]);
+  const atualizarMaterial = (id, campo, valor) => setMateriais((m) => m.map((it) => (it.id === id ? { ...it, [campo]: valor } : it)));
+  const removerMaterial = (id) => setMateriais((m) => m.filter((it) => it.id !== id));
+  const materialTotal = (it) => (Number(it.quantidade) || 0) * (Number(it.valorUnitario) || 0);
+
+  const salvar = async (statusOverride) => {
+    if (!clienteNome.trim() || !clienteTelefone.trim() || !data || !horario || !endereco.trim() || !tipoServico || !responsavel.trim()) {
+      notificarErroBanco("Preencha cliente, telefone, data, horário, endereço, tipo de serviço e responsável antes de salvar.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const id = editing?.id || uid();
+      const numero = editing?.numero || (await proximoNumero("VO", "visitas-orcamento:"));
+      const alteracao = { data: new Date().toISOString(), evento: editing ? "Visita editada" : "Visita agendada" };
+      const visita = {
+        id, numero,
+        clienteNome: clienteNome.trim(), clienteTelefone: clienteTelefone.trim(), clienteEmail, clienteDocumento, nomeContato,
+        endereco: endereco.trim(), complemento,
+        data, horario, tipoServico, responsavel: responsavel.trim(), origemContato, observacoesAtendimento,
+        status: statusOverride || editing?.status || "Agendada",
+        avaliacao: av, checklist, fotos, materiais,
+        confirmacao: editing?.confirmacao || { status: "nao_preparada" },
+        historicoConfirmacoes: editing?.historicoConfirmacoes || [],
+        historicoAlteracoes: [...(editing?.historicoAlteracoes || []), alteracao],
+        orcamentoId: editing?.orcamentoId || null, orcamentoNumero: editing?.orcamentoNumero || null,
+        osId: editing?.osId || null, osNumero: editing?.osNumero || null,
+        createdAt: editing?.createdAt || new Date().toISOString(),
+      };
+      await window.storage.set(`visitas-orcamento:${id}`, JSON.stringify(visita));
+      onDone(visita);
+    } catch (err) {
+      notificarErroBanco(diagnosticarErroFirestore(err, "salvar a visita"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 100 }}>
+      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Cliente</div>
+      <Field label="Nome">
+        <input list="visita-clientes-lista" style={inputStyle} value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} onBlur={() => selecionarClienteExistente(clienteNome)} />
+        <datalist id="visita-clientes-lista">{(clientesExistentes || []).map((c) => <option key={c.nome} value={c.nome} />)}</datalist>
+      </Field>
+      <LinhaDupla>
+        <Field label="Telefone/WhatsApp"><input style={inputStyle} value={clienteTelefone} onChange={(e) => setClienteTelefone(e.target.value)} inputMode="numeric" /></Field>
+        <Field label="E-mail"><input style={inputStyle} value={clienteEmail} onChange={(e) => setClienteEmail(e.target.value)} /></Field>
+      </LinhaDupla>
+      <LinhaDupla>
+        <Field label="Nome do contato (se diferente)"><input style={inputStyle} value={nomeContato} onChange={(e) => setNomeContato(e.target.value)} /></Field>
+        <Field label="CPF/CNPJ"><input style={inputStyle} value={clienteDocumento} onChange={(e) => setClienteDocumento(e.target.value)} /></Field>
+      </LinhaDupla>
+      <Field label="Endereço do atendimento"><input style={inputStyle} value={endereco} onChange={(e) => setEndereco(e.target.value)} /></Field>
+      <Field label="Complemento / ponto de referência"><input style={inputStyle} value={complemento} onChange={(e) => setComplemento(e.target.value)} /></Field>
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Agendamento</div>
+      <LinhaDupla>
+        <Field label="Data"><input type="date" style={inputStyle} value={data} onChange={(e) => setData(e.target.value)} /></Field>
+        <Field label="Horário"><input type="time" style={inputStyle} value={horario} onChange={(e) => setHorario(e.target.value)} /></Field>
+      </LinhaDupla>
+      <Field label="Tipo de serviço">
+        <select style={{ ...inputStyle, appearance: "none" }} value={tipoServico} onChange={(e) => setTipoServico(e.target.value)}>
+          {VISITA_TIPOS_SERVICO.map((t) => <option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="Responsável pela visita">
+        {tecnicos.length > 0 ? (
+          <select style={{ ...inputStyle, appearance: "none" }} value={tecnicos.includes(responsavel) ? responsavel : "__outro__"} onChange={(e) => setResponsavel(e.target.value === "__outro__" ? "" : e.target.value)}>
+            <option value="">Selecionar...</option>
+            {tecnicos.map((n) => <option key={n} value={n}>{n}</option>)}
+            <option value="__outro__">Outro...</option>
+          </select>
+        ) : (
+          <input style={inputStyle} value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
+        )}
+      </Field>
+      <Field label="Origem do contato">
+        <select style={{ ...inputStyle, appearance: "none" }} value={origemContato} onChange={(e) => setOrigemContato(e.target.value)}>
+          <option value="">Não informado</option>
+          {VISITA_ORIGEM_OPCOES.map((o) => <option key={o}>{o}</option>)}
+        </select>
+      </Field>
+      <Field label="Observações para o atendimento"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={observacoesAtendimento} onChange={(e) => setObservacoesAtendimento(e.target.value)} /></Field>
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Avaliação do local</div>
+      <Field label="Descrição da necessidade do cliente"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={av.necessidade} onChange={setAvCampo("necessidade")} /></Field>
+      <Field label="Condições do local"><input style={inputStyle} value={av.condicoesLocal} onChange={setAvCampo("condicoesLocal")} /></Field>
+      <LinhaDupla>
+        <Field label="Quantidade de equipamentos"><input style={inputStyle} value={av.qtdEquipamentos} onChange={setAvCampo("qtdEquipamentos")} inputMode="numeric" /></Field>
+        <Field label="Capacidade (BTUs)"><input style={inputStyle} value={av.capacidadeBtus} onChange={setAvCampo("capacidadeBtus")} /></Field>
+      </LinhaDupla>
+      <Field label="Marca e modelo"><input style={inputStyle} value={av.marcaModelo} onChange={setAvCampo("marcaModelo")} /></Field>
+      <Field label="Medidas e distâncias relevantes"><input style={inputStyle} value={av.medidas} onChange={setAvCampo("medidas")} /></Field>
+      <Field label="Dificuldade de acesso"><input style={inputStyle} value={av.dificuldadeAcesso} onChange={setAvCampo("dificuldadeAcesso")} /></Field>
+      <Field label="Infraestrutura existente"><input style={inputStyle} value={av.infraExistente} onChange={setAvCampo("infraExistente")} /></Field>
+      <Field label="Materiais necessários"><input style={inputStyle} value={av.materiaisNecessarios} onChange={setAvCampo("materiaisNecessarios")} /></Field>
+      <Field label="Serviços adicionais"><input style={inputStyle} value={av.servicosAdicionais} onChange={setAvCampo("servicosAdicionais")} /></Field>
+      <Field label="Necessidade de adequações"><input style={inputStyle} value={av.necessidadeAdequacoes} onChange={setAvCampo("necessidadeAdequacoes")} /></Field>
+      <Field label="Pendências para elaboração do orçamento"><textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={av.pendencias} onChange={setAvCampo("pendencias")} /></Field>
+      <Field label="Observações técnicas"><textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={av.observacoesTecnicas} onChange={setAvCampo("observacoesTecnicas")} /></Field>
+
+      {itensChecklist && (
+        <>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>
+            Checklist — {tipoServico}
+          </div>
+          {itensChecklist.map((item) => {
+            const atual = checklist[item] || { status: "PENDENTE", obs: "" };
+            return (
+              <div key={item} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ color: "#C7C9CE", fontSize: 12.5 }}>{item}</span>
+                  <div style={{ display: "flex", gap: 5 }}>
+                    {["AVALIADO", "PENDENTE", "N/A"].map((opt) => (
+                      <button
+                        key={opt}
+                        onClick={() => setChecklist((c) => ({ ...c, [item]: { ...atual, status: opt } }))}
+                        style={{ fontSize: 9.5, padding: "4px 7px", borderRadius: 6, border: `1px solid ${atual.status === opt ? "#C9A24B" : "#2A2A2E"}`, background: atual.status === opt ? "rgba(201,162,75,0.12)" : "transparent", color: atual.status === opt ? "#E9C878" : "#8A8A90", cursor: "pointer" }}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Fotos e anexos</div>
+      <VisitaFotos fotos={fotos} setFotos={setFotos} />
+
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Materiais e serviços previstos</div>
+      {materiais.map((it) => (
+        <div key={it.id} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: 10, marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+            <input style={{ ...inputStyle, flex: 1 }} placeholder="Descrição" value={it.descricao} onChange={(e) => atualizarMaterial(it.id, "descricao", e.target.value)} />
+            <button onClick={() => removerMaterial(it.id)} style={{ background: "none", border: "none", color: "#F0605A", cursor: "pointer" }}><Trash2 size={15} /></button>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <select style={{ ...inputStyle, flex: 1.3, appearance: "none" }} value={it.categoria} onChange={(e) => atualizarMaterial(it.id, "categoria", e.target.value)}>
+              {["Material", "Mão de obra", "Equipamento", "Serviço adicional"].map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <input style={{ ...inputStyle, flex: 0.7 }} placeholder="Qtd" value={it.quantidade} onChange={(e) => atualizarMaterial(it.id, "quantidade", e.target.value)} inputMode="numeric" />
+            <input style={{ ...inputStyle, flex: 0.7 }} placeholder="Unid." value={it.unidade} onChange={(e) => atualizarMaterial(it.id, "unidade", e.target.value)} />
+            <input style={{ ...inputStyle, flex: 1 }} placeholder="Valor unit." value={it.valorUnitario} onChange={(e) => atualizarMaterial(it.id, "valorUnitario", e.target.value)} inputMode="decimal" />
+          </div>
+          <div style={{ fontSize: 11, color: "#8A8A90", marginTop: 6 }}>Total estimado: R$ {materialTotal(it).toFixed(2)}</div>
+        </div>
+      ))}
+      <button onClick={addMaterial} style={{ ...btnSecundario, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 20 }}>
+        <Plus size={14} /> Adicionar item
+      </button>
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={() => salvar("Agendada")} disabled={saving} style={{ ...btnPrincipal, flex: 1, opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Salvando..." : "Salvar visita"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function VisitaOrcamentoDetail({ visita, onBack, onNavigate }) {
+  const [v, setV] = useState(visita);
+  const [editando, setEditando] = useState(false);
+  const [pedindoMotivo, setPedindoMotivo] = useState(null); // "reagendar" | "cancelar" | null
+  const [novaData, setNovaData] = useState(v.data);
+  const [novoHorario, setNovoHorario] = useState(v.horario);
+  const [motivo, setMotivo] = useState("");
+
+  const salvarVisita = async (atualizada) => {
+    await window.storage.set(`visitas-orcamento:${v.id}`, JSON.stringify(atualizada));
+    setV(atualizada);
+  };
+
+  const registrarConfirmacao = async (statusNovo, extra = {}, base = v) => {
+    const entrada = { data: new Date().toISOString(), status: statusNovo, ...extra };
+    await salvarVisita({
+      ...base,
+      confirmacao: { ...base.confirmacao, status: statusNovo, ...extra },
+      historicoConfirmacoes: [...(base.historicoConfirmacoes || []), entrada],
+    });
+  };
+
+  const abrirWhatsapp = (texto) => {
+    const numero = normalizarTelefoneBR(v.clienteTelefone);
+    if (!numero) {
+      notificarErroBanco("Este cliente não tem telefone/WhatsApp cadastrado nesta visita.");
+      return false;
+    }
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, "_blank");
+    return true;
+  };
+
+  const confirmarPeloWhatsapp = async () => {
+    if (!v.clienteNome || !v.clienteTelefone || !v.data || !v.horario) {
+      notificarErroBanco("A visita precisa ter cliente, telefone, data e horário antes de confirmar.");
+      return;
+    }
+    const texto = visitaMontarMensagemConfirmacao(v);
+    if (abrirWhatsapp(texto)) {
+      await registrarConfirmacao("aguardando_envio", { numero: v.clienteTelefone, modelo: "confirmacao", texto });
+    }
+  };
+
+  const enviarLembrete = async () => {
+    const texto = visitaMontarMensagemLembrete(v);
+    if (abrirWhatsapp(texto)) {
+      await salvarVisita({ ...v, historicoConfirmacoes: [...(v.historicoConfirmacoes || []), { data: new Date().toISOString(), status: "lembrete_enviado", texto }] });
+    }
+  };
+
+  const confirmarReagendamento = async () => {
+    if (!motivo.trim() && !novaData) return;
+    const atualizada = { ...v, data: novaData, horario: novoHorario, historicoAlteracoes: [...(v.historicoAlteracoes || []), { data: new Date().toISOString(), evento: `Reagendada para ${novaData} ${novoHorario}${motivo ? ` — ${motivo}` : ""}` }] };
+    await salvarVisita(atualizada);
+    const texto = visitaMontarMensagemReagendamento(atualizada);
+    if (abrirWhatsapp(texto)) {
+      await registrarConfirmacao("reagendada", { texto }, atualizada);
+    }
+    setPedindoMotivo(null);
+    setMotivo("");
+  };
+
+  const confirmarCancelamento = async () => {
+    if (!motivo.trim()) return;
+    const atualizada = { ...v, status: "Cancelada", historicoAlteracoes: [...(v.historicoAlteracoes || []), { data: new Date().toISOString(), evento: `Visita cancelada — motivo: ${motivo}` }] };
+    await salvarVisita(atualizada);
+    const texto = visitaMontarMensagemCancelamento(atualizada, motivo);
+    abrirWhatsapp(texto);
+    await registrarConfirmacao("cancelada", { texto, motivo }, atualizada);
+    setPedindoMotivo(null);
+    setMotivo("");
+  };
+
+  const copiarMensagem = async () => {
+    try {
+      await navigator.clipboard.writeText(visitaMontarMensagemConfirmacao(v));
+      notificarErroBanco("Mensagem copiada.");
+    } catch {
+      notificarErroBanco("Não foi possível copiar automaticamente neste navegador.");
+    }
+  };
+
+  const gerarOrcamento = () => {
+    const itensMateriais = (v.materiais || [])
+      .filter((m) => m.categoria !== "Mão de obra")
+      .map((m) => ({ id: uid(), descricao: m.descricao, categoria: m.categoria, qtd: Number(m.quantidade) || 1, unidade: m.unidade || "un", valorUnit: Number(m.valorUnitario) || 0 }));
+    const maoDeObraItem = (v.materiais || []).find((m) => m.categoria === "Mão de obra");
+    orcRascunhoPendente = {
+      _rascunhoIA: true,
+      nome: v.clienteNome, telefone: v.clienteTelefone, email: v.clienteEmail || "", endereco: v.endereco,
+      equipamento: { tipo: "Split", marca: v.avaliacao?.marcaModelo?.split(" ")[0] || "", modelo: "", btus: v.avaliacao?.capacidadeBtus || "", gas: "" },
+      servico: { tipo: "Instalação", descricaoPersonalizada: v.tipoServico },
+      itens: itensMateriais,
+      maoDeObra: { tipo: "Instalação", valor: maoDeObraItem ? String(materialTotalCalc(maoDeObraItem)) : "0" },
+      deslocamento: { modo: "Sem cobrança", valor: "0", km: "" },
+      desconto: { tipo: "R$", valor: "0" },
+      acrescimo: { tipo: "R$", valor: "0", motivo: "" },
+      pagamento: { forma: "PIX", condicao: "À vista", detalhes: "" },
+      validade: { dias: 7 },
+      observacoesCliente: v.observacoesAtendimento || "",
+      observacoesInternas: [v.avaliacao?.pendencias, v.avaliacao?.observacoesTecnicas].filter(Boolean).join(" — "),
+      garantia: { servico: "90 dias sobre mão de obra", pecas: "conforme fabricante", observacoes: "" },
+      escopoServico: v.avaliacao?.necessidade || "",
+      naoIncluso: "",
+      _visitaOrigemId: v.id,
+    };
+    onNavigate("orcamentos");
+  };
+
+  const criarOS = () => {
+    osRascunhoPendente = {
+      _rascunhoVisita: true,
+      clienteNome: v.clienteNome, clienteTelefone: v.clienteTelefone, clienteDocumento: v.clienteDocumento || "", clienteEndereco: v.endereco,
+      eqTipo: "", eqMarca: v.avaliacao?.marcaModelo || "", eqModelo: "", eqBtus: v.avaliacao?.capacidadeBtus || "", eqSerie: "",
+      tipoServico: v.tipoServico === "Instalação de ar-condicionado" ? "Instalação" : "Manutenção",
+      problemaRelatado: v.avaliacao?.necessidade || "", diagnostico: "",
+      procedimentosRealizados: "", materiaisUtilizados: (v.materiais || []).map((m) => `${m.descricao} (${m.quantidade} ${m.unidade})`).join("\n"),
+      pecasUtilizadas: "", observacoes: [v.observacoesAtendimento, v.avaliacao?.observacoesTecnicas].filter(Boolean).join(" — "),
+      tecnico: v.responsavel || "", ajudante: "",
+      data: hojeLocal(), horaEntrada: "", horaSaida: "",
+      maoDeObra: "0", materiais: "0", pecas: "0", deslocamento: "0", desconto: "0",
+      status: "ABERTA",
+      garantiaPeriodo: "", garantiaInicio: "", garantiaFim: "", garantiaCondicoes: "",
+      visitaId: v.id, visitaNumero: v.numero, orcamentoId: v.orcamentoId || null,
+    };
+    onNavigate("os");
+  };
+
+  if (editando) {
+    return <VisitaOrcamentoForm editing={v} onDone={(nv) => { setV(nv); setEditando(false); }} onCancel={() => setEditando(false)} />;
+  }
+
+  const cor = VISITA_STATUS_COR[v.status] || "#8A8A90";
+  const corConf = VISITA_CONF_COR[v.confirmacao?.status] || "#6E6E73";
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <ChevronLeft size={15} /> voltar
+      </button>
+
+      <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 600, color: "#F3F3F1" }}>{v.clienteNome}</div>
+      <div style={{ fontSize: 12.5, color: "#8A8A90", marginBottom: 10 }}>{v.numero} · {v.tipoServico}</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 10.5, color: cor, fontFamily: "'JetBrains Mono',monospace", border: `1px solid ${cor}55`, borderRadius: 20, padding: "4px 10px" }}>{v.status}</span>
+        <span style={{ fontSize: 10.5, color: corConf, fontFamily: "'JetBrains Mono',monospace", border: `1px solid ${corConf}55`, borderRadius: 20, padding: "4px 10px" }}>{VISITA_CONF_LABEL[v.confirmacao?.status] || "Confirmação ainda não preparada"}</span>
+      </div>
+
+      <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
+        {[["Telefone", v.clienteTelefone], ["Data", new Date(v.data + "T12:00:00").toLocaleDateString("pt-BR")], ["Horário", v.horario], ["Endereço", v.endereco], ["Responsável", v.responsavel], ["Origem do contato", v.origemContato]]
+          .filter(([, val]) => val)
+          .map(([label, val]) => (
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, gap: 10 }}>
+              <span style={{ color: "#8A8A90", fontSize: 12 }}>{label}</span>
+              <span style={{ color: "#F3F3F1", fontSize: 12.5, textAlign: "right" }}>{val}</span>
+            </div>
+          ))}
+      </div>
+
+      {/* ações de WhatsApp */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+        <button onClick={confirmarPeloWhatsapp} style={{ ...btnPrincipal, width: "100%" }}>Confirmar visita pelo WhatsApp</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={confirmarPeloWhatsapp} style={{ ...btnSecundario, flex: 1, fontSize: 10.5 }}>Reenviar</button>
+          <button onClick={enviarLembrete} style={{ ...btnSecundario, flex: 1, fontSize: 10.5 }}>Lembrete</button>
+          <button onClick={copiarMensagem} style={{ ...btnSecundario, flex: 1, fontSize: 10.5 }}>Copiar</button>
+        </div>
+        <button onClick={() => abrirWhatsapp("")} style={{ ...btnSecundario, width: "100%", fontSize: 11 }}>Abrir conversa com o cliente</button>
+
+        {v.confirmacao?.status === "aguardando_envio" && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => registrarConfirmacao("confirmacao_registrada")} style={{ ...btnSecundario, flex: 1, fontSize: 10.5, color: "#4681DF" }}>Registrar confirmação</button>
+            <button onClick={() => registrarConfirmacao("cliente_confirmou")} style={{ ...btnSecundario, flex: 1, fontSize: 10.5, color: "#4ADE80" }}>Cliente confirmou</button>
+          </div>
+        )}
+
+        {pedindoMotivo === "reagendar" ? (
+          <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: 10 }}>
+            <LinhaDupla>
+              <Field label="Nova data"><input type="date" style={inputStyle} value={novaData} onChange={(e) => setNovaData(e.target.value)} /></Field>
+              <Field label="Novo horário"><input type="time" style={inputStyle} value={novoHorario} onChange={(e) => setNovoHorario(e.target.value)} /></Field>
+            </LinhaDupla>
+            <input style={{ ...inputStyle, marginTop: 4 }} placeholder="Motivo (opcional)" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={() => setPedindoMotivo(null)} style={{ ...btnSecundario, flex: 1 }}>Cancelar</button>
+              <button onClick={confirmarReagendamento} style={{ ...btnPrincipal, flex: 1 }}>Reagendar e avisar</button>
+            </div>
+          </div>
+        ) : pedindoMotivo === "cancelar" ? (
+          <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: 10 }}>
+            <input style={inputStyle} placeholder="Motivo do cancelamento (obrigatório)" value={motivo} onChange={(e) => setMotivo(e.target.value)} autoFocus />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={() => setPedindoMotivo(null)} style={{ ...btnSecundario, flex: 1 }}>Voltar</button>
+              <button onClick={confirmarCancelamento} disabled={!motivo.trim()} style={{ ...btnPrincipal, flex: 1, opacity: motivo.trim() ? 1 : 0.5 }}>Confirmar cancelamento</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setPedindoMotivo("reagendar")} style={{ ...btnSecundario, flex: 1, fontSize: 10.5 }}>Informar reagendamento</button>
+            <button onClick={() => setPedindoMotivo("cancelar")} style={{ ...btnSecundario, flex: 1, fontSize: 10.5, color: "#F0605A" }}>Informar cancelamento</button>
+          </div>
+        )}
+      </div>
+
+      {/* integração comercial */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        {v.orcamentoId ? (
+          <button onClick={() => onNavigate("orcamentos")} style={{ ...btnSecundario, flex: 1 }}>Ver orçamento ({v.orcamentoNumero})</button>
+        ) : (
+          <button onClick={gerarOrcamento} style={{ ...btnPrincipal, flex: 1 }}>Gerar orçamento</button>
+        )}
+        {v.osId ? (
+          <button onClick={() => onNavigate("os")} style={{ ...btnSecundario, flex: 1 }}>Ver OS ({v.osNumero})</button>
+        ) : (
+          <button onClick={criarOS} style={{ ...btnSecundario, flex: 1 }}>Criar OS</button>
+        )}
+      </div>
+
+      <button onClick={() => setEditando(true)} style={{ ...btnSecundario, width: "100%", marginBottom: 20 }}>Editar visita</button>
+
+      {(v.historicoAlteracoes || []).length > 0 && (
+        <>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Histórico</div>
+          {[...v.historicoAlteracoes].reverse().map((h, i) => (
+            <div key={i} style={{ fontSize: 12, color: "#C7C9CE", marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <span style={{ color: "#6E6E73", fontSize: 10.5 }}>{new Date(h.data).toLocaleString("pt-BR")}</span> — {h.evento}
+            </div>
+          ))}
+          {(v.historicoConfirmacoes || []).map((h, i) => (
+            <div key={"c" + i} style={{ fontSize: 12, color: "#C7C9CE", marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <span style={{ color: "#6E6E73", fontSize: 10.5 }}>{new Date(h.data).toLocaleString("pt-BR")}</span> — {VISITA_CONF_LABEL[h.status] || h.status}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+function materialTotalCalc(it) { return (Number(it.quantidade) || 0) * (Number(it.valorUnitario) || 0); }
+
+function VisitaOrcamentoModule({ onNavigate }) {
+  const [lista, setLista] = useState(null);
+  const [orcamentosPorId, setOrcamentosPorId] = useState({});
+  const [modo, setModo] = useState("lista"); // lista | novo | detalhe
+  const [selecionada, setSelecionada] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("Todas");
+
+  const load = useCallback(async () => {
+    const l = await window.storage.list("visitas-orcamento:").catch(() => null);
+    if (!l || !l.keys) return setLista([]);
+    const itens = [];
+    for (const chave of l.keys) {
+      const doc = await window.storage.get(chave).catch(() => null);
+      if (doc) { try { itens.push(JSON.parse(doc.value)); } catch {} }
+    }
+    itens.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    setLista(itens);
+
+    // busca o status real dos orçamentos vinculados, pra contagem honesta
+    const idsOrc = itens.map((v) => v.orcamentoId).filter(Boolean);
+    const mapa = {};
+    for (const id of idsOrc) {
+      const doc = await window.storage.get(`orcamentos:${id}`).catch(() => null);
+      if (doc) { try { mapa[id] = JSON.parse(doc.value).status; } catch {} }
+    }
+    setOrcamentosPorId(mapa);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (modo === "novo") {
+    return <VisitaOrcamentoForm onDone={() => { setModo("lista"); load(); }} onCancel={() => setModo("lista")} />;
+  }
+  if (modo === "detalhe" && selecionada) {
+    return <VisitaOrcamentoDetail visita={selecionada} onBack={() => { setSelecionada(null); setModo("lista"); load(); }} onNavigate={onNavigate} />;
+  }
+  if (lista === null) return <div style={{ textAlign: "center", padding: 40 }}><Loader2 size={20} className="spin" /></div>;
+
+  const hoje = hojeLocal();
+  const contagem = {
+    total: lista.length,
+    hoje: lista.filter((v) => v.data === hoje).length,
+    emAndamento: lista.filter((v) => v.status === "Em andamento").length,
+    concluidas: lista.filter((v) => v.status === "Concluída").length,
+    aguardandoOrcamento: lista.filter((v) => v.status === "Concluída" && !v.orcamentoId).length,
+    orcamentoEnviado: lista.filter((v) => v.orcamentoId && ["ENVIADO", "VISUALIZADO", "EM NEGOCIAÇÃO"].includes(orcamentosPorId[v.orcamentoId])).length,
+    aprovadas: lista.filter((v) => v.orcamentoId && orcamentosPorId[v.orcamentoId] === "APROVADO").length,
+    convertidasOS: lista.filter((v) => !!v.osId).length,
+  };
+
+  const filtradas = lista.filter((v) => {
+    if (filtroStatus !== "Todas" && v.status !== filtroStatus) return false;
+    const q = busca.trim().toLowerCase();
+    if (q) return [v.clienteNome, v.clienteTelefone, v.numero, v.endereco].filter(Boolean).join(" ").toLowerCase().includes(q);
+    return true;
+  });
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 40 }}>
+      <button onClick={() => setModo("novo")} style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}>
+        <Plus size={16} /> Nova visita
+      </button>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 16 }}>
+        {[
+          ["TOTAL", contagem.total, "#F3F3F1"], ["HOJE", contagem.hoje, "#E9C878"],
+          ["EM ANDAMENTO", contagem.emAndamento, "#4681DF"], ["CONCLUÍDAS", contagem.concluidas, "#4ADE80"],
+          ["AGUARDANDO ORÇAMENTO", contagem.aguardandoOrcamento, "#8A8A90"], ["ORÇAMENTO ENVIADO", contagem.orcamentoEnviado, "#C9A24B"],
+          ["APROVADAS", contagem.aprovadas, "#4ADE80"], ["CONVERTIDAS EM OS", contagem.convertidasOS, "#4681DF"],
+        ].map(([label, valor, cor]) => (
+          <div key={label} style={{ background: "#141416", border: "1px solid #232326", borderRadius: 9, padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A90", letterSpacing: 0.3 }}>{label}</span>
+            <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 15, color: cor }}>{valor}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar cliente, telefone, nº ou endereço..."
+          style={{ width: "100%", boxSizing: "border-box", background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "10px 12px 10px 34px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 13, outline: "none" }}
+        />
+      </div>
+
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, WebkitOverflowScrolling: "touch" }}>
+        {["Todas", ...VISITA_STATUS].map((f) => (
+          <button
+            key={f}
+            onClick={() => setFiltroStatus(f)}
+            style={{ flexShrink: 0, fontSize: 10.5, padding: "6px 12px", borderRadius: 20, border: `1px solid ${filtroStatus === f ? "#C9A24B" : "#2A2A2E"}`, background: filtroStatus === f ? "rgba(201,162,75,0.12)" : "transparent", color: filtroStatus === f ? "#E9C878" : "#8A8A90", cursor: "pointer", whiteSpace: "nowrap" }}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {filtradas.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "40px 20px", color: "#6E6E73" }}>
+          <ClipboardCheck size={24} style={{ marginBottom: 10, opacity: 0.5 }} />
+          <div style={{ fontSize: 13 }}>{lista.length === 0 ? "Nenhuma visita agendada ainda." : "Nenhuma visita para esse filtro."}</div>
+        </div>
+      ) : (
+        filtradas.map((v) => {
+          const cor = VISITA_STATUS_COR[v.status] || "#8A8A90";
+          return (
+            <button
+              key={v.id}
+              onClick={() => { setSelecionada(v); setModo("detalhe"); }}
+              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer" }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13.5, color: "#F3F3F1" }}>{v.clienteNome}</span>
+                <span style={{ fontSize: 10, color: cor, fontFamily: "'JetBrains Mono',monospace" }}>{v.status}</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>
+                {v.numero} · {v.tipoServico} · {new Date(v.data + "T12:00:00").toLocaleDateString("pt-BR")} {v.horario}
+              </div>
+              <div style={{ fontSize: 10.5, color: "#6E6E73", marginTop: 3 }}>{VISITA_CONF_LABEL[v.confirmacao?.status] || "Confirmação ainda não preparada"}</div>
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 function osValorTotal(v) {
   const soma =
     (Number(v.maoDeObra) || 0) + (Number(v.materiais) || 0) + (Number(v.pecas) || 0) + (Number(v.deslocamento) || 0);
@@ -6115,45 +7451,7 @@ function OSForm({ editingOS, onDone, onCancel }) {
   const salvar = async (statusOverride) => {
     setSaving(true);
     try {
-      const id = form.id || uid();
-      const numero = form.numero || (await proximoNumero("OS", "ordens-servico:"));
-      const status = statusOverride || form.status;
-      const os = {
-        ...form,
-        id,
-        numero,
-        status,
-        valorTotal,
-        fotosAntes,
-        fotosDepois,
-        assinatura,
-        createdAt: form.createdAt || new Date().toISOString(),
-        finalizedAt: status === "FINALIZADA" ? new Date().toISOString() : form.finalizedAt || null,
-        remuneracao: montarRemuneracaoOS(funcsTodos, form, status, valorTotal),
-      };
-      await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
-
-      if (status === "FINALIZADA" && valorTotal > 0 && !form.receitaGerada) {
-        const recId = uid();
-        await window.storage.set(
-          `fin-receitas:${recId}`,
-          JSON.stringify({
-            id: recId,
-            servico: form.tipoServico,
-            cliente: form.clienteNome,
-            osId: id,
-            osNumero: numero,
-            data: form.data,
-            valor: valorTotal,
-            formaPagamento: "A definir",
-            status: "pendente",
-            createdAt: new Date().toISOString(),
-          })
-        );
-        os.receitaGerada = true;
-        await window.storage.set(`ordens-servico:${id}`, JSON.stringify(os));
-      }
-
+      const os = await persistirOS(form, { funcsTodos, fotosAntes, fotosDepois, assinatura, statusOverride });
       onDone(os);
     } catch (err) {
       console.error("Erro ao salvar OS", err);
@@ -6603,10 +7901,16 @@ function OsLinhaDetalhe({ label, valor }) {
   );
 }
 
+let osRascunhoPendente = null;
+
 function OrdensServicoModule({ onNavigate }) {
-  const [mode, setMode] = useState("lista"); // lista | novo | detalhe
+  const [mode, setMode] = useState(() => (osRascunhoPendente ? "novo" : "lista")); // lista | novo | detalhe
   const [lista, setLista] = useState(null);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(() => {
+    const r = osRascunhoPendente;
+    osRascunhoPendente = null;
+    return r;
+  });
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("Todas");
   const [filtroTecnico, setFiltroTecnico] = useState("Todos");
@@ -6697,7 +8001,7 @@ function OrdensServicoModule({ onNavigate }) {
   if (mode === "novo") {
     return (
       <OSForm
-        editingOS={selected && selected.editing ? selected : null}
+        editingOS={selected && (selected.editing || selected._rascunhoVisita) ? selected : null}
         onCancel={() => {
           setSelected(null);
           setMode("lista");
@@ -18705,7 +20009,9 @@ function AllaCheckAppInterno({ usuario }) {
         {telaVisivel === "tool-alla-venda" && <AllaVendaModule />}
         {telaVisivel === "tool-agenda-cortes" && <AgendaCortesModule />}
         {telaVisivel === "tool-visita-tecnica" && <VisitaTecnicaModule />}
+        {telaVisivel === "tool-visita-orcamento" && <VisitaOrcamentoModule onNavigate={navigate} />}
         {telaVisivel === "tool-garantias" && <GarantiasModule onNavigate={navigate} usuario={usuario} />}
+        {telaVisivel === "tool-os-ia" && <GeradorOsIaModule onNavigate={navigate} />}
         {telaVisivel === "tool-assinaturas" && <AssinaturasModule />}
         {telaVisivel === "tool-rastreio-tecnico" && <RastreioTecnico />}
         {telaVisivel === "tool-historico-equipamento" && <HistoricoEquipamento />}
