@@ -6678,7 +6678,7 @@ function VisitaFotos({ fotos, setFotos }) {
         {fotos.map((f) => (
           <div key={f.id} style={{ width: 92 }}>
             <div style={{ position: "relative", width: 92, height: 92 }}>
-              <img src={f.src} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid #2A2A2E" }} />
+              <img src={f.src} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid #292929" }} />
               <button
                 onClick={() => setFotos((fs) => fs.filter((x) => x.id !== f.id))}
                 style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#F0605A", border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
@@ -6694,7 +6694,7 @@ function VisitaFotos({ fotos, setFotos }) {
             />
           </div>
         ))}
-        <button onClick={() => fileInputRef.current.click()} style={{ width: 92, height: 92, borderRadius: 8, border: "1px dashed #3A3A3E", background: "#141416", display: "flex", alignItems: "center", justifyContent: "center", color: "#8A8A90", cursor: "pointer" }}>
+        <button onClick={() => fileInputRef.current.click()} style={{ width: 92, height: 92, borderRadius: 8, border: "1px dashed #3A3A3E", background: "#111111", display: "flex", alignItems: "center", justifyContent: "center", color: "#929292", cursor: "pointer" }}>
           <Camera size={18} />
         </button>
       </div>
@@ -6807,11 +6807,11 @@ function VisitaOrcamentoForm({ editing, onDone, onCancel }) {
 
   return (
     <div style={{ padding: 16, paddingBottom: 100 }}>
-      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#929292", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
         <ChevronLeft size={15} /> voltar
       </button>
 
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Cliente</div>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#E7C36F", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Cliente</div>
       <Field label="Nome">
         <input list="visita-clientes-lista" style={inputStyle} value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} onBlur={() => selecionarClienteExistente(clienteNome)} />
         <datalist id="visita-clientes-lista">{(clientesExistentes || []).map((c) => <option key={c.nome} value={c.nome} />)}</datalist>
@@ -6827,7 +6827,7 @@ function VisitaOrcamentoForm({ editing, onDone, onCancel }) {
       <Field label="Endereço do atendimento"><input style={inputStyle} value={endereco} onChange={(e) => setEndereco(e.target.value)} /></Field>
       <Field label="Complemento / ponto de referência"><input style={inputStyle} value={complemento} onChange={(e) => setComplemento(e.target.value)} /></Field>
 
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Agendamento</div>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#E7C36F", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Agendamento</div>
       <LinhaDupla>
         <Field label="Data"><input type="date" style={inputStyle} value={data} onChange={(e) => setData(e.target.value)} /></Field>
         <Field label="Horário"><input type="time" style={inputStyle} value={horario} onChange={(e) => setHorario(e.target.value)} /></Field>
@@ -6856,7 +6856,7 @@ function VisitaOrcamentoForm({ editing, onDone, onCancel }) {
       </Field>
       <Field label="Observações para o atendimento"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={observacoesAtendimento} onChange={(e) => setObservacoesAtendimento(e.target.value)} /></Field>
 
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Avaliação do local</div>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#E7C36F", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Avaliação do local</div>
       <Field label="Descrição da necessidade do cliente"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={av.necessidade} onChange={setAvCampo("necessidade")} /></Field>
       <Field label="Condições do local"><input style={inputStyle} value={av.condicoesLocal} onChange={setAvCampo("condicoesLocal")} /></Field>
       <LinhaDupla>
@@ -6875,7 +6875,7 @@ function VisitaOrcamentoForm({ editing, onDone, onCancel }) {
 
       {itensChecklist && (
         <>
-          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#E7C36F", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>
             Checklist — {tipoServico}
           </div>
           {itensChecklist.map((item) => {
@@ -6889,7 +6889,7 @@ function VisitaOrcamentoForm({ editing, onDone, onCancel }) {
                       <button
                         key={opt}
                         onClick={() => setChecklist((c) => ({ ...c, [item]: { ...atual, status: opt } }))}
-                        style={{ fontSize: 9.5, padding: "4px 7px", borderRadius: 6, border: `1px solid ${atual.status === opt ? "#C9A24B" : "#2A2A2E"}`, background: atual.status === opt ? "rgba(201,162,75,0.12)" : "transparent", color: atual.status === opt ? "#E9C878" : "#8A8A90", cursor: "pointer" }}
+                        style={{ fontSize: 9.5, padding: "4px 7px", borderRadius: 6, border: `1px solid ${atual.status === opt ? "#E7C36F" : "#292929"}`, background: atual.status === opt ? "rgba(231,195,111,0.12)" : "transparent", color: atual.status === opt ? "#E7C36F" : "#929292", cursor: "pointer" }}
                       >
                         {opt}
                       </button>
@@ -6902,12 +6902,12 @@ function VisitaOrcamentoForm({ editing, onDone, onCancel }) {
         </>
       )}
 
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Fotos e anexos</div>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#E7C36F", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Fotos e anexos</div>
       <VisitaFotos fotos={fotos} setFotos={setFotos} />
 
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#C9A24B", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Materiais e serviços previstos</div>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#E7C36F", letterSpacing: 1.5, textTransform: "uppercase", margin: "18px 0 10px" }}>Materiais e serviços previstos</div>
       {materiais.map((it) => (
-        <div key={it.id} style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: 10, marginBottom: 8 }}>
+        <div key={it.id} style={{ background: "#111111", border: "1px solid #292929", borderRadius: 10, padding: 10, marginBottom: 8 }}>
           <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
             <input style={{ ...inputStyle, flex: 1 }} placeholder="Descrição" value={it.descricao} onChange={(e) => atualizarMaterial(it.id, "descricao", e.target.value)} />
             <button onClick={() => removerMaterial(it.id)} style={{ background: "none", border: "none", color: "#F0605A", cursor: "pointer" }}><Trash2 size={15} /></button>
@@ -6920,7 +6920,7 @@ function VisitaOrcamentoForm({ editing, onDone, onCancel }) {
             <input style={{ ...inputStyle, flex: 0.7 }} placeholder="Unid." value={it.unidade} onChange={(e) => atualizarMaterial(it.id, "unidade", e.target.value)} />
             <input style={{ ...inputStyle, flex: 1 }} placeholder="Valor unit." value={it.valorUnitario} onChange={(e) => atualizarMaterial(it.id, "valorUnitario", e.target.value)} inputMode="decimal" />
           </div>
-          <div style={{ fontSize: 11, color: "#8A8A90", marginTop: 6 }}>Total estimado: R$ {materialTotal(it).toFixed(2)}</div>
+          <div style={{ fontSize: 11, color: "#929292", marginTop: 6 }}>Total estimado: R$ {materialTotal(it).toFixed(2)}</div>
         </div>
       ))}
       <button onClick={addMaterial} style={{ ...btnSecundario, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 20 }}>
@@ -7068,28 +7068,28 @@ function VisitaOrcamentoDetail({ visita, onBack, onNavigate }) {
     return <VisitaOrcamentoForm editing={v} onDone={(nv) => { setV(nv); setEditando(false); }} onCancel={() => setEditando(false)} />;
   }
 
-  const cor = VISITA_STATUS_COR[v.status] || "#8A8A90";
+  const cor = VISITA_STATUS_COR[v.status] || "#929292";
   const corConf = VISITA_CONF_COR[v.confirmacao?.status] || "#6E6E73";
 
   return (
     <div style={{ padding: 16, paddingBottom: 40 }}>
-      <button onClick={onBack} style={{ background: "none", border: "none", color: "#8A8A90", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#929292", fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
         <ChevronLeft size={15} /> voltar
       </button>
 
       <div style={{ fontFamily: "'Roboto',sans-serif", fontSize: 19, fontWeight: 600, color: "#F3F3F1" }}>{v.clienteNome}</div>
-      <div style={{ fontSize: 12.5, color: "#8A8A90", marginBottom: 10 }}>{v.numero} · {v.tipoServico}</div>
+      <div style={{ fontSize: 12.5, color: "#929292", marginBottom: 10 }}>{v.numero} · {v.tipoServico}</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10.5, color: cor, fontFamily: "'JetBrains Mono',monospace", border: `1px solid ${cor}55`, borderRadius: 20, padding: "4px 10px" }}>{v.status}</span>
         <span style={{ fontSize: 10.5, color: corConf, fontFamily: "'JetBrains Mono',monospace", border: `1px solid ${corConf}55`, borderRadius: 20, padding: "4px 10px" }}>{VISITA_CONF_LABEL[v.confirmacao?.status] || "Confirmação ainda não preparada"}</span>
       </div>
 
-      <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 14, padding: 16, marginBottom: 16 }}>
+      <div style={{ background: "#111111", border: "1px solid #292929", borderRadius: 14, padding: 16, marginBottom: 16 }}>
         {[["Telefone", v.clienteTelefone], ["Data", new Date(v.data + "T12:00:00").toLocaleDateString("pt-BR")], ["Horário", v.horario], ["Endereço", v.endereco], ["Responsável", v.responsavel], ["Origem do contato", v.origemContato]]
           .filter(([, val]) => val)
           .map(([label, val]) => (
             <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, gap: 10 }}>
-              <span style={{ color: "#8A8A90", fontSize: 12 }}>{label}</span>
+              <span style={{ color: "#929292", fontSize: 12 }}>{label}</span>
               <span style={{ color: "#F3F3F1", fontSize: 12.5, textAlign: "right" }}>{val}</span>
             </div>
           ))}
@@ -7113,7 +7113,7 @@ function VisitaOrcamentoDetail({ visita, onBack, onNavigate }) {
         )}
 
         {pedindoMotivo === "reagendar" ? (
-          <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: 10 }}>
+          <div style={{ background: "#111111", border: "1px solid #292929", borderRadius: 10, padding: 10 }}>
             <LinhaDupla>
               <Field label="Nova data"><input type="date" style={inputStyle} value={novaData} onChange={(e) => setNovaData(e.target.value)} /></Field>
               <Field label="Novo horário"><input type="time" style={inputStyle} value={novoHorario} onChange={(e) => setNovoHorario(e.target.value)} /></Field>
@@ -7125,7 +7125,7 @@ function VisitaOrcamentoDetail({ visita, onBack, onNavigate }) {
             </div>
           </div>
         ) : pedindoMotivo === "cancelar" ? (
-          <div style={{ background: "#141416", border: "1px solid #2A2A2E", borderRadius: 10, padding: 10 }}>
+          <div style={{ background: "#111111", border: "1px solid #292929", borderRadius: 10, padding: 10 }}>
             <input style={inputStyle} placeholder="Motivo do cancelamento (obrigatório)" value={motivo} onChange={(e) => setMotivo(e.target.value)} autoFocus />
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button onClick={() => setPedindoMotivo(null)} style={{ ...btnSecundario, flex: 1 }}>Voltar</button>
@@ -7158,7 +7158,7 @@ function VisitaOrcamentoDetail({ visita, onBack, onNavigate }) {
 
       {(v.historicoAlteracoes || []).length > 0 && (
         <>
-          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#8A8A90", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Histórico</div>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "#929292", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>Histórico</div>
           {[...v.historicoAlteracoes].reverse().map((h, i) => (
             <div key={i} style={{ fontSize: 12, color: "#C7C9CE", marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
               <span style={{ color: "#6E6E73", fontSize: 10.5 }}>{new Date(h.data).toLocaleString("pt-BR")}</span> — {h.evento}
@@ -7176,36 +7176,70 @@ function VisitaOrcamentoDetail({ visita, onBack, onNavigate }) {
 }
 function materialTotalCalc(it) { return (Number(it.quantidade) || 0) * (Number(it.valorUnitario) || 0); }
 
+/* Status "oficiais" (os que o técnico de fato escolhe) + categorias
+   "derivadas" (calculadas a partir do que já existe — nunca um campo
+   próprio que pudesse ficar fora de sincronia com o orçamento real). */
+const VISITA_FILTROS = [
+  ["todas", "Todas"], ["Agendada", "Agendada"], ["Em andamento", "Em andamento"], ["Concluída", "Concluída"],
+  ["aguardando_orcamento", "Aguardando orçamento"], ["orcamento_enviado", "Orçamento enviado"],
+  ["aprovada", "Aprovada"], ["convertida_os", "Convertida em OS"], ["Cancelada", "Cancelada"],
+];
+
 function VisitaOrcamentoModule({ onNavigate }) {
   const [lista, setLista] = useState(null);
+  const [erroCarregamento, setErroCarregamento] = useState(null);
   const [orcamentosPorId, setOrcamentosPorId] = useState({});
   const [modo, setModo] = useState("lista"); // lista | novo | detalhe
   const [selecionada, setSelecionada] = useState(null);
   const [busca, setBusca] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("Todas");
+  const [filtro, setFiltro] = useState("todas");
+  const [de, setDe] = useState("");
+  const [ate, setAte] = useState("");
+  const [limite, setLimite] = useState(50);
 
+  // Essencial pra não confundir "nenhuma visita" com "banco bloqueado":
+  // um erro real de permissão interrompe aqui e mostra uma mensagem
+  // honesta, em vez de uma lista vazia como se a consulta tivesse dado certo.
   const load = useCallback(async () => {
-    const l = await window.storage.list("visitas-orcamento:").catch(() => null);
-    if (!l || !l.keys) return setLista([]);
+    setErroCarregamento(null);
+    let l;
+    try {
+      l = await window.storage.list("visitas-orcamento:");
+    } catch (err) {
+      setErroCarregamento(diagnosticarErroFirestore(err, "carregar as visitas"));
+      setLista(null);
+      return;
+    }
+    if (!l || !l.keys) { setLista([]); return; }
     const itens = [];
     for (const chave of l.keys) {
-      const doc = await window.storage.get(chave).catch(() => null);
-      if (doc) { try { itens.push(JSON.parse(doc.value)); } catch {} }
+      try {
+        const doc = await window.storage.get(chave);
+        if (doc) itens.push(JSON.parse(doc.value));
+      } catch (err) {
+        setErroCarregamento(diagnosticarErroFirestore(err, "carregar as visitas"));
+        setLista(null);
+        return;
+      }
     }
     itens.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     setLista(itens);
 
-    // busca o status real dos orçamentos vinculados, pra contagem honesta
-    const idsOrc = itens.map((v) => v.orcamentoId).filter(Boolean);
+    // status e valor reais dos orçamentos vinculados — nunca inventa
+    // "aprovado" sem checar o orçamento de verdade.
+    const idsOrc = [...new Set(itens.map((v) => v.orcamentoId).filter(Boolean))];
     const mapa = {};
     for (const id of idsOrc) {
-      const doc = await window.storage.get(`orcamentos:${id}`).catch(() => null);
-      if (doc) { try { mapa[id] = JSON.parse(doc.value).status; } catch {} }
+      try {
+        const doc = await window.storage.get(`orcamentos:${id}`);
+        if (doc) { const o = JSON.parse(doc.value); mapa[id] = { status: o.status, valor: Number(o.valorFinal) || 0 }; }
+      } catch { /* orçamento pode ter sido apagado — ignora silenciosamente */ }
     }
     setOrcamentosPorId(mapa);
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setLimite(50); }, [filtro, busca, de, ate]);
 
   if (modo === "novo") {
     return <VisitaOrcamentoForm onDone={() => { setModo("lista"); load(); }} onCancel={() => setModo("lista")} />;
@@ -7213,7 +7247,26 @@ function VisitaOrcamentoModule({ onNavigate }) {
   if (modo === "detalhe" && selecionada) {
     return <VisitaOrcamentoDetail visita={selecionada} onBack={() => { setSelecionada(null); setModo("lista"); load(); }} onNavigate={onNavigate} />;
   }
+
+  if (erroCarregamento) {
+    return (
+      <div style={{ padding: 16, textAlign: "center", paddingTop: 60 }}>
+        <div style={{ color: "#F0605A", fontSize: 13, marginBottom: 14, lineHeight: 1.6 }}>{erroCarregamento}</div>
+        <button onClick={load} style={{ background: "transparent", border: "1px solid #222222", borderRadius: 10, padding: "10px 20px", color: "#E9C878", fontSize: 12.5, cursor: "pointer" }}>Tentar novamente</button>
+      </div>
+    );
+  }
   if (lista === null) return <div style={{ textAlign: "center", padding: 40 }}><Loader2 size={20} className="spin" /></div>;
+
+  // categoria derivada de UMA visita — usada tanto pro filtro quanto pro card
+  const categoriaOrcamento = (v) => {
+    if (!v.orcamentoId) return v.status === "Concluída" ? "aguardando_orcamento" : null;
+    const orc = orcamentosPorId[v.orcamentoId];
+    if (!orc) return null;
+    if (orc.status === "APROVADO" || orc.status === "CONVERTIDO EM OS") return "aprovada";
+    if (["ENVIADO", "VISUALIZADO", "EM NEGOCIAÇÃO"].includes(orc.status)) return "orcamento_enviado";
+    return null;
+  };
 
   const hoje = hojeLocal();
   const contagem = {
@@ -7221,86 +7274,167 @@ function VisitaOrcamentoModule({ onNavigate }) {
     hoje: lista.filter((v) => v.data === hoje).length,
     emAndamento: lista.filter((v) => v.status === "Em andamento").length,
     concluidas: lista.filter((v) => v.status === "Concluída").length,
-    aguardandoOrcamento: lista.filter((v) => v.status === "Concluída" && !v.orcamentoId).length,
-    orcamentoEnviado: lista.filter((v) => v.orcamentoId && ["ENVIADO", "VISUALIZADO", "EM NEGOCIAÇÃO"].includes(orcamentosPorId[v.orcamentoId])).length,
-    aprovadas: lista.filter((v) => v.orcamentoId && orcamentosPorId[v.orcamentoId] === "APROVADO").length,
+    aguardandoOrcamento: lista.filter((v) => categoriaOrcamento(v) === "aguardando_orcamento").length,
+    orcamentoEnviado: lista.filter((v) => categoriaOrcamento(v) === "orcamento_enviado").length,
+    aprovadas: lista.filter((v) => categoriaOrcamento(v) === "aprovada").length,
     convertidasOS: lista.filter((v) => !!v.osId).length,
   };
 
-  const filtradas = lista.filter((v) => {
-    if (filtroStatus !== "Todas" && v.status !== filtroStatus) return false;
-    const q = busca.trim().toLowerCase();
-    if (q) return [v.clienteNome, v.clienteTelefone, v.numero, v.endereco].filter(Boolean).join(" ").toLowerCase().includes(q);
-    return true;
-  });
+  // resumo comercial — só soma o que realmente existe, nunca estima
+  const orcamentosVinculados = Object.values(orcamentosPorId);
+  const valorTotalOrcado = orcamentosVinculados.reduce((s, o) => s + o.valor, 0);
+  const valorAprovado = orcamentosVinculados.filter((o) => o.status === "APROVADO" || o.status === "CONVERTIDO EM OS").reduce((s, o) => s + o.valor, 0);
+  const oportunidades = orcamentosVinculados.length;
+  // conversão = aprovados / (aprovados + recusados + expirados), nunca divide por zero
+  const baseConversao = orcamentosVinculados.filter((o) => ["APROVADO", "CONVERTIDO EM OS", "RECUSADO", "EXPIRADO"].includes(o.status)).length;
+  const aprovadosCount = orcamentosVinculados.filter((o) => o.status === "APROVADO" || o.status === "CONVERTIDO EM OS").length;
+  const taxaConversao = baseConversao > 0 ? Math.round((aprovadosCount / baseConversao) * 100) : 0;
+
+  const filtradas = lista
+    .filter((v) => {
+      if (filtro !== "todas") {
+        if (["Agendada", "Em andamento", "Concluída", "Cancelada"].includes(filtro)) { if (v.status !== filtro) return false; }
+        else if (categoriaOrcamento(v) !== filtro) return false;
+      }
+      if (de && v.data < de) return false;
+      if (ate && v.data > ate) return false;
+      const q = garNormalizar(busca.trim());
+      if (!q) return true;
+      const qDigitos = busca.replace(/\D/g, "");
+      const texto = garNormalizar([v.clienteNome, v.endereco, v.numero, v.osNumero, v.avaliacao?.marcaModelo, v.tipoServico].filter(Boolean).join(" "));
+      if (texto.includes(q)) return true;
+      if (qDigitos.length >= 3 && String(v.clienteTelefone || "").replace(/\D/g, "").includes(qDigitos)) return true;
+      return false;
+    });
+  const visiveis = filtradas.slice(0, limite);
+
+  const fmt = (d) => new Date(d + "T12:00:00").toLocaleDateString("pt-BR");
+  const rotCel = { fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#6A6A6A", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 3 };
+  const valCel = { fontFamily: "'Roboto',sans-serif", fontSize: 12.5, color: "#F2F2F2", lineHeight: 1.3, wordBreak: "break-word" };
+  const STATUS_EXIB = (v) => {
+    const cat = categoriaOrcamento(v);
+    if (v.osId) return "Convertida em OS";
+    if (cat === "aprovada") return "Aprovada";
+    if (cat === "orcamento_enviado") return "Orçamento enviado";
+    if (cat === "aguardando_orcamento") return "Aguardando orçamento";
+    return v.status;
+  };
+  const STATUS_EXIB_COR = { "Aprovada": "#4ADE80", "Orçamento enviado": "#C9A24B", "Convertida em OS": "#4681DF", "Aguardando orçamento": "#8A8A8A" };
 
   return (
-    <div style={{ padding: 16, paddingBottom: 40 }}>
-      <button onClick={() => setModo("novo")} style={{ width: "100%", background: "linear-gradient(135deg,#C9A24B,#E9C878)", border: "none", borderRadius: 12, padding: "13px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", cursor: "pointer", marginBottom: 16 }}>
+    <div className="vo-root" style={{ padding: "14px 14px 40px", background: "#000" }}>
+      <style>{`.vo-root button{transition:opacity .15s ease}.vo-root button:active{opacity:.6}.vo-root input::placeholder{color:#5A5A5A}`}</style>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <span style={{ fontSize: 12.5, color: "#9A9A9A" }}>Agendamento, confirmação e orçamento</span>
+        <button onClick={load} title="Atualizar" aria-label="Atualizar" style={{ background: "transparent", border: "1px solid #222222", borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#B5B5B5", cursor: "pointer", flexShrink: 0 }}>
+          <RefreshCw size={14} strokeWidth={1.7} />
+        </button>
+      </div>
+
+      <button
+        onClick={() => setModo("novo")}
+        style={{ width: "100%", background: "#E7C36F", border: "none", borderRadius: 12, padding: "14px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 13, color: "#0A0A0B", textTransform: "uppercase", letterSpacing: 0.5, cursor: "pointer", marginBottom: 16 }}
+      >
         <Plus size={16} /> Nova visita
       </button>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", background: "#101010", border: "1px solid #292929", borderRadius: 12, marginBottom: 10 }}>
         {[
-          ["TOTAL", contagem.total, "#F3F3F1"], ["HOJE", contagem.hoje, "#E9C878"],
-          ["EM ANDAMENTO", contagem.emAndamento, "#4681DF"], ["CONCLUÍDAS", contagem.concluidas, "#4ADE80"],
-          ["AGUARDANDO ORÇAMENTO", contagem.aguardandoOrcamento, "#8A8A90"], ["ORÇAMENTO ENVIADO", contagem.orcamentoEnviado, "#C9A24B"],
-          ["APROVADAS", contagem.aprovadas, "#4ADE80"], ["CONVERTIDAS EM OS", contagem.convertidasOS, "#4681DF"],
-        ].map(([label, valor, cor]) => (
-          <div key={label} style={{ background: "#141416", border: "1px solid #232326", borderRadius: 9, padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "#8A8A90", letterSpacing: 0.3 }}>{label}</span>
-            <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 15, color: cor }}>{valor}</span>
+          ["Total", contagem.total], ["Hoje", contagem.hoje], ["Em andamento", contagem.emAndamento], ["Concluídas", contagem.concluidas],
+          ["Aguard. orçamento", contagem.aguardandoOrcamento], ["Orç. enviado", contagem.orcamentoEnviado], ["Aprovadas", contagem.aprovadas], ["Convertidas OS", contagem.convertidasOS],
+        ].map(([label, valor], i) => (
+          <div key={label} style={{ padding: "12px 4px 10px", textAlign: "center", borderLeft: i % 4 ? "1px solid #1A1A1A" : "none", borderTop: i >= 4 ? "1px solid #1A1A1A" : "none", minWidth: 0 }}>
+            <div style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 19, color: "#F5F5F5", lineHeight: 1 }}>{valor}</div>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 7, color: "#929292", letterSpacing: 0.3, textTransform: "uppercase", marginTop: 6, lineHeight: 1.3 }}>{label}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ position: "relative", marginBottom: 10 }}>
-        <Search size={14} color="#5A5A5F" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+      <div style={{ padding: "4px 2px 18px", fontSize: 11, color: "#929292", lineHeight: 1.7 }}>
+        Valor orçado <b style={{ color: "#DADADA", fontWeight: 600 }}>R$ {valorTotalOrcado.toFixed(2)}</b> · Aprovado <b style={{ color: "#4ADE80", fontWeight: 600 }}>R$ {valorAprovado.toFixed(2)}</b>
+        <br />
+        Oportunidades <b style={{ color: "#DADADA", fontWeight: 600 }}>{oportunidades}</b> · Conversão <b style={{ color: "#DADADA", fontWeight: 600 }}>{taxaConversao}%</b>
+      </div>
+
+      <div style={{ position: "relative", marginBottom: 16 }}>
+        <Search size={15} strokeWidth={1.7} color="#6A6A6A" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar cliente, telefone, nº ou endereço..."
-          style={{ width: "100%", boxSizing: "border-box", background: "#0A0A0B", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "10px 12px 10px 34px", color: "#F3F3F1", fontFamily: "'Roboto',sans-serif", fontSize: 13, outline: "none" }}
+          placeholder="Buscar cliente, telefone, OS, equipamento ou endereço..."
+          style={{ width: "100%", boxSizing: "border-box", height: 46, background: "#101010", border: "1px solid #292929", borderRadius: 12, padding: "0 14px 0 40px", color: "#F5F5F5", fontFamily: "'Roboto',sans-serif", fontSize: 13.5, outline: "none" }}
         />
       </div>
 
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, WebkitOverflowScrolling: "touch" }}>
-        {["Todas", ...VISITA_STATUS].map((f) => (
-          <button
-            key={f}
-            onClick={() => setFiltroStatus(f)}
-            style={{ flexShrink: 0, fontSize: 10.5, padding: "6px 12px", borderRadius: 20, border: `1px solid ${filtroStatus === f ? "#C9A24B" : "#2A2A2E"}`, background: filtroStatus === f ? "rgba(201,162,75,0.12)" : "transparent", color: filtroStatus === f ? "#E9C878" : "#8A8A90", cursor: "pointer", whiteSpace: "nowrap" }}
-          >
-            {f}
-          </button>
-        ))}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, WebkitOverflowScrolling: "touch", paddingBottom: 2 }}>
+        {VISITA_FILTROS.map(([id, rotulo]) => {
+          const ativo = filtro === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setFiltro(id)}
+              style={{ flexShrink: 0, fontSize: 10.5, padding: "6px 12px", borderRadius: 20, border: `1px solid ${ativo ? "#E7C36F" : "#292929"}`, background: ativo ? "rgba(231,195,111,0.12)" : "transparent", color: ativo ? "#E7C36F" : "#929292", cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              {rotulo}
+            </button>
+          );
+        })}
       </div>
 
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontSize: 11, color: "#6A6A6A" }}>
+        <span>Visita de</span>
+        <input type="date" value={de} onChange={(e) => setDe(e.target.value)} style={{ flex: 1, minWidth: 0, background: "#101010", border: "1px solid #292929", borderRadius: 8, padding: "6px 8px", color: "#DADADA", fontSize: 11, outline: "none" }} />
+        <span>até</span>
+        <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} style={{ flex: 1, minWidth: 0, background: "#101010", border: "1px solid #292929", borderRadius: 8, padding: "6px 8px", color: "#DADADA", fontSize: 11, outline: "none" }} />
+        {(de || ate) && <button onClick={() => { setDe(""); setAte(""); }} style={{ background: "none", border: "none", color: "#E7C36F", fontSize: 11, cursor: "pointer", padding: 0, flexShrink: 0 }}>limpar</button>}
+      </div>
+
+      <div style={{ fontSize: 10.5, color: "#5A5A5A", marginBottom: 12 }}>{filtradas.length} de {lista.length} visitas</div>
+
       {filtradas.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "40px 20px", color: "#6E6E73" }}>
-          <ClipboardCheck size={24} style={{ marginBottom: 10, opacity: 0.5 }} />
-          <div style={{ fontSize: 13 }}>{lista.length === 0 ? "Nenhuma visita agendada ainda." : "Nenhuma visita para esse filtro."}</div>
+        <div style={{ textAlign: "center", padding: "40px 20px", color: "#6A6A6A" }}>
+          <ClipboardCheck size={24} strokeWidth={1.5} style={{ marginBottom: 10, opacity: 0.6 }} />
+          <div style={{ fontSize: 13 }}>{lista.length === 0 ? "Nenhuma visita agendada ainda." : "Nenhuma visita para essa busca/filtro."}</div>
         </div>
       ) : (
-        filtradas.map((v) => {
-          const cor = VISITA_STATUS_COR[v.status] || "#8A8A90";
+        visiveis.map((v) => {
+          const statusExib = STATUS_EXIB(v);
+          const cor = STATUS_EXIB_COR[statusExib] || VISITA_STATUS_COR[v.status] || "#929292";
           return (
             <button
               key={v.id}
               onClick={() => { setSelecionada(v); setModo("detalhe"); }}
-              style={{ width: "100%", textAlign: "left", background: "#141416", border: "1px solid #2A2A2E", borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer" }}
+              style={{ width: "100%", textAlign: "left", background: "#111111", border: "1px solid #292929", borderRadius: 14, padding: 14, marginBottom: 10, cursor: "pointer", display: "block" }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 600, fontSize: 13.5, color: "#F3F3F1" }}>{v.clienteNome}</span>
-                <span style={{ fontSize: 10, color: cor, fontFamily: "'JetBrains Mono',monospace" }}>{v.status}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ fontFamily: "'Roboto',sans-serif", fontWeight: 700, fontSize: 14, color: "#F5F5F5", lineHeight: 1.25, wordBreak: "break-word" }}>{(v.clienteNome || "Cliente").toUpperCase()}</span>
+                <span style={{ fontSize: 9.5, color: cor, fontFamily: "'JetBrains Mono',monospace", flexShrink: 0, border: `1px solid ${cor}55`, borderRadius: 20, padding: "2px 8px", height: "fit-content" }}>{statusExib}</span>
               </div>
-              <div style={{ fontSize: 11.5, color: "#8A8A90", marginTop: 2 }}>
-                {v.numero} · {v.tipoServico} · {new Date(v.data + "T12:00:00").toLocaleDateString("pt-BR")} {v.horario}
+              <div style={{ fontSize: 11.5, color: "#929292", marginTop: 5, lineHeight: 1.5 }}>
+                {v.numero}{v.osNumero ? ` · OS ${v.osNumero}` : ""} · {v.tipoServico}
               </div>
-              <div style={{ fontSize: 10.5, color: "#6E6E73", marginTop: 3 }}>{VISITA_CONF_LABEL[v.confirmacao?.status] || "Confirmação ainda não preparada"}</div>
+              {(v.avaliacao?.marcaModelo || v.avaliacao?.capacidadeBtus) && (
+                <div style={{ fontSize: 11.5, color: "#929292", lineHeight: 1.5 }}>
+                  {[v.avaliacao?.marcaModelo, v.avaliacao?.capacidadeBtus && `${v.avaliacao.capacidadeBtus} BTUs`].filter(Boolean).join(" · ")}
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 14px", marginTop: 12, paddingTop: 12, borderTop: "1px solid #1A1A1A" }}>
+                <div style={{ minWidth: 0 }}><div style={rotCel}>Data e horário</div><div style={valCel}>{fmt(v.data)} {v.horario}</div></div>
+                <div style={{ minWidth: 0 }}><div style={rotCel}>Telefone</div><div style={valCel}>{v.clienteTelefone || "—"}</div></div>
+                {v.endereco && <div style={{ gridColumn: "1 / -1", minWidth: 0 }}><div style={rotCel}>Endereço</div><div style={valCel}>{v.endereco}</div></div>}
+              </div>
+
+              <div style={{ fontSize: 10.5, color: "#6A6A6A", marginTop: 10 }}>{VISITA_CONF_LABEL[v.confirmacao?.status] || "Confirmação ainda não preparada"}</div>
             </button>
           );
         })
+      )}
+      {filtradas.length > limite && (
+        <button onClick={() => setLimite((l) => l + 50)} style={{ width: "100%", background: "transparent", border: "1px solid #292929", borderRadius: 10, padding: "12px 0", color: "#B5B5B5", fontSize: 12, fontWeight: 500, cursor: "pointer", marginTop: 4 }}>
+          Mostrar mais ({filtradas.length - limite} restantes)
+        </button>
       )}
     </div>
   );
